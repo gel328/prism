@@ -137,6 +137,7 @@ export function Login() {
   const [totpCode, setTotpCode] = useState("");
   const [totpRequired, setTotpRequired] = useState(false);
   const [captcha, setCaptcha] = useState<CaptchaValue>({});
+  const [captchaKey, setCaptchaKey] = useState(0);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [passkeyLoading, setPasskeyLoading] = useState(false);
@@ -189,6 +190,9 @@ export function Login() {
 
       if (res.totp_required) {
         setTotpRequired(true);
+        // First-step captcha tokens are one-time-use. Refresh captcha for 2FA submit.
+        setCaptcha({});
+        setCaptchaKey((v) => v + 1);
         setLoading(false);
         return;
       }
@@ -364,8 +368,9 @@ export function Login() {
             </Field>
           )}
 
-          {site && site.captcha_provider !== "none" && !totpRequired && (
+          {site && site.captcha_provider !== "none" && (
             <Captcha
+              key={captchaKey}
               provider={site.captcha_provider}
               siteKey={site.captcha_site_key}
               onVerified={setCaptcha}
@@ -393,7 +398,14 @@ export function Login() {
           </Button>
 
           {totpRequired && (
-            <Button appearance="subtle" onClick={() => setTotpRequired(false)}>
+            <Button
+              appearance="subtle"
+              onClick={() => {
+                setTotpRequired(false);
+                setCaptcha({});
+                setCaptchaKey((v) => v + 1);
+              }}
+            >
               {t("common.back")}
             </Button>
           )}
