@@ -1,7 +1,7 @@
 // Captcha widget supporting Turnstile, hCaptcha, reCAPTCHA v3, and PoW
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import { Spinner, Text, ProgressBar } from "@fluentui/react-components";
+import { Button, Spinner, Text, ProgressBar } from "@fluentui/react-components";
 import { api } from "../lib/api";
 import { solvePoW } from "../lib/pow";
 
@@ -144,9 +144,14 @@ export function Captcha({
           </Text>
         )}
         {powState === "error" && (
-          <Text style={{ color: "var(--colorPaletteRedForeground1)" }}>
-            Challenge failed. <button onClick={solveChallenge}>Retry</button>
-          </Text>
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <Text style={{ color: "var(--colorPaletteRedForeground1)" }}>
+              Challenge failed.
+            </Text>
+            <Button size="small" onClick={solveChallenge}>
+              Retry
+            </Button>
+          </div>
         )}
         <ProgressBar
           value={

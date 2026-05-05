@@ -13,6 +13,7 @@ import {
   TableHeaderCell,
   TableRow,
   Text,
+  Tooltip,
   tokens,
 } from "@fluentui/react-components";
 import { useState } from "react";
@@ -248,9 +249,17 @@ export function AdminLoginErrors() {
                       textOverflow: "ellipsis",
                       whiteSpace: "nowrap",
                     }}
-                    title={err.user_agent ?? undefined}
                   >
-                    {err.user_agent ?? "—"}
+                    {err.user_agent ? (
+                      <Tooltip
+                        content={err.user_agent}
+                        relationship="description"
+                      >
+                        <span>{err.user_agent}</span>
+                      </Tooltip>
+                    ) : (
+                      "—"
+                    )}
                   </TableCell>
                   <TableCell>
                     <Text

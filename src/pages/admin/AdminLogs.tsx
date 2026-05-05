@@ -21,6 +21,7 @@ import {
   TableHeaderCell,
   TableRow,
   Text,
+  Tooltip,
   tokens,
 } from "@fluentui/react-components";
 import { useState } from "react";
@@ -701,9 +702,10 @@ export function AdminLogs() {
                       textOverflow: "ellipsis",
                       whiteSpace: "nowrap",
                     }}
-                    title={log.path}
                   >
-                    {log.path}
+                    <Tooltip content={log.path} relationship="description">
+                      <span>{log.path}</span>
+                    </Tooltip>
                   </TableCell>
                   <TableCell>
                     <Badge

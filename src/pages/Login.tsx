@@ -14,6 +14,7 @@ import {
   Text,
   Textarea,
   Title2,
+  Tooltip,
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
@@ -427,22 +428,29 @@ export function Login() {
                   gap: 2,
                 }}
               >
-                <Button
-                  appearance="transparent"
-                  icon={<CopyRegular />}
-                  size="small"
-                  onClick={() =>
-                    navigator.clipboard.writeText(gpgChallengeText)
-                  }
-                  title={t("security.gpgCopied")}
-                />
-                <Button
-                  appearance="transparent"
-                  icon={<CodeRegular />}
-                  size="small"
-                  onClick={() => navigator.clipboard.writeText(getGpgCommand())}
-                  title={t("security.gpgCopyCommand")}
-                />
+                <Tooltip content={t("security.gpgCopied")} relationship="label">
+                  <Button
+                    appearance="transparent"
+                    icon={<CopyRegular />}
+                    size="small"
+                    onClick={() =>
+                      navigator.clipboard.writeText(gpgChallengeText)
+                    }
+                  />
+                </Tooltip>
+                <Tooltip
+                  content={t("security.gpgCopyCommand")}
+                  relationship="label"
+                >
+                  <Button
+                    appearance="transparent"
+                    icon={<CodeRegular />}
+                    size="small"
+                    onClick={() =>
+                      navigator.clipboard.writeText(getGpgCommand())
+                    }
+                  />
+                </Tooltip>
               </div>
             </div>
 
@@ -491,14 +499,18 @@ export function Login() {
                       rows={3}
                       style={{ fontFamily: "monospace", fontSize: 11, flex: 1 }}
                     />
-                    <Button
-                      appearance="subtle"
-                      icon={<ArrowUploadRegular />}
-                      size="small"
-                      style={{ marginTop: 2, flexShrink: 0 }}
-                      onClick={() => gpgFileRef.current?.click()}
-                      title={t("security.gpgUploadKey")}
-                    />
+                    <Tooltip
+                      content={t("security.gpgUploadKey")}
+                      relationship="label"
+                    >
+                      <Button
+                        appearance="subtle"
+                        icon={<ArrowUploadRegular />}
+                        size="small"
+                        style={{ marginTop: 2, flexShrink: 0 }}
+                        onClick={() => gpgFileRef.current?.click()}
+                      />
+                    </Tooltip>
                   </div>
                 </Field>
                 <Field label={t("security.gpgPassphrase")}>

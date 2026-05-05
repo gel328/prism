@@ -22,6 +22,7 @@ import {
   Text,
   Textarea,
   Title2,
+  Tooltip,
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
@@ -722,17 +723,18 @@ function ScopeDefinitionsPanel({
                 </Text>
               )}
             </div>
-            <Button
-              size="small"
-              appearance="subtle"
-              icon={<CopyRegular />}
-              title={t("apps.copyFullScopeId")}
-              onClick={() => copyFullScope(def.scope)}
-            >
-              {copiedScope === def.scope
-                ? t("apps.copied")
-                : t("apps.copyFullScopeId")}
-            </Button>
+            <Tooltip content={t("apps.copyFullScopeId")} relationship="label">
+              <Button
+                size="small"
+                appearance="subtle"
+                icon={<CopyRegular />}
+                onClick={() => copyFullScope(def.scope)}
+              >
+                {copiedScope === def.scope
+                  ? t("apps.copied")
+                  : t("apps.copyFullScopeId")}
+              </Button>
+            </Tooltip>
             <Button
               size="small"
               appearance="subtle"

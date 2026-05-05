@@ -2,7 +2,16 @@
 
 import {
   Button,
+  Dialog,
+  DialogActions,
+  DialogBody,
+  DialogContent,
+  DialogSurface,
+  DialogTitle,
+  DialogTrigger,
   Dropdown,
+  Field,
+  Input,
   MessageBar,
   MessageBarBody,
   Option,
@@ -898,54 +907,42 @@ function RuleAccountFilter(props: {
           content={t("notifications.rulesetsMatchAccountsAllHint")}
           relationship="description"
         >
-          <button
-            type="button"
+          <Button
+            size="small"
+            shape="circular"
+            appearance={empty ? "primary" : "outline"}
             onClick={() => props.onChange([])}
-            style={{
-              fontSize: 11,
-              padding: "2px 8px",
-              borderRadius: 12,
-              border: `1px solid ${tokens.colorNeutralStroke1}`,
-              background: empty
-                ? tokens.colorBrandBackground
-                : tokens.colorNeutralBackground1,
-              color: empty
-                ? tokens.colorNeutralForegroundOnBrand
-                : tokens.colorNeutralForeground2,
-              cursor: "pointer",
-            }}
+            style={{ fontSize: 11, minWidth: "auto" }}
           >
             {t("notifications.rulesetsMatchAccountsAll")}
-          </button>
+          </Button>
         </Tooltip>
         {all.map((acc) => {
           const on = selected.has(acc.key);
           return (
-            <button
+            <Tooltip
               key={acc.key}
-              type="button"
-              onClick={() => toggle(acc.key)}
-              title={acc.label}
-              style={{
-                fontSize: 11,
-                padding: "2px 8px",
-                borderRadius: 12,
-                border: `1px solid ${tokens.colorNeutralStroke1}`,
-                background: on
-                  ? tokens.colorBrandBackground
-                  : tokens.colorNeutralBackground1,
-                color: on
-                  ? tokens.colorNeutralForegroundOnBrand
-                  : tokens.colorNeutralForeground2,
-                cursor: "pointer",
-                maxWidth: 200,
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-              }}
+              content={acc.label}
+              relationship="description"
             >
-              {acc.icon} {acc.label}
-            </button>
+              <Button
+                size="small"
+                shape="circular"
+                icon={acc.icon}
+                appearance={on ? "primary" : "outline"}
+                onClick={() => toggle(acc.key)}
+                style={{
+                  fontSize: 11,
+                  minWidth: "auto",
+                  maxWidth: 200,
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {acc.label}
+              </Button>
+            </Tooltip>
           );
         })}
         {all.length === 0 && (
@@ -1303,6 +1300,16 @@ export function Notifications() {
   // automatically deactivates any other.
   const [editingRulesetId, setEditingRulesetId] = useState<string | null>(null);
   const [draftRules, setDraftRules] = useState<NotificationRule[]>([]);
+  // Dialog state for ruleset name input (replaces window.prompt) and
+  // delete confirmation (replaces window.confirm).
+  const [nameDialog, setNameDialog] = useState<
+    | { mode: "new"; value: string }
+    | { mode: "rename"; ruleset: NotificationRuleset; value: string }
+    | null
+  >(null);
+  const [deleteDialog, setDeleteDialog] = useState<NotificationRuleset | null>(
+    null,
+  );
   // Compound key: the editor re-syncs whenever the open ruleset changes
   // OR when the server's authoritative copy of the open one is newer
   // (e.g. immediately after Save).
@@ -1405,31 +1412,30 @@ export function Notifications() {
   });
 
   function handleNewRuleset() {
-    const name = window.prompt(t("notifications.rulesetsNamePrompt"));
-    if (!name) return;
-    createRulesetMut.mutate({ name: name.trim(), rules: [], is_active: false });
+    setNameDialog({ mode: "new", value: "" });
   }
 
   function handleRenameRuleset(rs: NotificationRuleset) {
-    const name = window.prompt(
-      t("notifications.rulesetsRenamePrompt", { name: rs.name }),
-      rs.name,
-    );
-    if (!name || name.trim() === rs.name) return;
-    updateRulesetMut.mutate({
-      id: rs.id,
-      body: { name: name.trim() },
-    });
+    setNameDialog({ mode: "rename", ruleset: rs, value: rs.name });
   }
 
   function handleDeleteRuleset(rs: NotificationRuleset) {
-    if (
-      !window.confirm(
-        t("notifications.rulesetsDeleteConfirm", { name: rs.name }),
-      )
-    )
-      return;
-    deleteRulesetMut.mutate(rs.id);
+    setDeleteDialog(rs);
+  }
+
+  function submitNameDialog() {
+    if (!nameDialog) return;
+    const name = nameDialog.value.trim();
+    if (!name) return;
+    if (nameDialog.mode === "new") {
+      createRulesetMut.mutate({ name, rules: [], is_active: false });
+    } else if (name !== nameDialog.ruleset.name) {
+      updateRulesetMut.mutate({
+        id: nameDialog.ruleset.id,
+        body: { name },
+      });
+    }
+    setNameDialog(null);
   }
 
   function handleToggleActive(rs: NotificationRuleset) {
@@ -1894,6 +1900,99 @@ export function Notifications() {
           {t("notifications.jsonEdit")}
         </Button>
       </div>
+
+      <Dialog
+        open={nameDialog !== null}
+        onOpenChange={(_, d) => {
+          if (!d.open) setNameDialog(null);
+        }}
+      >
+        <DialogSurface>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              submitNameDialog();
+            }}
+          >
+            <DialogBody>
+              <DialogTitle>
+                {nameDialog?.mode === "rename"
+                  ? t("notifications.rulesetsRename")
+                  : t("notifications.rulesetsNew")}
+              </DialogTitle>
+              <DialogContent>
+                <Field
+                  label={
+                    nameDialog?.mode === "rename"
+                      ? t("notifications.rulesetsRenamePrompt", {
+                          name: nameDialog.ruleset.name,
+                        })
+                      : t("notifications.rulesetsNamePrompt")
+                  }
+                >
+                  <Input
+                    autoFocus
+                    value={nameDialog?.value ?? ""}
+                    onChange={(_, d) =>
+                      setNameDialog((prev) =>
+                        prev ? { ...prev, value: d.value } : prev,
+                      )
+                    }
+                  />
+                </Field>
+              </DialogContent>
+              <DialogActions>
+                <DialogTrigger disableButtonEnhancement>
+                  <Button type="button">{t("common.cancel")}</Button>
+                </DialogTrigger>
+                <Button
+                  type="submit"
+                  appearance="primary"
+                  disabled={!nameDialog?.value.trim()}
+                >
+                  {nameDialog?.mode === "rename"
+                    ? t("common.save")
+                    : t("common.create")}
+                </Button>
+              </DialogActions>
+            </DialogBody>
+          </form>
+        </DialogSurface>
+      </Dialog>
+
+      <Dialog
+        open={deleteDialog !== null}
+        onOpenChange={(_, d) => {
+          if (!d.open) setDeleteDialog(null);
+        }}
+      >
+        <DialogSurface>
+          <DialogBody>
+            <DialogTitle>{t("notifications.rulesetsDelete")}</DialogTitle>
+            <DialogContent>
+              {deleteDialog &&
+                t("notifications.rulesetsDeleteConfirm", {
+                  name: deleteDialog.name,
+                })}
+            </DialogContent>
+            <DialogActions>
+              <DialogTrigger disableButtonEnhancement>
+                <Button>{t("common.cancel")}</Button>
+              </DialogTrigger>
+              <Button
+                appearance="primary"
+                style={{ background: tokens.colorPaletteRedBackground3 }}
+                onClick={() => {
+                  if (deleteDialog) deleteRulesetMut.mutate(deleteDialog.id);
+                  setDeleteDialog(null);
+                }}
+              >
+                {t("common.delete")}
+              </Button>
+            </DialogActions>
+          </DialogBody>
+        </DialogSurface>
+      </Dialog>
     </div>
   );
 }

@@ -418,35 +418,38 @@ function WebhookRow({ wh }: { wh: Webhook }) {
                 )}
               </Tooltip>
             )}
-            <Button
-              appearance="subtle"
-              size="small"
-              icon={
-                test.isPending ? (
-                  <Spinner size="tiny" />
-                ) : (
-                  <ArrowClockwiseRegular />
-                )
-              }
-              onClick={() => test.mutate()}
-              disabled={test.isPending}
-              title={t("webhooks.sendTest")}
-            />
-            <Button
-              appearance="subtle"
-              size="small"
-              icon={<EditRegular />}
-              onClick={() => setEditing(true)}
-              title={t("webhooks.edit")}
-            />
-            <Button
-              appearance="subtle"
-              size="small"
-              icon={<DeleteRegular />}
-              onClick={() => remove.mutate()}
-              disabled={remove.isPending}
-              title={t("common.delete")}
-            />
+            <Tooltip content={t("webhooks.sendTest")} relationship="label">
+              <Button
+                appearance="subtle"
+                size="small"
+                icon={
+                  test.isPending ? (
+                    <Spinner size="tiny" />
+                  ) : (
+                    <ArrowClockwiseRegular />
+                  )
+                }
+                onClick={() => test.mutate()}
+                disabled={test.isPending}
+              />
+            </Tooltip>
+            <Tooltip content={t("webhooks.edit")} relationship="label">
+              <Button
+                appearance="subtle"
+                size="small"
+                icon={<EditRegular />}
+                onClick={() => setEditing(true)}
+              />
+            </Tooltip>
+            <Tooltip content={t("common.delete")} relationship="label">
+              <Button
+                appearance="subtle"
+                size="small"
+                icon={<DeleteRegular />}
+                onClick={() => remove.mutate()}
+                disabled={remove.isPending}
+              />
+            </Tooltip>
           </div>
           {editing && (
             <Dialog

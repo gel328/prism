@@ -14,6 +14,7 @@ import {
   MessageBar,
   Text,
   Title2,
+  Tooltip,
   makeStyles,
   Spinner,
   tokens,
@@ -496,29 +497,37 @@ export function Connections() {
 
                     <div style={{ display: "flex", gap: 4 }}>
                       {canRefresh ? (
-                        <Button
-                          icon={
-                            refreshingConnectionId === conn.id ? (
-                              <Spinner size="tiny" />
-                            ) : (
-                              <ArrowClockwiseRegular />
-                            )
-                          }
-                          appearance="subtle"
-                          size="small"
-                          title={t("connections.refreshAction")}
-                          onClick={() => handleRefresh(conn.id, p.name)}
-                          disabled={refreshingConnectionId === conn.id}
-                        />
+                        <Tooltip
+                          content={t("connections.refreshAction")}
+                          relationship="label"
+                        >
+                          <Button
+                            icon={
+                              refreshingConnectionId === conn.id ? (
+                                <Spinner size="tiny" />
+                              ) : (
+                                <ArrowClockwiseRegular />
+                              )
+                            }
+                            appearance="subtle"
+                            size="small"
+                            onClick={() => handleRefresh(conn.id, p.name)}
+                            disabled={refreshingConnectionId === conn.id}
+                          />
+                        </Tooltip>
                       ) : null}
                       <Dialog>
                         <DialogTrigger disableButtonEnhancement>
-                          <Button
-                            icon={<DeleteRegular />}
-                            appearance="subtle"
-                            size="small"
-                            title={t("connections.disconnectAction")}
-                          />
+                          <Tooltip
+                            content={t("connections.disconnectAction")}
+                            relationship="label"
+                          >
+                            <Button
+                              icon={<DeleteRegular />}
+                              appearance="subtle"
+                              size="small"
+                            />
+                          </Tooltip>
                         </DialogTrigger>
                         <DialogSurface>
                           <DialogBody>

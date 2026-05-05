@@ -17,6 +17,7 @@ import {
   Text,
   Textarea,
   Title2,
+  Tooltip,
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
@@ -1004,17 +1005,42 @@ export function Profile() {
                 </Button>
               )}
               {alt.verified && (
+                <Tooltip
+                  content={t("profile.makePrimary")}
+                  relationship="label"
+                >
+                  <Button
+                    appearance="subtle"
+                    size="small"
+                    icon={<ArrowUpRegular />}
+                    onClick={async () => {
+                      try {
+                        await api.setEmailPrimary(alt.id);
+                        await refetchEmails();
+                        await qc.invalidateQueries({ queryKey: ["me"] });
+                        showMsg("success", t("profile.primaryUpdated"));
+                      } catch (err) {
+                        showMsg(
+                          "error",
+                          err instanceof ApiError
+                            ? err.message
+                            : t("common.error"),
+                        );
+                      }
+                    }}
+                  />
+                </Tooltip>
+              )}
+              <Tooltip content={t("common.remove")} relationship="label">
                 <Button
                   appearance="subtle"
                   size="small"
-                  icon={<ArrowUpRegular />}
-                  title={t("profile.makePrimary")}
+                  icon={<DeleteRegular />}
                   onClick={async () => {
                     try {
-                      await api.setEmailPrimary(alt.id);
+                      await api.removeEmail(alt.id);
                       await refetchEmails();
-                      await qc.invalidateQueries({ queryKey: ["me"] });
-                      showMsg("success", t("profile.primaryUpdated"));
+                      showMsg("success", t("profile.emailRemoved"));
                     } catch (err) {
                       showMsg(
                         "error",
@@ -1025,25 +1051,7 @@ export function Profile() {
                     }
                   }}
                 />
-              )}
-              <Button
-                appearance="subtle"
-                size="small"
-                icon={<DeleteRegular />}
-                title={t("common.remove")}
-                onClick={async () => {
-                  try {
-                    await api.removeEmail(alt.id);
-                    await refetchEmails();
-                    showMsg("success", t("profile.emailRemoved"));
-                  } catch (err) {
-                    showMsg(
-                      "error",
-                      err instanceof ApiError ? err.message : t("common.error"),
-                    );
-                  }
-                }}
-              />
+              </Tooltip>
             </div>
           </div>
         ))}

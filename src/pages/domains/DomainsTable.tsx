@@ -11,6 +11,7 @@ import {
   TableHeaderCell,
   TableRow,
   Text,
+  Tooltip,
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
@@ -143,20 +144,28 @@ export function DomainsTable({
                 </Button>
                 {manageableTeams.length > 0 && (
                   <>
-                    <Button
-                      icon={<ArrowSwapRegular />}
-                      size="small"
-                      appearance="subtle"
-                      title={t("apps.moveToTeam")}
-                      onClick={() => onTransferDomain(d)}
-                    />
-                    <Button
-                      icon={<CopyRegular />}
-                      size="small"
-                      appearance="subtle"
-                      title={t("domains.shareDomainWithTeam")}
-                      onClick={() => onShareDomain(d)}
-                    />
+                    <Tooltip
+                      content={t("apps.moveToTeam")}
+                      relationship="label"
+                    >
+                      <Button
+                        icon={<ArrowSwapRegular />}
+                        size="small"
+                        appearance="subtle"
+                        onClick={() => onTransferDomain(d)}
+                      />
+                    </Tooltip>
+                    <Tooltip
+                      content={t("domains.shareDomainWithTeam")}
+                      relationship="label"
+                    >
+                      <Button
+                        icon={<CopyRegular />}
+                        size="small"
+                        appearance="subtle"
+                        onClick={() => onShareDomain(d)}
+                      />
+                    </Tooltip>
                   </>
                 )}
                 <DeleteDomainDialog domain={d} onDelete={onDelete} />

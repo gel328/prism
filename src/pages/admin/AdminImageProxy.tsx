@@ -6,6 +6,13 @@
 
 import {
   Button,
+  Dialog,
+  DialogActions,
+  DialogBody,
+  DialogContent,
+  DialogSurface,
+  DialogTitle,
+  DialogTrigger,
   Input,
   Link,
   Table,
@@ -15,6 +22,7 @@ import {
   TableHeaderCell,
   TableRow,
   Text,
+  Tooltip,
   tokens,
 } from "@fluentui/react-components";
 import { useState } from "react";
@@ -34,6 +42,7 @@ export function AdminImageProxy() {
   const [appliedSearchUrl, setAppliedSearchUrl] = useState("");
   const [appliedFilterCreator, setAppliedFilterCreator] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
 
   const { data, isLoading } = useQuery({
     queryKey: [
@@ -149,14 +158,15 @@ export function AdminImageProxy() {
             {t("admin.loginErrors.clearFilters")}
           </Button>
         )}
-        <Button
-          appearance="outline"
-          disabled={sweepMut.isPending}
-          onClick={() => sweepMut.mutate()}
-          title={t("admin.imageProxySweepHint")}
-        >
-          {t("admin.imageProxySweepButton")}
-        </Button>
+        <Tooltip content={t("admin.imageProxySweepHint")} relationship="label">
+          <Button
+            appearance="outline"
+            disabled={sweepMut.isPending}
+            onClick={() => sweepMut.mutate()}
+          >
+            {t("admin.imageProxySweepButton")}
+          </Button>
+        </Tooltip>
       </div>
 
       {sweepMessage && (
@@ -220,9 +230,10 @@ export function AdminImageProxy() {
                       fontSize: 11,
                       color: tokens.colorNeutralForeground3,
                     }}
-                    title={m.id}
                   >
-                    {m.id.slice(0, 12)}…
+                    <Tooltip content={m.id} relationship="description">
+                      <span>{m.id.slice(0, 12)}…</span>
+                    </Tooltip>
                   </TableCell>
                   <TableCell
                     style={{
@@ -232,26 +243,29 @@ export function AdminImageProxy() {
                       textOverflow: "ellipsis",
                       whiteSpace: "nowrap",
                     }}
-                    title={m.url}
                   >
-                    <Link
-                      href={`/api/proxy/image/${m.id}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      {m.url}
-                    </Link>
+                    <Tooltip content={m.url} relationship="description">
+                      <Link
+                        href={`/api/proxy/image/${m.id}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        {m.url}
+                      </Link>
+                    </Tooltip>
                   </TableCell>
                   <TableCell style={{ fontSize: 12 }}>
                     {m.created_by ? (
-                      <span
-                        style={{ fontFamily: "monospace" }}
-                        title={m.created_by}
+                      <Tooltip
+                        content={m.created_by}
+                        relationship="description"
                       >
-                        {m.created_by_username ??
-                          m.created_by_display_name ??
-                          m.created_by.slice(0, 8) + "…"}
-                      </span>
+                        <span style={{ fontFamily: "monospace" }}>
+                          {m.created_by_username ??
+                            m.created_by_display_name ??
+                            m.created_by.slice(0, 8) + "…"}
+                        </span>
+                      </Tooltip>
                     ) : (
                       <Text
                         size={200}
@@ -274,13 +288,7 @@ export function AdminImageProxy() {
                       disabled={
                         deleteMut.isPending && deleteMut.variables === m.id
                       }
-                      onClick={() => {
-                        if (
-                          window.confirm(t("admin.imageProxyDeleteConfirm"))
-                        ) {
-                          deleteMut.mutate(m.id);
-                        }
-                      }}
+                      onClick={() => setPendingDeleteId(m.id)}
                       style={{ color: tokens.colorPaletteRedForeground1 }}
                     >
                       {t("admin.imageProxyDelete")}
@@ -321,6 +329,35 @@ export function AdminImageProxy() {
           </Button>
         </div>
       )}
+
+      <Dialog
+        open={pendingDeleteId !== null}
+        onOpenChange={(_, d) => {
+          if (!d.open) setPendingDeleteId(null);
+        }}
+      >
+        <DialogSurface>
+          <DialogBody>
+            <DialogTitle>{t("admin.imageProxyDelete")}</DialogTitle>
+            <DialogContent>{t("admin.imageProxyDeleteConfirm")}</DialogContent>
+            <DialogActions>
+              <DialogTrigger disableButtonEnhancement>
+                <Button>{t("common.cancel")}</Button>
+              </DialogTrigger>
+              <Button
+                appearance="primary"
+                style={{ background: tokens.colorPaletteRedBackground3 }}
+                onClick={() => {
+                  if (pendingDeleteId) deleteMut.mutate(pendingDeleteId);
+                  setPendingDeleteId(null);
+                }}
+              >
+                {t("admin.imageProxyDelete")}
+              </Button>
+            </DialogActions>
+          </DialogBody>
+        </DialogSurface>
+      </Dialog>
     </div>
   );
 }
