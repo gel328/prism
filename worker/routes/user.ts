@@ -8,7 +8,11 @@ import {
   randomBase64url,
 } from "../lib/crypto";
 import { requireAuth } from "../middleware/auth";
-import { proxyImageUrl } from "../lib/proxyImage";
+import {
+  proxyImageUrl,
+  registerMarkdownImageMappings,
+  sweepOrphanedImageProxyMappings,
+} from "../lib/proxyImage";
 import { validateImageUrl } from "../lib/imageValidation";
 import { hmacSign, deliverUserWebhooks } from "../lib/webhooks";
 import {
@@ -57,7 +61,7 @@ app.get("/me", async (c) => {
   const config = await getConfig(c.env.DB);
 
   return c.json({
-    user: safeUser(c.env.APP_URL, row),
+    user: await safeUser(c.env.APP_URL, c.env.DB, row),
     totp_enabled: (totp?.n ?? 0) > 0,
     passkey_count: passkeyCount?.n ?? 0,
     site_access_token_ttl_minutes: config.access_token_ttl_minutes,
@@ -287,6 +291,25 @@ app.patch("/me", async (c) => {
     .bind(...values)
     .run();
 
+  if (body.profile_readme !== undefined) {
+    // See note in POST /me/readme — anonymous public-profile viewers can't
+    // register URLs themselves, so we do it server-side at save time.
+    await registerMarkdownImageMappings(
+      c.env.DB,
+      typeof body.profile_readme === "string" ? body.profile_readme : null,
+      user.id,
+    );
+  }
+
+  // Avatar swap or README rewrite likely orphans the previous URL(s) —
+  // sweep in the background. Other field edits don't touch image columns
+  // so we skip the DB scan there.
+  if (body.avatar_url !== undefined || body.profile_readme !== undefined) {
+    c.executionCtx.waitUntil(
+      sweepOrphanedImageProxyMappings(c.env.DB).catch(() => {}),
+    );
+  }
+
   const row = await c.env.DB.prepare("SELECT * FROM users WHERE id = ?")
     .bind(user.id)
     .first<UserRow>();
@@ -314,7 +337,7 @@ app.patch("/me", async (c) => {
       c.env.APP_URL,
     ).catch(() => {}),
   );
-  return c.json({ user: safeUser(c.env.APP_URL, row!) });
+  return c.json({ user: await safeUser(c.env.APP_URL, c.env.DB, row!) });
 });
 
 // Change password
@@ -384,6 +407,12 @@ app.post("/me/avatar", async (c) => {
     .bind(avatarUrl, Math.floor(Date.now() / 1000), user.id)
     .run();
 
+  // Whatever external URL the user previously had as their avatar is no
+  // longer referenced — sweep so the proxy stops serving it.
+  c.executionCtx.waitUntil(
+    sweepOrphanedImageProxyMappings(c.env.DB).catch(() => {}),
+  );
+
   return c.json({ avatar_url: avatarUrl });
 });
 
@@ -424,6 +453,16 @@ app.post("/me/readme", async (c) => {
   )
     .bind(trimmed, now, now, user.id)
     .run();
+
+  // Pre-register every embedded image URL so anonymous public-profile
+  // viewers (who can't hit the auth-gated /register endpoint) still find
+  // each image already mapped when they fetch /api/proxy/image/<id>.
+  await registerMarkdownImageMappings(c.env.DB, trimmed, user.id);
+
+  // Old README's image URLs may now be unreferenced — sweep.
+  c.executionCtx.waitUntil(
+    sweepOrphanedImageProxyMappings(c.env.DB).catch(() => {}),
+  );
 
   return c.json({
     profile_readme: trimmed,
@@ -540,16 +579,21 @@ app.delete("/me", async (c) => {
   }
 
   await c.env.DB.prepare("DELETE FROM users WHERE id = ?").bind(user.id).run();
+  // Avatar + every README image just lost their owning row — sweep so
+  // those URLs stop being servable instead of waiting for the next cron.
+  c.executionCtx.waitUntil(
+    sweepOrphanedImageProxyMappings(c.env.DB).catch(() => {}),
+  );
   return c.json({ message: "Account deleted" });
 });
 
-function safeUser(baseUrl: string, row: UserRow) {
+async function safeUser(baseUrl: string, db: D1Database, row: UserRow) {
   return {
     id: row.id,
     email: row.email,
     username: row.username,
     display_name: row.display_name,
-    avatar_url: proxyImageUrl(baseUrl, row.avatar_url),
+    avatar_url: await proxyImageUrl(baseUrl, db, row.avatar_url),
     unproxied_avatar_url: row.avatar_url,
     role: row.role,
     email_verified: row.email_verified === 1,

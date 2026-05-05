@@ -3,11 +3,12 @@
 // The input source comes straight from another user's profile, so it must
 // be treated as fully untrusted:
 //   1. marked parses CommonMark/GFM into HTML.
-//   2. DOMPurify strips <script>, event handlers, javascript: URLs, and
+//   2. Every <img src> URL in that HTML is pre-registered with the worker's
+//      image proxy so the browser can fetch it through /api/proxy/image/<id>
+//      (the only URLs the proxy will serve). Registration is one round-trip
+//      per unique URL — proxyImageUrl memoizes locally too.
+//   3. DOMPurify strips <script>, event handlers, javascript: URLs, and
 //      anything outside the conservative allowlist below.
-//   3. Every <img src> is rewritten to route through /api/proxy/image so
-//      the viewer's IP is never sent to a third-party host and SVGs are
-//      sanitized server-side.
 //   4. External <a> links open in a new tab with rel="noopener noreferrer".
 //
 // Inline <svg> is permitted for things like badges. DOMPurify drops script
@@ -149,18 +150,40 @@ const ALLOWED_ATTR = [
   "height",
 ];
 
+/**
+ * Pull every <img src> URL out of a raw HTML string. Used so we can batch-
+ * register the URLs with the image proxy before sanitizing.
+ */
+function extractImageUrls(html: string): string[] {
+  const urls = new Set<string>();
+  const re = /<img\b[^>]*\bsrc\s*=\s*["']([^"']+)["']/gi;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(html)) !== null) urls.add(match[1]);
+  return [...urls];
+}
+
 /** Render markdown to a sanitized HTML string suitable for dangerouslySetInnerHTML. */
-export function renderMarkdown(source: string): string {
+export async function renderMarkdown(source: string): Promise<string> {
   const rawHtml = marked.parse(source, { async: false }) as string;
 
-  // Rewrite image sources to flow through the sanitizing image proxy and
-  // harden external <a> targets. Hooks are registered globally on DOMPurify
-  // — clear first so re-renders don't stack.
+  // Pre-register every embedded image URL so the proxy can serve it. This
+  // is a single round trip per unique URL (proxyImageUrl memoizes), so a
+  // README with N images costs at most N requests on first render.
+  const urlMap = new Map<string, string>();
+  await Promise.all(
+    extractImageUrls(rawHtml).map(async (raw) => {
+      urlMap.set(raw, await proxyImageUrl(raw));
+    }),
+  );
+
+  // Rewrite image sources from the pre-resolved map and harden external <a>
+  // targets. Hooks are registered globally on DOMPurify — clear first so
+  // re-renders don't stack.
   DOMPurify.removeAllHooks();
   DOMPurify.addHook("uponSanitizeAttribute", (node, data) => {
     if (node.nodeName === "IMG" && data.attrName === "src") {
-      const proxied = proxyImageUrl(data.attrValue);
-      data.attrValue = proxied || "";
+      const proxied = urlMap.get(data.attrValue) ?? "";
+      data.attrValue = proxied;
       if (!data.attrValue) data.keepAttr = false;
     }
   });

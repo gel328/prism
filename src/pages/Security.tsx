@@ -38,6 +38,7 @@ import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { startRegistration } from "@simplewebauthn/browser";
 import { useTranslation } from "react-i18next";
+import QRCode from "qrcode";
 import { api, ApiError } from "../lib/api";
 import type { GpgKeyInfo, PasskeyInfo, SessionInfo } from "../lib/api";
 import { SkeletonSecurityCard } from "../components/Skeletons";
@@ -187,6 +188,25 @@ export function Security() {
     secret: string;
     uri: string;
   } | null>(null);
+  // Render the QR client-side so the TOTP URI never leaves the browser.
+  // (The previous implementation hit api.qrserver.com, which would have
+  // received the otpauth URI — i.e. the shared secret — even when proxied.)
+  const [totpQrSvg, setTotpQrSvg] = useState<string | null>(null);
+  useEffect(() => {
+    if (!totpSetup) return;
+    let cancelled = false;
+    QRCode.toString(totpSetup.uri, {
+      type: "svg",
+      errorCorrectionLevel: "M",
+      margin: 1,
+      width: 200,
+    }).then((svg) => {
+      if (!cancelled) setTotpQrSvg(svg);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [totpSetup]);
   const [totpName, setTotpName] = useState("");
   const [totpCode, setTotpCode] = useState("");
   const [totpLoading, setTotpLoading] = useState(false);
@@ -548,13 +568,23 @@ export function Security() {
         {totpSetup && (
           <div className={styles.qrSection}>
             <Text>{t("security.scanQrCode")}</Text>
-            <img
-              src={`https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(totpSetup.uri)}&size=200x200`}
-              alt="TOTP QR Code"
-              width={200}
-              height={200}
-              style={{ borderRadius: 8 }}
-            />
+            {totpQrSvg && (
+              <div
+                role="img"
+                aria-label="TOTP QR Code"
+                style={{
+                  width: 200,
+                  height: 200,
+                  borderRadius: 8,
+                  background: "white",
+                  padding: 8,
+                  boxSizing: "border-box",
+                }}
+                // Generated locally by the qrcode library — no untrusted
+                // markup, so safe to drop straight into the DOM.
+                dangerouslySetInnerHTML={{ __html: totpQrSvg }}
+              />
+            )}
             <Text
               size={200}
               style={{

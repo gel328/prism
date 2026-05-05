@@ -176,7 +176,7 @@ app.get("/:id", optionalAuth, async (c) => {
       name: team.name,
       description: showDescription ? team.description : null,
       avatar_url: showAvatar
-        ? proxyImageUrl(c.env.APP_URL, team.avatar_url)
+        ? await proxyImageUrl(c.env.APP_URL, c.env.DB, team.avatar_url)
         : null,
       unproxied_avatar_url: showAvatar ? team.avatar_url : null,
       created_at: team.created_at,
@@ -185,7 +185,11 @@ app.get("/:id", optionalAuth, async (c) => {
           ? {
               username: owner.username,
               display_name: owner.display_name,
-              avatar_url: proxyImageUrl(c.env.APP_URL, owner.avatar_url),
+              avatar_url: await proxyImageUrl(
+                c.env.APP_URL,
+                c.env.DB,
+                owner.avatar_url,
+              ),
             }
           : owner
             ? // Owner exists but their user profile is private — surface
@@ -199,28 +203,42 @@ app.get("/:id", optionalAuth, async (c) => {
               }
             : null,
       member_count: memberCountRow?.n ?? null,
-      apps:
-        apps?.results.map((a) => ({
-          id: a.id,
-          client_id: a.client_id,
-          name: a.name,
-          description: a.description,
-          icon_url: proxyImageUrl(c.env.APP_URL, a.icon_url),
-          website_url: a.website_url,
-          created_at: a.created_at,
-        })) ?? null,
+      apps: apps
+        ? await Promise.all(
+            apps.results.map(async (a) => ({
+              id: a.id,
+              client_id: a.client_id,
+              name: a.name,
+              description: a.description,
+              icon_url: await proxyImageUrl(
+                c.env.APP_URL,
+                c.env.DB,
+                a.icon_url,
+              ),
+              website_url: a.website_url,
+              created_at: a.created_at,
+            })),
+          )
+        : null,
       domains:
         domains?.results.map((d) => ({
           domain: d.domain,
           verified_at: d.verified_at,
         })) ?? null,
-      members:
-        members?.results.map((m) => ({
-          username: m.username,
-          display_name: m.display_name,
-          avatar_url: proxyImageUrl(c.env.APP_URL, m.avatar_url),
-          role: m.role,
-        })) ?? null,
+      members: members
+        ? await Promise.all(
+            members.results.map(async (m) => ({
+              username: m.username,
+              display_name: m.display_name,
+              avatar_url: await proxyImageUrl(
+                c.env.APP_URL,
+                c.env.DB,
+                m.avatar_url,
+              ),
+              role: m.role,
+            })),
+          )
+        : null,
     },
   });
 });

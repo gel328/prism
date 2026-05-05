@@ -112,6 +112,7 @@ export function AdminSettings() {
   const [migratingCodes, setMigratingCodes] = useState(false);
   const [migratingSecrets, setMigratingSecrets] = useState(false);
   const [migratingTeamsAsUsers, setMigratingTeamsAsUsers] = useState(false);
+  const [migratingImageProxy, setMigratingImageProxy] = useState(false);
 
   const { data: secretsStatus, refetch: refetchSecretsStatus } = useQuery({
     queryKey: ["admin-secrets-status"],
@@ -123,6 +124,14 @@ export function AdminSettings() {
       queryKey: ["admin-teams-as-users-status"],
       queryFn: api.adminTeamsAsUsersStatus,
     });
+
+  const { data: imageProxyStatus, refetch: refetchImageProxyStatus } = useQuery(
+    {
+      queryKey: ["admin-image-proxy-status"],
+      queryFn: api.adminImageProxyStatus,
+      enabled: tab === "danger",
+    },
+  );
 
   const { data: resetStatus, refetch: refetchResetStatus } = useQuery({
     queryKey: ["admin-reset-status"],
@@ -212,6 +221,27 @@ export function AdminSettings() {
       );
     } finally {
       setMigratingCodes(false);
+    }
+  };
+
+  const handleMigrateImageProxy = async () => {
+    setMigratingImageProxy(true);
+    try {
+      const res = await api.adminMigrateImageProxy();
+      showMsg(
+        "success",
+        t("admin.migrateImageProxySuccess", { count: res.registered }),
+      );
+      await refetchImageProxyStatus();
+    } catch (err) {
+      showMsg(
+        "error",
+        err instanceof ApiError
+          ? err.message
+          : t("admin.migrateImageProxyFailed"),
+      );
+    } finally {
+      setMigratingImageProxy(false);
     }
   };
 
@@ -1235,6 +1265,43 @@ export function AdminSettings() {
               icon={migratingTeamsAsUsers ? <Spinner size="tiny" /> : undefined}
             >
               {t("admin.migrateTeamsAsUsersButton")}
+            </Button>
+          </div>
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 8,
+              alignItems: "flex-start",
+            }}
+          >
+            <Text weight="semibold">{t("admin.migrateImageProxyTitle")}</Text>
+            <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
+              {t("admin.migrateImageProxyDesc")}
+            </Text>
+            {imageProxyStatus && (
+              <Text
+                size={200}
+                style={{ color: tokens.colorNeutralForeground3 }}
+              >
+                {t("admin.migrateImageProxyStatus", {
+                  mapped: imageProxyStatus.mapped,
+                  discovered: imageProxyStatus.discovered,
+                })}
+              </Text>
+            )}
+            <Button
+              appearance="outline"
+              onClick={handleMigrateImageProxy}
+              disabled={
+                migratingImageProxy ||
+                (!!imageProxyStatus &&
+                  imageProxyStatus.discovered > 0 &&
+                  imageProxyStatus.mapped >= imageProxyStatus.discovered)
+              }
+              icon={migratingImageProxy ? <Spinner size="tiny" /> : undefined}
+            >
+              {t("admin.migrateImageProxyButton")}
             </Button>
           </div>
           <div

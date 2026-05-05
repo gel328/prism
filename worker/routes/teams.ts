@@ -13,7 +13,10 @@ import {
 } from "../lib/domainOwnership";
 import { getConfigValue } from "../lib/config";
 import { validateImageUrl } from "../lib/imageValidation";
-import { proxyImageUrl } from "../lib/proxyImage";
+import {
+  proxyImageUrl,
+  sweepOrphanedImageProxyMappings,
+} from "../lib/proxyImage";
 import type { DomainRow } from "../types";
 import { getConfig } from "../lib/config";
 import { sendEmail } from "../lib/email";
@@ -145,7 +148,7 @@ app.get("/join/:token", optionalAuth, async (c) => {
   return c.json({
     team: {
       ...team,
-      avatar_url: proxyImageUrl(c.env.APP_URL, team.avatar_url),
+      avatar_url: await proxyImageUrl(c.env.APP_URL, c.env.DB, team.avatar_url),
       unproxied_avatar_url: team.avatar_url,
     },
     invite: { role: invite.role, expires_at: invite.expires_at },
@@ -210,13 +213,15 @@ app.get("/", async (c) => {
     .all<TeamRow & { role: string; show_on_profile: number | null }>();
 
   return c.json({
-    teams: rows.results.map((t) => ({
-      ...t,
-      avatar_url: proxyImageUrl(c.env.APP_URL, t.avatar_url),
-      unproxied_avatar_url: t.avatar_url,
-      show_on_profile:
-        t.show_on_profile === null ? null : t.show_on_profile === 1,
-    })),
+    teams: await Promise.all(
+      rows.results.map(async (t) => ({
+        ...t,
+        avatar_url: await proxyImageUrl(c.env.APP_URL, c.env.DB, t.avatar_url),
+        unproxied_avatar_url: t.avatar_url,
+        show_on_profile:
+          t.show_on_profile === null ? null : t.show_on_profile === 1,
+      })),
+    ),
   });
 });
 
@@ -342,15 +347,17 @@ app.get("/:id", async (c) => {
   return c.json({
     team: {
       ...team,
-      avatar_url: proxyImageUrl(c.env.APP_URL, team.avatar_url),
+      avatar_url: await proxyImageUrl(c.env.APP_URL, c.env.DB, team.avatar_url),
       unproxied_avatar_url: team.avatar_url,
       my_role: member.role,
     },
-    members: members.results.map((m) => ({
-      ...m,
-      avatar_url: proxyImageUrl(c.env.APP_URL, m.avatar_url),
-      unproxied_avatar_url: m.avatar_url,
-    })),
+    members: await Promise.all(
+      members.results.map(async (m) => ({
+        ...m,
+        avatar_url: await proxyImageUrl(c.env.APP_URL, c.env.DB, m.avatar_url),
+        unproxied_avatar_url: m.avatar_url,
+      })),
+    ),
   });
 });
 
@@ -458,6 +465,11 @@ app.delete("/:id", async (c) => {
     return c.json({ error: "Only the team owner can delete the team" }, 403);
 
   await dissolveTeam(c.env.DB, id, user.id);
+
+  // Team avatar + every member-app icon may now be unreferenced — sweep.
+  c.executionCtx.waitUntil(
+    sweepOrphanedImageProxyMappings(c.env.DB).catch(() => {}),
+  );
 
   return c.json({ message: "Team deleted" });
 });
@@ -1173,7 +1185,7 @@ app.get("/:id/apps", async (c) => {
         row.website_url,
         row.redirect_uris,
       );
-      return safeApp(c.env.APP_URL, row, isVerified);
+      return safeApp(c.env.APP_URL, c.env.DB, row, isVerified);
     }),
   );
 
@@ -1269,7 +1281,10 @@ app.post("/:id/apps", async (c) => {
     body.website_url ?? null,
     JSON.stringify(body.redirect_uris),
   );
-  return c.json({ app: fullApp(c.env.APP_URL, row!, isVerified) }, 201);
+  return c.json(
+    { app: await fullApp(c.env.APP_URL, c.env.DB, row!, isVerified) },
+    201,
+  );
 });
 
 // Transfer a personal app into this team
@@ -1353,12 +1368,17 @@ app.delete("/:id/apps/:appId/transfer", async (c) => {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function safeApp(baseUrl: string, row: OAuthAppRow, isVerified: boolean) {
+async function safeApp(
+  baseUrl: string,
+  db: D1Database,
+  row: OAuthAppRow,
+  isVerified: boolean,
+) {
   return {
     id: row.id,
     name: row.name,
     description: row.description,
-    icon_url: proxyImageUrl(baseUrl, row.icon_url),
+    icon_url: await proxyImageUrl(baseUrl, db, row.icon_url),
     unproxied_icon_url: row.icon_url,
     website_url: row.website_url,
     client_id: row.client_id,
@@ -1375,9 +1395,14 @@ function safeApp(baseUrl: string, row: OAuthAppRow, isVerified: boolean) {
   };
 }
 
-function fullApp(baseUrl: string, row: OAuthAppRow, isVerified: boolean) {
+async function fullApp(
+  baseUrl: string,
+  db: D1Database,
+  row: OAuthAppRow,
+  isVerified: boolean,
+) {
   return {
-    ...safeApp(baseUrl, row, isVerified),
+    ...(await safeApp(baseUrl, db, row, isVerified)),
     client_secret: row.client_secret,
   };
 }

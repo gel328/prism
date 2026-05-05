@@ -101,7 +101,7 @@ async function issueSession(
       email: user.email,
       username: user.username,
       display_name: user.display_name,
-      avatar_url: proxyImageUrl(appUrl, user.avatar_url),
+      avatar_url: await proxyImageUrl(appUrl, db, user.avatar_url),
       unproxied_avatar_url: user.avatar_url,
       email_verified: user.email_verified === 1,
       sessionId,
@@ -281,7 +281,10 @@ app.post("/register", async (c) => {
     ttl,
     c.env.APP_URL,
   );
-  return c.json({ token, user: safeUser(c.env.APP_URL, user) }, 201);
+  return c.json(
+    { token, user: await safeUser(c.env.APP_URL, c.env.DB, user) },
+    201,
+  );
 });
 
 // ─── Login ───────────────────────────────────────────────────────────────────
@@ -465,7 +468,10 @@ app.post("/login", async (c) => {
     ttl,
     c.env.APP_URL,
   );
-  return c.json({ token, user: safeUser(c.env.APP_URL, user) });
+  return c.json({
+    token,
+    user: await safeUser(c.env.APP_URL, c.env.DB, user),
+  });
 });
 
 // ─── Logout ──────────────────────────────────────────────────────────────────
@@ -1144,7 +1150,10 @@ app.post("/passkey/auth/finish", async (c) => {
     ttl,
     c.env.APP_URL,
   );
-  return c.json({ token, user: safeUser(c.env.APP_URL, user) });
+  return c.json({
+    token,
+    user: await safeUser(c.env.APP_URL, c.env.DB, user),
+  });
 });
 
 // ─── Passkey verify (for site-scope 2FA gate) ────────────────────────────────
@@ -1535,21 +1544,25 @@ app.post("/gpg-login", async (c) => {
     ttl,
     c.env.APP_URL,
   );
-  return c.json({ token, user: safeUser(c.env.APP_URL, user) });
+  return c.json({
+    token,
+    user: await safeUser(c.env.APP_URL, c.env.DB, user),
+  });
 });
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function safeUser(
+async function safeUser(
   baseUrl: string,
+  db: D1Database,
   user: UserRow,
-): AuthUser & { unproxied_avatar_url: string | null } {
+): Promise<AuthUser & { unproxied_avatar_url: string | null }> {
   return {
     id: user.id,
     email: user.email,
     username: user.username,
     display_name: user.display_name,
-    avatar_url: proxyImageUrl(baseUrl, user.avatar_url),
+    avatar_url: await proxyImageUrl(baseUrl, db, user.avatar_url),
     unproxied_avatar_url: user.avatar_url,
     role: user.role,
     email_verified: user.email_verified === 1,

@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { useAuthStore } from "../store/auth";
 
 // API client — all requests go through here
@@ -5,21 +6,88 @@ import { useAuthStore } from "../store/auth";
 const BASE = "/api";
 
 /**
- * Returns a URL that routes an external image through the worker's sanitizing
- * reverse proxy.  SVGs are stripped of script content before being served.
- * Pass an empty string / nullish value to get back an empty string.
+ * Register an external image URL with the worker's sanitizing image proxy
+ * and return the public proxy URL the browser can fetch.
+ *
+ * The proxy no longer accepts arbitrary URLs on the request — every served
+ * URL must be in the image_proxy_mappings table. Server-side renders
+ * register on demand; from the client we hit POST /api/proxy/image/register
+ * (auth required) so user-supplied URLs (markdown <img>, etc.) get an id
+ * the proxy will resolve.
+ *
+ * Returns "" for nullish/empty input. Local assets (starting with "/") and
+ * already-proxied URLs (paths under /api/proxy/image/) are returned as-is.
+ * Failures fall back to "" so the caller can hide the broken image rather
+ * than render a dead URL.
  */
-export function proxyImageUrl(url: string | null | undefined): string {
+const proxyRegisterCache = new Map<string, Promise<string>>();
+
+export async function proxyImageUrl(
+  url: string | null | undefined,
+): Promise<string> {
   if (!url) return "";
-  const normalized = unproxyImageUrl(url);
-  // Already a local asset — no need to proxy
-  if (normalized.startsWith("/")) return normalized;
-  return `${BASE}/proxy/image?url=${btoa(normalized)}`;
+  const trimmed = url.trim();
+  if (!trimmed) return "";
+  if (trimmed.startsWith("/")) return trimmed;
+  // Already routed through the proxy — leave it alone.
+  try {
+    const parsed = new URL(trimmed, window.location.origin);
+    if (parsed.pathname.startsWith("/api/proxy/image/")) return trimmed;
+  } catch {
+    return "";
+  }
+  const cached = proxyRegisterCache.get(trimmed);
+  if (cached) return cached;
+  const pending = (async () => {
+    try {
+      const { id } = await request<{ id: string }>(
+        "POST",
+        "/proxy/image/register",
+        { url: trimmed },
+        getToken(),
+      );
+      return `${BASE}/proxy/image/${id}`;
+    } catch {
+      proxyRegisterCache.delete(trimmed);
+      return "";
+    }
+  })();
+  proxyRegisterCache.set(trimmed, pending);
+  return pending;
 }
 
 /**
- * Converts a proxied image URL (e.g. /api/proxy/image?url=BASE64) back to the
- * original external URL for form inputs.
+ * Hook variant of proxyImageUrl. Returns "" until the URL has been
+ * registered with the proxy, then the public proxy URL. Use this anywhere
+ * the JSX needs to drop the resolved URL into <img src=…> directly —
+ * keeps the registration round trip out of render.
+ */
+export function useProxiedImage(url: string | null | undefined): string {
+  const [resolved, setResolved] = useState<{ url: string; src: string } | null>(
+    null,
+  );
+  useEffect(() => {
+    if (!url) return;
+    let cancelled = false;
+    proxyImageUrl(url).then((src) => {
+      if (!cancelled) setResolved({ url, src });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [url]);
+  // Return the cached value only if it matches the current url, so stale
+  // resolutions from a previous prop don't paint between renders.
+  return resolved && resolved.url === url ? resolved.src : "";
+}
+
+/**
+ * Returns the original external URL for a value that may have been sent as
+ * a proxied URL by the server. The new id-based proxy format can't be
+ * reversed client-side (the URL only lives in the server-side mapping
+ * table), so callers should prefer the `unproxied_*` field the API
+ * returns alongside any proxied URL. This helper is retained for the
+ * legacy `?url=BASE64` form and for plain pass-through.
  */
 export function unproxyImageUrl(url: string | null | undefined): string {
   if (!url) return "";
@@ -27,13 +95,16 @@ export function unproxyImageUrl(url: string | null | undefined): string {
   if (!trimmed) return "";
   try {
     const parsed = new URL(trimmed, window.location.origin);
-    if (!parsed.pathname.endsWith("/api/proxy/image")) return trimmed;
-    const encoded = parsed.searchParams.get("url");
-    if (!encoded) return trimmed;
-    return atob(encoded);
+    if (parsed.pathname.endsWith("/api/proxy/image")) {
+      const encoded = parsed.searchParams.get("url");
+      if (encoded) return atob(encoded);
+    }
+    // New id-based format — the original URL is only known server-side.
+    if (parsed.pathname.startsWith("/api/proxy/image/")) return "";
   } catch {
     return trimmed;
   }
+  return trimmed;
 }
 
 export class ApiError extends Error {
@@ -869,6 +940,56 @@ export const api = {
     request<{ teams_mirrored: number; apps_realigned: number }>(
       "POST",
       "/admin/migrate-teams-as-users",
+      {},
+      getToken(),
+    ),
+  adminImageProxyStatus: () =>
+    request<{ discovered: number; mapped: number }>(
+      "GET",
+      "/admin/image-proxy-status",
+      undefined,
+      getToken(),
+    ),
+  adminMigrateImageProxy: () =>
+    request<{ registered: number }>(
+      "POST",
+      "/admin/migrate-image-proxy",
+      {},
+      getToken(),
+    ),
+  adminListImageProxy: (
+    page: number,
+    opts?: { q?: string; created_by?: string; limit?: number },
+  ) => {
+    const p = new URLSearchParams({ page: String(page) });
+    if (opts?.q) p.set("q", opts.q);
+    if (opts?.created_by) p.set("created_by", opts.created_by);
+    if (opts?.limit) p.set("limit", String(opts.limit));
+    return request<{
+      mappings: {
+        id: string;
+        url: string;
+        created_by: string | null;
+        created_at: number;
+        created_by_username: string | null;
+        created_by_display_name: string | null;
+      }[];
+      total: number;
+      page: number;
+      limit: number;
+    }>("GET", `/admin/image-proxy?${p.toString()}`, undefined, getToken());
+  },
+  adminDeleteImageProxy: (id: string) =>
+    request<{ message: string }>(
+      "DELETE",
+      `/admin/image-proxy/${id}`,
+      undefined,
+      getToken(),
+    ),
+  adminSweepImageProxy: () =>
+    request<{ deleted: number }>(
+      "POST",
+      "/admin/sweep-image-proxy",
       {},
       getToken(),
     ),

@@ -47,6 +47,7 @@ export function AdminLayout() {
     { value: "/admin/webhooks", label: t("admin.webhooksTab") },
     { value: "/admin/login-errors", label: t("admin.loginErrorsTab") },
     { value: "/admin/logs", label: t("admin.logsTab") },
+    { value: "/admin/image-proxy", label: t("admin.imageProxyTab") },
   ];
 
   const currentTab =

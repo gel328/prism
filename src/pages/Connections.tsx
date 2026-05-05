@@ -27,7 +27,7 @@ import {
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { api, ApiError } from "../lib/api";
+import { api, ApiError, useProxiedImage } from "../lib/api";
 import { SkeletonAppCards } from "../components/Skeletons";
 
 const useStyles = makeStyles({
@@ -81,6 +81,32 @@ const PROVIDER_ICON_URLS: Record<string, string> = {
   discord: "https://cdn.simpleicons.org/discord",
   telegram: "https://cdn.simpleicons.org/telegram",
 };
+
+// Routes the icon URL through the image proxy. Hook needs its own
+// component because the parent grid renders one per provider in a .map().
+function ProviderIcon({
+  url,
+  alt,
+  className,
+}: {
+  url: string;
+  alt: string;
+  className: string;
+}) {
+  const src = useProxiedImage(url);
+  if (!src) return null;
+  return (
+    <div className={className}>
+      <img
+        src={src}
+        alt={alt}
+        width={18}
+        height={18}
+        style={{ objectFit: "contain" }}
+      />
+    </div>
+  );
+}
 
 const ERROR_MESSAGES: Record<string, string> = {
   invalid_state:
@@ -361,15 +387,11 @@ export function Connections() {
                   }}
                 >
                   {providerIconUrl ? (
-                    <div className={styles.providerIconInner}>
-                      <img
-                        src={providerIconUrl}
-                        alt={p.name}
-                        width={18}
-                        height={18}
-                        style={{ objectFit: "contain" }}
-                      />
-                    </div>
+                    <ProviderIcon
+                      url={providerIconUrl}
+                      alt={p.name}
+                      className={styles.providerIconInner}
+                    />
                   ) : (
                     <GlobeRegular style={{ color: "white", fontSize: 20 }} />
                   )}

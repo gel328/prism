@@ -1,9 +1,15 @@
-// Reusable image URL input with inline preview through the sanitizing proxy
+// Reusable image URL input with inline preview through the sanitizing proxy.
+//
+// The preview is fetched through /api/proxy/image just like every other
+// external image surface — registering the URL takes one round trip on
+// first preview, then the cached id is reused. SVG sanitization still
+// applies, so a paste of a malicious SVG can't run inline scripts even
+// in the preview.
 
 import { Field, Input, Text, tokens } from "@fluentui/react-components";
 import { useTranslation } from "react-i18next";
 import { useEffect, useState } from "react";
-import { proxyImageUrl, unproxyImageUrl } from "../lib/api";
+import { unproxyImageUrl, useProxiedImage } from "../lib/api";
 
 interface Props {
   label: string;
@@ -35,8 +41,7 @@ export function ImageUrlInput({ label, value, onChange, placeholder }: Props) {
   const httpsError =
     normalizedValue && !isLocal && !isValidHttpsUrl(normalizedValue);
 
-  // Always preview through the proxy so SVGs are sanitized before display
-  const previewSrc = proxyImageUrl(normalizedValue);
+  const previewSrc = useProxiedImage(showPreview ? normalizedValue : null);
 
   return (
     <Field

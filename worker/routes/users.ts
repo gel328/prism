@@ -193,7 +193,7 @@ app.get("/:username", optionalAuth, async (c) => {
       username: row.username,
       display_name: showDisplayName ? row.display_name : null,
       avatar_url: showAvatar
-        ? proxyImageUrl(c.env.APP_URL, row.avatar_url)
+        ? await proxyImageUrl(c.env.APP_URL, c.env.DB, row.avatar_url)
         : null,
       unproxied_avatar_url: showAvatar ? row.avatar_url : null,
       email: showEmail ? row.email : null,
@@ -205,24 +205,38 @@ app.get("/:username", optionalAuth, async (c) => {
           name: k.name,
           created_at: k.created_at,
         })) ?? null,
-      authorized_apps:
-        authorizedApps?.results.map((a) => ({
-          client_id: a.client_id,
-          name: a.name,
-          icon_url: proxyImageUrl(c.env.APP_URL, a.icon_url),
-          website_url: a.website_url,
-          granted_at: a.granted_at,
-        })) ?? null,
-      owned_apps:
-        ownedApps?.results.map((a) => ({
-          id: a.id,
-          client_id: a.client_id,
-          name: a.name,
-          description: a.description,
-          icon_url: proxyImageUrl(c.env.APP_URL, a.icon_url),
-          website_url: a.website_url,
-          created_at: a.created_at,
-        })) ?? null,
+      authorized_apps: authorizedApps
+        ? await Promise.all(
+            authorizedApps.results.map(async (a) => ({
+              client_id: a.client_id,
+              name: a.name,
+              icon_url: await proxyImageUrl(
+                c.env.APP_URL,
+                c.env.DB,
+                a.icon_url,
+              ),
+              website_url: a.website_url,
+              granted_at: a.granted_at,
+            })),
+          )
+        : null,
+      owned_apps: ownedApps
+        ? await Promise.all(
+            ownedApps.results.map(async (a) => ({
+              id: a.id,
+              client_id: a.client_id,
+              name: a.name,
+              description: a.description,
+              icon_url: await proxyImageUrl(
+                c.env.APP_URL,
+                c.env.DB,
+                a.icon_url,
+              ),
+              website_url: a.website_url,
+              created_at: a.created_at,
+            })),
+          )
+        : null,
       domains:
         domains?.results.map((d) => ({
           domain: d.domain,
@@ -233,12 +247,20 @@ app.get("/:username", optionalAuth, async (c) => {
       // 0 visible teams, return [] (so the UI can render an empty section).
       joined_teams:
         showJoinedTeams || (joinedTeams?.results.length ?? 0) > 0
-          ? (joinedTeams?.results.map((t) => ({
-              id: t.id,
-              name: t.name,
-              avatar_url: proxyImageUrl(c.env.APP_URL, t.avatar_url),
-              role: t.role,
-            })) ?? [])
+          ? joinedTeams
+            ? await Promise.all(
+                joinedTeams.results.map(async (t) => ({
+                  id: t.id,
+                  name: t.name,
+                  avatar_url: await proxyImageUrl(
+                    c.env.APP_URL,
+                    c.env.DB,
+                    t.avatar_url,
+                  ),
+                  role: t.role,
+                })),
+              )
+            : []
           : null,
       // Raw markdown — the client sanitizes and rewrites images through the
       // proxy when rendering. We never render server-side, so no XSS surface

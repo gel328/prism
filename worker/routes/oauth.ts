@@ -327,7 +327,7 @@ async function resolveRequestedScopes(
       client_id: parsed.clientId,
       inner_scope: parsed.innerScope,
       app_name: target.name,
-      app_icon_url: proxyImageUrl(appUrl, target.icon_url),
+      app_icon_url: await proxyImageUrl(appUrl, db, target.icon_url),
       scope_title: def?.title ?? null,
       scope_desc: def?.description ?? null,
     });
@@ -411,35 +411,37 @@ app.get("/consents", requireAuth, async (c) => {
   }
 
   return c.json({
-    consents: consentRows.results.map((r) => ({
-      client_id: r.client_id,
-      scopes: JSON.parse(r.scopes) as string[],
-      granted_at: r.granted_at,
-      app: {
-        name: r.name,
-        description: r.description,
-        icon_url: proxyImageUrl(c.env.APP_URL, r.icon_url),
-        unproxied_icon_url: r.icon_url,
-        website_url: r.website_url,
-        is_verified: computeVerified(
-          new Set([
-            ...(domainsMap.get(r.owner_id) ?? []),
-            ...(r.team_id
-              ? (teamDomainsMap.get(r.team_id) ?? new Set<string>())
-              : []),
-          ]),
-          r.website_url,
-          r.redirect_uris,
-        ),
-      },
-      tokens: (tokensByApp.get(r.client_id) ?? []).map((t) => ({
-        id: t.id,
-        scopes: JSON.parse(t.scopes) as string[],
-        created_at: t.created_at,
-        expires_at: t.expires_at,
-        is_persistent: t.refresh_expires_at !== null,
+    consents: await Promise.all(
+      consentRows.results.map(async (r) => ({
+        client_id: r.client_id,
+        scopes: JSON.parse(r.scopes) as string[],
+        granted_at: r.granted_at,
+        app: {
+          name: r.name,
+          description: r.description,
+          icon_url: await proxyImageUrl(c.env.APP_URL, c.env.DB, r.icon_url),
+          unproxied_icon_url: r.icon_url,
+          website_url: r.website_url,
+          is_verified: computeVerified(
+            new Set([
+              ...(domainsMap.get(r.owner_id) ?? []),
+              ...(r.team_id
+                ? (teamDomainsMap.get(r.team_id) ?? new Set<string>())
+                : []),
+            ]),
+            r.website_url,
+            r.redirect_uris,
+          ),
+        },
+        tokens: (tokensByApp.get(r.client_id) ?? []).map((t) => ({
+          id: t.id,
+          scopes: JSON.parse(t.scopes) as string[],
+          created_at: t.created_at,
+          expires_at: t.expires_at,
+          is_persistent: t.refresh_expires_at !== null,
+        })),
       })),
-    })),
+    ),
   });
 });
 
@@ -576,10 +578,12 @@ app.get("/app-info", optionalAuth, async (c) => {
         avatar_url: string | null;
         role: string;
       }>();
-    userAdminTeams = results.map((t) => ({
-      ...t,
-      avatar_url: proxyImageUrl(c.env.APP_URL, t.avatar_url),
-    }));
+    userAdminTeams = await Promise.all(
+      results.map(async (t) => ({
+        ...t,
+        avatar_url: await proxyImageUrl(c.env.APP_URL, c.env.DB, t.avatar_url),
+      })),
+    );
   }
 
   // Merge per-request optional_scope param with the app's stored optional_scopes.
@@ -655,7 +659,7 @@ app.get("/app-info", optionalAuth, async (c) => {
       id: oauthApp.id,
       name: oauthApp.name,
       description: oauthApp.description,
-      icon_url: proxyImageUrl(c.env.APP_URL, oauthApp.icon_url),
+      icon_url: await proxyImageUrl(c.env.APP_URL, c.env.DB, oauthApp.icon_url),
       unproxied_icon_url: oauthApp.icon_url,
       website_url: oauthApp.website_url,
       is_verified: isVerified,
@@ -1241,7 +1245,7 @@ app.get("/2fa/info", optionalAuth, async (c) => {
       id: oauthApp.id,
       name: oauthApp.name,
       description: oauthApp.description,
-      icon_url: proxyImageUrl(c.env.APP_URL, oauthApp.icon_url),
+      icon_url: await proxyImageUrl(c.env.APP_URL, c.env.DB, oauthApp.icon_url),
       unproxied_icon_url: oauthApp.icon_url,
       website_url: oauthApp.website_url,
       is_verified: isVerified,
@@ -2133,11 +2137,13 @@ app.get("/me/apps", async (c) => {
     }>();
 
   return c.json({
-    apps: results.map((a) => ({
-      ...a,
-      icon_url: proxyImageUrl(c.env.APP_URL, a.icon_url),
-      unproxied_icon_url: a.icon_url,
-    })),
+    apps: await Promise.all(
+      results.map(async (a) => ({
+        ...a,
+        icon_url: await proxyImageUrl(c.env.APP_URL, c.env.DB, a.icon_url),
+        unproxied_icon_url: a.icon_url,
+      })),
+    ),
   });
 });
 
@@ -2166,11 +2172,13 @@ app.get("/me/teams", async (c) => {
     }>();
 
   return c.json({
-    teams: results.map((t) => ({
-      ...t,
-      avatar_url: proxyImageUrl(c.env.APP_URL, t.avatar_url),
-      unproxied_avatar_url: t.avatar_url,
-    })),
+    teams: await Promise.all(
+      results.map(async (t) => ({
+        ...t,
+        avatar_url: await proxyImageUrl(c.env.APP_URL, c.env.DB, t.avatar_url),
+        unproxied_avatar_url: t.avatar_url,
+      })),
+    ),
   });
 });
 
@@ -2634,7 +2642,7 @@ app.get("/me/profile", async (c) => {
     id: user.id,
     username: user.username,
     display_name: user.display_name,
-    avatar_url: proxyImageUrl(c.env.APP_URL, user.avatar_url),
+    avatar_url: await proxyImageUrl(c.env.APP_URL, c.env.DB, user.avatar_url),
     unproxied_avatar_url: user.avatar_url,
     email: resolved.scopes.includes("email") ? user.email : undefined,
     email_verified: resolved.scopes.includes("email")
@@ -2695,7 +2703,11 @@ app.patch("/me/profile", async (c) => {
     user: user
       ? {
           ...user,
-          avatar_url: proxyImageUrl(c.env.APP_URL, user.avatar_url),
+          avatar_url: await proxyImageUrl(
+            c.env.APP_URL,
+            c.env.DB,
+            user.avatar_url,
+          ),
           unproxied_avatar_url: user.avatar_url,
         }
       : null,
@@ -2849,16 +2861,22 @@ app.get("/me/team-apps", async (c) => {
     }>();
 
   return c.json({
-    apps: results.map((a) => ({
-      ...a,
-      icon_url: proxyImageUrl(c.env.APP_URL, a.icon_url),
-      unproxied_icon_url: a.icon_url,
-      team_avatar_url: proxyImageUrl(c.env.APP_URL, a.team_avatar_url),
-      unproxied_team_avatar_url: a.team_avatar_url,
-      is_public: a.is_public === 1,
-      is_active: a.is_active === 1,
-      can_grant: a.my_role === "owner" || a.my_role === "co-owner",
-    })),
+    apps: await Promise.all(
+      results.map(async (a) => ({
+        ...a,
+        icon_url: await proxyImageUrl(c.env.APP_URL, c.env.DB, a.icon_url),
+        unproxied_icon_url: a.icon_url,
+        team_avatar_url: await proxyImageUrl(
+          c.env.APP_URL,
+          c.env.DB,
+          a.team_avatar_url,
+        ),
+        unproxied_team_avatar_url: a.team_avatar_url,
+        is_public: a.is_public === 1,
+        is_active: a.is_active === 1,
+        can_grant: a.my_role === "owner" || a.my_role === "co-owner",
+      })),
+    ),
   });
 });
 
@@ -3160,7 +3178,9 @@ app.get("/me/admin/users", async (c) => {
     .first<{ total: number }>();
 
   return c.json({
-    users: results.map((u) => proxyUserAvatar(c.env.APP_URL, u)),
+    users: await Promise.all(
+      results.map((u) => proxyUserAvatar(c.env.APP_URL, c.env.DB, u)),
+    ),
     total: countRow?.total ?? 0,
     page: pageNum,
     limit: pageSize,
@@ -3179,7 +3199,7 @@ app.get("/me/admin/users/:id", async (c) => {
     .first();
 
   if (!user) return c.json({ error: "User not found" }, 404);
-  return c.json({ user: proxyUserAvatar(c.env.APP_URL, user) });
+  return c.json({ user: await proxyUserAvatar(c.env.APP_URL, c.env.DB, user) });
 });
 
 // PATCH /api/oauth/me/admin/users/:id — update a user (requires admin:users:write)
@@ -3231,7 +3251,9 @@ app.patch("/me/admin/users/:id", async (c) => {
     .bind(targetId)
     .first();
 
-  return c.json({ user: user ? proxyUserAvatar(c.env.APP_URL, user) : null });
+  return c.json({
+    user: user ? await proxyUserAvatar(c.env.APP_URL, c.env.DB, user) : null,
+  });
 });
 
 // DELETE /api/oauth/me/admin/users/:id — delete a user (requires admin:users:delete)
@@ -3305,7 +3327,9 @@ app.get("/me/site/users", async (c) => {
     .first<{ total: number }>();
 
   return c.json({
-    users: results.map((u) => proxyUserAvatar(c.env.APP_URL, u)),
+    users: await Promise.all(
+      results.map((u) => proxyUserAvatar(c.env.APP_URL, c.env.DB, u)),
+    ),
     total: countRow?.total ?? 0,
     page: pageNum,
     limit: pageSize,
@@ -3324,7 +3348,7 @@ app.get("/me/site/users/:id", async (c) => {
     .first();
 
   if (!user) return c.json({ error: "User not found" }, 404);
-  return c.json({ user: proxyUserAvatar(c.env.APP_URL, user) });
+  return c.json({ user: await proxyUserAvatar(c.env.APP_URL, c.env.DB, user) });
 });
 
 // ─── Team-scoped OAuth routes ─────────────────────────────────────────────────
@@ -3360,7 +3384,7 @@ app.get("/me/team/:teamId/info", async (c) => {
   return c.json({
     team: {
       ...team,
-      avatar_url: proxyImageUrl(c.env.APP_URL, team.avatar_url),
+      avatar_url: await proxyImageUrl(c.env.APP_URL, c.env.DB, team.avatar_url),
       unproxied_avatar_url: team.avatar_url,
     },
   });
@@ -3454,7 +3478,7 @@ app.get("/me/team/:teamId/members/:userId/profile", async (c) => {
   return c.json({
     member: {
       ...row,
-      avatar_url: proxyImageUrl(c.env.APP_URL, row.avatar_url),
+      avatar_url: await proxyImageUrl(c.env.APP_URL, c.env.DB, row.avatar_url),
       unproxied_avatar_url: row.avatar_url,
     },
   });
@@ -4085,7 +4109,7 @@ async function buildClaims(
   if (scopes.includes("profile")) {
     claims.name = user.display_name;
     claims.preferred_username = user.username;
-    claims.picture = proxyImageUrl(appUrl, user.avatar_url);
+    claims.picture = await proxyImageUrl(appUrl, db, user.avatar_url);
   }
   if (scopes.includes("email")) {
     claims.email = user.email;
@@ -4229,13 +4253,18 @@ async function buildIdToken(
   return signIdTokenRS256(claims, privateKey, kid, ttl);
 }
 
-function proxyUserAvatar<T extends Record<string, unknown>>(
+async function proxyUserAvatar<T extends Record<string, unknown>>(
   baseUrl: string,
+  db: D1Database,
   row: T,
-): T & { unproxied_avatar_url: unknown } {
+): Promise<T & { unproxied_avatar_url: unknown }> {
   return {
     ...row,
-    avatar_url: proxyImageUrl(baseUrl, row.avatar_url as string | null),
+    avatar_url: await proxyImageUrl(
+      baseUrl,
+      db,
+      row.avatar_url as string | null,
+    ),
     unproxied_avatar_url: row.avatar_url,
   };
 }

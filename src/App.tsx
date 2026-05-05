@@ -44,6 +44,7 @@ import { AdminConnections } from "./pages/admin/AdminConnections";
 import { AdminWebhooks } from "./pages/admin/AdminWebhooks";
 import { AdminLoginErrors } from "./pages/admin/AdminLoginErrors";
 import { AdminLogs } from "./pages/admin/AdminLogs";
+import { AdminImageProxy } from "./pages/admin/AdminImageProxy";
 import { TeamList } from "./pages/teams/TeamList";
 import { TeamDetail } from "./pages/teams/TeamDetail";
 import { TeamJoin } from "./pages/teams/TeamJoin";
@@ -214,6 +215,7 @@ export default function App() {
                 <Route path="webhooks" element={<AdminWebhooks />} />
                 <Route path="login-errors" element={<AdminLoginErrors />} />
                 <Route path="logs" element={<AdminLogs />} />
+                <Route path="image-proxy" element={<AdminImageProxy />} />
               </Route>
             </Route>
 

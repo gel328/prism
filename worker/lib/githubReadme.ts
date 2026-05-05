@@ -24,6 +24,7 @@
 
 import { getConfig, setConfigValue } from "./config";
 import { decryptSecret } from "./secretCrypto";
+import { registerMarkdownImageMappings } from "./proxyImage";
 
 export interface GithubReadmeFetchResult {
   /** HTTP status from the GitHub API. 200 = new content, 304 = unchanged,
@@ -329,6 +330,12 @@ export async function getGithubReadmeFromCache(
       )
       .bind(normalized, result.content, result.etag, now)
       .run();
+    // Public-profile viewers reach here unauthenticated, so they can't
+    // hit /api/proxy/image/register themselves — pre-register every
+    // embedded image URL while we have the new content in hand. Attribute
+    // to whichever Prism user triggered the fetch (cache is shared, but
+    // attribution to *some* user beats anonymous).
+    await registerMarkdownImageMappings(db, result.content, ownerUserId);
     return result.content;
   }
 

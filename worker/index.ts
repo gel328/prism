@@ -11,6 +11,7 @@ import { runReverification } from "./cron/reverify";
 import { runImapPoll } from "./cron/imap-poll";
 import { sweepExpiredPowUsed } from "./lib/pow";
 import { purgeAppEventQueue } from "./lib/app-events";
+import { sweepOrphanedImageProxyMappings } from "./lib/proxyImage";
 import { handleEmailWorker } from "./handlers/email";
 
 import siteRoutes from "./routes/site";
@@ -35,7 +36,7 @@ const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
 // Must be registered before secureHeaders/cors so its post-next runs last,
 // overriding the CORP and CORS headers those middlewares set globally.
-app.use("/api/proxy/image", async (c, next) => {
+app.use("/api/proxy/image/*", async (c, next) => {
   await next();
   c.res.headers.set("Cross-Origin-Resource-Policy", "cross-origin");
   c.res.headers.set("Access-Control-Allow-Origin", "*");
@@ -102,6 +103,7 @@ export default {
     ctx.waitUntil(runImapPoll(env, env.KV_CACHE));
     ctx.waitUntil(purgeAppEventQueue(env.DB).catch(() => {}));
     ctx.waitUntil(sweepExpiredPowUsed(env.DB).catch(() => {}));
+    ctx.waitUntil(sweepOrphanedImageProxyMappings(env.DB).catch(() => {}));
   },
 
   email: handleEmailWorker,

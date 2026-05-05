@@ -773,8 +773,9 @@ app.get("/pending/:key", async (c) => {
     provider: state.provider, // slug (used for display / URL)
     provider_name: source?.name ?? state.provider,
     profile_name: extractDisplayName(baseProvider, state.profileData),
-    profile_avatar: proxyImageUrl(
+    profile_avatar: await proxyImageUrl(
       c.env.APP_URL,
+      c.env.DB,
       extractProviderAvatar(baseProvider, state.profileData),
     ),
     suggested_username: extractUsername(
@@ -783,18 +784,26 @@ app.get("/pending/:key", async (c) => {
       state.providerEmail,
     ),
     suggested_display_name: extractDisplayName(baseProvider, state.profileData),
-    users: state.users?.map(
-      (u: {
-        id: string;
-        username: string;
-        display_name: string;
-        avatar_url: string | null;
-      }) => ({
-        ...u,
-        avatar_url: proxyImageUrl(c.env.APP_URL, u.avatar_url),
-        unproxied_avatar_url: u.avatar_url,
-      }),
-    ),
+    users: state.users
+      ? await Promise.all(
+          state.users.map(
+            async (u: {
+              id: string;
+              username: string;
+              display_name: string;
+              avatar_url: string | null;
+            }) => ({
+              ...u,
+              avatar_url: await proxyImageUrl(
+                c.env.APP_URL,
+                c.env.DB,
+                u.avatar_url,
+              ),
+              unproxied_avatar_url: u.avatar_url,
+            }),
+          ),
+        )
+      : undefined,
   });
 });
 
@@ -879,7 +888,7 @@ app.post("/complete", async (c) => {
 
     return c.json({
       token: await issueJWT(user, c.env.DB, c.env.KV_SESSIONS, c.env.APP_URL),
-      user: userToProfile(c.env.APP_URL, user),
+      user: await userToProfile(c.env.APP_URL, c.env.DB, user),
     });
   }
 
@@ -951,7 +960,7 @@ app.post("/complete", async (c) => {
 
     return c.json({
       token: await issueJWT(user, c.env.DB, c.env.KV_SESSIONS, c.env.APP_URL),
-      user: userToProfile(c.env.APP_URL, user),
+      user: await userToProfile(c.env.APP_URL, c.env.DB, user),
     });
   }
 
@@ -1379,7 +1388,7 @@ async function issueJWT(
       email: user.email,
       username: user.username,
       display_name: user.display_name,
-      avatar_url: proxyImageUrl(appUrl, user.avatar_url),
+      avatar_url: await proxyImageUrl(appUrl, db, user.avatar_url),
       unproxied_avatar_url: user.avatar_url,
       email_verified: user.email_verified === 1,
       sessionId,
@@ -1397,13 +1406,13 @@ async function issueJWT(
   return token;
 }
 
-function userToProfile(baseUrl: string, user: UserRow) {
+async function userToProfile(baseUrl: string, db: D1Database, user: UserRow) {
   return {
     id: user.id,
     email: user.email,
     username: user.username,
     display_name: user.display_name,
-    avatar_url: proxyImageUrl(baseUrl, user.avatar_url),
+    avatar_url: await proxyImageUrl(baseUrl, db, user.avatar_url),
     unproxied_avatar_url: user.avatar_url,
     role: user.role,
     email_verified: user.email_verified === 1,

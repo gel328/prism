@@ -17,7 +17,12 @@ import { verifyAnyTotp } from "../lib/totp";
 import { PRISM_INTERNAL_CLIENT_ID, grantSudo, isSudoActive } from "../lib/sudo";
 import { requireAdmin } from "../middleware/auth";
 import { validateImageUrl } from "../lib/imageValidation";
-import { proxyImageUrl } from "../lib/proxyImage";
+import {
+  collectReferencedImageUrls,
+  proxyImageUrl,
+  registerImageProxyMapping,
+  sweepOrphanedImageProxyMappings,
+} from "../lib/proxyImage";
 import {
   buildVerifiedDomainsMap,
   buildVerifiedTeamDomainsMap,
@@ -487,7 +492,7 @@ app.get("/users/:id", async (c) => {
       email: user.email,
       username: user.username,
       display_name: user.display_name,
-      avatar_url: proxyImageUrl(c.env.APP_URL, user.avatar_url),
+      avatar_url: await proxyImageUrl(c.env.APP_URL, c.env.DB, user.avatar_url),
       unproxied_avatar_url: user.avatar_url,
       role: user.role,
       email_verified: user.email_verified === 1,
@@ -572,6 +577,12 @@ app.delete("/users/:id", async (c) => {
   if (!user) return c.json({ error: "User not found" }, 404);
 
   await c.env.DB.prepare("DELETE FROM users WHERE id = ?").bind(id).run();
+  // A deleted user typically takes their avatar plus every README image
+  // out of circulation in one shot — sweep so the proxy stops serving
+  // them right away instead of waiting for the next cron tick.
+  c.executionCtx.waitUntil(
+    sweepOrphanedImageProxyMappings(c.env.DB).catch(() => {}),
+  );
   await logAudit(
     c.env.DB,
     admin.id,
@@ -635,19 +646,25 @@ app.get("/apps", async (c) => {
   ]);
 
   return c.json({
-    apps: apps.results.map((a) => {
-      const ownerDomains = domainsMap.get(a.owner_id) ?? new Set<string>();
-      const teamDomains =
-        teamDomainsMap.get(a.team_id ?? "") ?? new Set<string>();
-      const merged = new Set([...ownerDomains, ...teamDomains]);
-      return {
-        ...a,
-        icon_url: proxyImageUrl(c.env.APP_URL, a.icon_url),
-        unproxied_icon_url: a.icon_url,
-        team_avatar_url: proxyImageUrl(c.env.APP_URL, a.team_avatar_url),
-        is_verified: computeVerified(merged, a.website_url, a.redirect_uris),
-      };
-    }),
+    apps: await Promise.all(
+      apps.results.map(async (a) => {
+        const ownerDomains = domainsMap.get(a.owner_id) ?? new Set<string>();
+        const teamDomains =
+          teamDomainsMap.get(a.team_id ?? "") ?? new Set<string>();
+        const merged = new Set([...ownerDomains, ...teamDomains]);
+        return {
+          ...a,
+          icon_url: await proxyImageUrl(c.env.APP_URL, c.env.DB, a.icon_url),
+          unproxied_icon_url: a.icon_url,
+          team_avatar_url: await proxyImageUrl(
+            c.env.APP_URL,
+            c.env.DB,
+            a.team_avatar_url,
+          ),
+          is_verified: computeVerified(merged, a.website_url, a.redirect_uris),
+        };
+      }),
+    ),
     total: count?.n ?? 0,
     page,
     limit,
@@ -1164,6 +1181,163 @@ app.post("/migrate-teams-as-users", async (c) => {
   });
 });
 
+// ─── Backfill image proxy mappings ───────────────────────────────────────────
+//
+// Before migration 0043 the image proxy fetched whatever URL came in on the
+// querystring (any HTTPS host). The new design only proxies URLs registered
+// in image_proxy_mappings. This endpoint walks every column / blob where an
+// external image URL might live and registers it, so existing avatars/icons
+// keep loading after the cutover. Idempotent — run it again any time you
+// add new tables that hold image URLs.
+
+app.get("/image-proxy-status", async (c) => {
+  const urls = await collectReferencedImageUrls(c.env.DB);
+  const mapped = await c.env.DB.prepare(
+    "SELECT COUNT(*) AS n FROM image_proxy_mappings",
+  ).first<{ n: number }>();
+  return c.json({
+    discovered: urls.size,
+    mapped: mapped?.n ?? 0,
+  });
+});
+
+app.post("/migrate-image-proxy", async (c) => {
+  const admin = c.get("user");
+  const urls = await collectReferencedImageUrls(c.env.DB);
+  let registered = 0;
+  for (const url of urls) {
+    await registerImageProxyMapping(c.env.DB, url);
+    registered++;
+  }
+  await logAudit(
+    c.env.DB,
+    admin.id,
+    "admin.migrate_image_proxy",
+    "image_proxy_mappings",
+    null,
+    { registered },
+    getIp(c),
+    c.executionCtx,
+  );
+  return c.json({ registered });
+});
+
+// Manual orphan sweep — same job the cron runs, exposed here so admins
+// don't have to wait for the next tick after a big cleanup.
+app.post("/sweep-image-proxy", async (c) => {
+  const admin = c.get("user");
+  const { deleted } = await sweepOrphanedImageProxyMappings(c.env.DB);
+  await logAudit(
+    c.env.DB,
+    admin.id,
+    "admin.sweep_image_proxy",
+    "image_proxy_mappings",
+    null,
+    { deleted },
+    getIp(c),
+    c.executionCtx,
+  );
+  return c.json({ deleted });
+});
+
+// ─── Manage image proxy mappings ─────────────────────────────────────────────
+//
+// Lists every (id, url, created_by) row in image_proxy_mappings so admins
+// can see which URLs the proxy is currently willing to serve and remove any
+// that look abusive (e.g. someone pasted a tracking pixel into a README to
+// log viewers). Joins users for the human-readable creator name; `q`
+// matches the URL substring case-insensitively.
+
+app.get("/image-proxy", async (c) => {
+  const page = Math.max(1, parseInt(c.req.query("page") ?? "1", 10) || 1);
+  const limit = Math.min(
+    100,
+    Math.max(1, parseInt(c.req.query("limit") ?? "50", 10) || 50),
+  );
+  const offset = (page - 1) * limit;
+  const q = (c.req.query("q") ?? "").trim();
+  const createdBy = (c.req.query("created_by") ?? "").trim();
+
+  const where: string[] = [];
+  const binds: unknown[] = [];
+  if (q) {
+    where.push("LOWER(m.url) LIKE ?");
+    binds.push(`%${q.toLowerCase()}%`);
+  }
+  if (createdBy) {
+    if (createdBy === "system") {
+      where.push("m.created_by IS NULL");
+    } else {
+      where.push("m.created_by = ?");
+      binds.push(createdBy);
+    }
+  }
+  const whereSql = where.length > 0 ? `WHERE ${where.join(" AND ")}` : "";
+
+  const [rows, count] = await Promise.all([
+    c.env.DB.prepare(
+      `SELECT m.id, m.url, m.created_by, m.created_at,
+              u.username AS created_by_username,
+              u.display_name AS created_by_display_name
+       FROM image_proxy_mappings m
+       LEFT JOIN users u ON u.id = m.created_by
+       ${whereSql}
+       ORDER BY m.created_at DESC
+       LIMIT ? OFFSET ?`,
+    )
+      .bind(...binds, limit, offset)
+      .all<{
+        id: string;
+        url: string;
+        created_by: string | null;
+        created_at: number;
+        created_by_username: string | null;
+        created_by_display_name: string | null;
+      }>(),
+    c.env.DB.prepare(
+      `SELECT COUNT(*) AS n FROM image_proxy_mappings m ${whereSql}`,
+    )
+      .bind(...binds)
+      .first<{ n: number }>(),
+  ]);
+
+  return c.json({
+    mappings: rows.results,
+    total: count?.n ?? 0,
+    page,
+    limit,
+  });
+});
+
+app.delete("/image-proxy/:id", async (c) => {
+  const admin = c.get("user");
+  const id = c.req.param("id");
+  if (!/^[0-9a-f]{32}$/.test(id)) {
+    return c.json({ error: "Invalid id" }, 400);
+  }
+  const existing = await c.env.DB.prepare(
+    "SELECT id, url FROM image_proxy_mappings WHERE id = ?",
+  )
+    .bind(id)
+    .first<{ id: string; url: string }>();
+  if (!existing) return c.json({ error: "Mapping not found" }, 404);
+
+  await c.env.DB.prepare("DELETE FROM image_proxy_mappings WHERE id = ?")
+    .bind(id)
+    .run();
+  await logAudit(
+    c.env.DB,
+    admin.id,
+    "admin.image_proxy.delete",
+    "image_proxy_mappings",
+    id,
+    { url: existing.url },
+    getIp(c),
+    c.executionCtx,
+  );
+  return c.json({ message: "Mapping deleted" });
+});
+
 // ─── Migrate recovery codes to hashed format ──────────────────────────────────
 
 app.post("/migrate-recovery-codes", async (c) => {
@@ -1221,11 +1395,13 @@ app.get("/teams", async (c) => {
   ]);
 
   return c.json({
-    teams: teams.results.map((t) => ({
-      ...t,
-      avatar_url: proxyImageUrl(c.env.APP_URL, t.avatar_url),
-      unproxied_avatar_url: t.avatar_url,
-    })),
+    teams: await Promise.all(
+      teams.results.map(async (t) => ({
+        ...t,
+        avatar_url: await proxyImageUrl(c.env.APP_URL, c.env.DB, t.avatar_url),
+        unproxied_avatar_url: t.avatar_url,
+      })),
+    ),
     total: count?.n ?? 0,
     page,
     limit,
@@ -1242,6 +1418,12 @@ app.delete("/teams/:id", async (c) => {
   if (!team) return c.json({ error: "Team not found" }, 404);
 
   await dissolveTeam(c.env.DB, id, admin.id);
+
+  // Dissolving a team takes its avatar and all of its apps' icons out
+  // of circulation — sweep so the proxy stops serving those URLs now.
+  c.executionCtx.waitUntil(
+    sweepOrphanedImageProxyMappings(c.env.DB).catch(() => {}),
+  );
 
   await logAudit(
     c.env.DB,

@@ -7,7 +7,10 @@ import { requireAuth, tryPatAuth } from "../middleware/auth";
 import { getConfigValue } from "../lib/config";
 import { computeIsVerified, computeVerified } from "../lib/domainVerify";
 import { validateImageUrl } from "../lib/imageValidation";
-import { proxyImageUrl } from "../lib/proxyImage";
+import {
+  proxyImageUrl,
+  sweepOrphanedImageProxyMappings,
+} from "../lib/proxyImage";
 import { parseAppScope } from "../lib/scopes";
 import { APP_EVENT_TYPES } from "../lib/app-events";
 import { deliverUserWebhooks } from "../lib/webhooks";
@@ -257,11 +260,14 @@ app.get("/", async (c) => {
   ]);
   const verifiedDomains = new Set(domainRows.results.map((r) => r.domain));
   return c.json({
-    apps: rows.results.map((row) =>
-      safeApp(
-        c.env.APP_URL,
-        row,
-        computeVerified(verifiedDomains, row.website_url, row.redirect_uris),
+    apps: await Promise.all(
+      rows.results.map((row) =>
+        safeApp(
+          c.env.APP_URL,
+          c.env.DB,
+          row,
+          computeVerified(verifiedDomains, row.website_url, row.redirect_uris),
+        ),
       ),
     ),
   });
@@ -286,7 +292,9 @@ app.get("/:id", async (c) => {
     row.redirect_uris,
     row.team_id,
   );
-  return c.json({ app: fullApp(c.env.APP_URL, row, isVerified) });
+  return c.json({
+    app: await fullApp(c.env.APP_URL, c.env.DB, row, isVerified),
+  });
 });
 
 // Create personal app
@@ -389,7 +397,10 @@ app.post("/", async (c) => {
       c.env.APP_URL,
     ).catch(() => {}),
   );
-  return c.json({ app: fullApp(c.env.APP_URL, row!, isVerified) }, 201);
+  return c.json(
+    { app: await fullApp(c.env.APP_URL, c.env.DB, row!, isVerified) },
+    201,
+  );
 });
 
 // Update app
@@ -533,7 +544,9 @@ app.patch("/:id", async (c) => {
       c.env.APP_URL,
     ).catch(() => {}),
   );
-  return c.json({ app: fullApp(c.env.APP_URL, updatedRow!, isVerified) });
+  return c.json({
+    app: await fullApp(c.env.APP_URL, c.env.DB, updatedRow!, isVerified),
+  });
 });
 
 // Rotate client secret
@@ -592,6 +605,14 @@ app.delete("/:id", async (c) => {
     ),
     c.env.DB.prepare("DELETE FROM oauth_apps WHERE id = ?").bind(id),
   ]);
+
+  // The deleted app's icon URL is no longer referenced anywhere — sweep
+  // the proxy mapping in the background so the URL stops being servable.
+  if (row.icon_url) {
+    c.executionCtx.waitUntil(
+      sweepOrphanedImageProxyMappings(c.env.DB).catch(() => {}),
+    );
+  }
 
   c.executionCtx.waitUntil(
     deliverUserWebhooks(c.env.DB, user.id, "app.deleted", { app_id: id }).catch(
@@ -1344,12 +1365,17 @@ app.delete("/:id/scope-access-rules/:ruleId", async (c) => {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function safeApp(baseUrl: string, row: OAuthAppRow, isVerified: boolean) {
+async function safeApp(
+  baseUrl: string,
+  db: D1Database,
+  row: OAuthAppRow,
+  isVerified: boolean,
+) {
   return {
     id: row.id,
     name: row.name,
     description: row.description,
-    icon_url: proxyImageUrl(baseUrl, row.icon_url),
+    icon_url: await proxyImageUrl(baseUrl, db, row.icon_url),
     unproxied_icon_url: row.icon_url,
     website_url: row.website_url,
     client_id: row.client_id,
@@ -1371,9 +1397,14 @@ function safeApp(baseUrl: string, row: OAuthAppRow, isVerified: boolean) {
   };
 }
 
-function fullApp(baseUrl: string, row: OAuthAppRow, isVerified: boolean) {
+async function fullApp(
+  baseUrl: string,
+  db: D1Database,
+  row: OAuthAppRow,
+  isVerified: boolean,
+) {
   return {
-    ...safeApp(baseUrl, row, isVerified),
+    ...(await safeApp(baseUrl, db, row, isVerified)),
     client_secret: row.client_secret,
   };
 }

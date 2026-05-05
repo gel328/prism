@@ -1,9 +1,18 @@
 // Image reverse proxy — streams external images through the worker.
 // SVGs are sanitized to remove script execution vectors before being served.
+//
+// The proxy is no longer an open relay: instead of accepting an arbitrary
+// URL on the request, it looks up an opaque id in image_proxy_mappings.
+// URLs are registered server-side when avatars/icons are written or
+// rendered, and via POST /register for client-driven cases (markdown
+// previews, ImageUrlInput previews). Anything not in the mapping table
+// 404s.
 
 import { Hono } from "hono";
 import type { Variables } from "../types";
 import { isBlockedHost } from "../lib/safeFetch";
+import { registerImageProxyMapping } from "../lib/proxyImage";
+import { requireAuth } from "../middleware/auth";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
 const app = new Hono<AppEnv>();
@@ -52,22 +61,67 @@ function sanitizeSvg(raw: string): string {
   );
 }
 
-app.get("/", async (c) => {
-  const encoded = c.req.query("url");
-  if (!encoded) return c.json({ error: "url parameter required" }, 400);
-
-  let rawUrl: string;
+/**
+ * Authenticated registration endpoint. Lets the client pre-register an
+ * external image URL (for example, an <img> in a markdown blob the
+ * viewer is about to render, or the live preview in ImageUrlInput) and
+ * receive back the opaque id used in /api/proxy/image/<id>.
+ *
+ * Auth is required so the proxy table can't be used as a general fetch
+ * relay by unauthenticated traffic. Hosts on the SSRF blocklist are
+ * rejected up front.
+ */
+app.post("/register", requireAuth, async (c) => {
+  let body: { url?: unknown };
   try {
-    rawUrl = atob(encoded);
+    body = await c.req.json();
   } catch {
-    return c.json({ error: "Invalid base64 encoding" }, 400);
+    return c.json({ error: "Invalid JSON body" }, 400);
   }
+  if (typeof body.url !== "string" || !body.url) {
+    return c.json({ error: "url is required" }, 400);
+  }
+  const raw = body.url.trim();
+  if (raw.length > 2048) {
+    return c.json({ error: "url exceeds the 2048-character limit" }, 400);
+  }
+  let parsed: URL;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    return c.json({ error: "Invalid URL" }, 400);
+  }
+  if (parsed.protocol !== "https:") {
+    return c.json({ error: "Only HTTPS URLs are allowed" }, 400);
+  }
+  if (isBlockedHost(parsed.hostname)) {
+    return c.json({ error: "Host not allowed" }, 400);
+  }
+  const user = c.get("user");
+  const id = await registerImageProxyMapping(c.env.DB, raw, user?.id ?? null);
+  return c.json({ id });
+});
+
+app.get("/:id", async (c) => {
+  const id = c.req.param("id");
+  if (!/^[0-9a-f]{32}$/.test(id)) {
+    return c.json({ error: "Invalid id" }, 400);
+  }
+
+  const row = await c.env.DB.prepare(
+    "SELECT url FROM image_proxy_mappings WHERE id = ?",
+  )
+    .bind(id)
+    .first<{ url: string }>();
+  if (!row) return c.json({ error: "Unknown image id" }, 404);
+
+  const rawUrl = row.url;
 
   let parsed: URL;
   try {
     parsed = new URL(rawUrl);
   } catch {
-    return c.json({ error: "Invalid URL" }, 400);
+    return c.json({ error: "Invalid stored URL" }, 500);
   }
 
   if (parsed.protocol !== "https:") {

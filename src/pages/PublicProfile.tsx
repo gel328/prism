@@ -25,7 +25,7 @@ import {
 } from "@fluentui/react-icons";
 import { Link, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { useMemo } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { api, ApiError } from "../lib/api";
 import { renderMarkdown } from "../lib/markdown";
@@ -469,9 +469,19 @@ export function PublicProfile() {
 function ReadmeSection({ readme }: { readme: string }) {
   const styles = useStyles();
   const { t } = useTranslation();
-  // Re-render is rare (only on profile reload), but memoize anyway because
-  // the sanitize+image-rewrite pass walks the whole DOM.
-  const html = useMemo(() => renderMarkdown(readme), [readme]);
+  // renderMarkdown is async because every embedded <img> URL is registered
+  // with the image proxy before sanitizing. Re-render is rare (only on
+  // profile reload), so a stale flash between effect runs is acceptable.
+  const [html, setHtml] = useState("");
+  useEffect(() => {
+    let cancelled = false;
+    renderMarkdown(readme).then((rendered) => {
+      if (!cancelled) setHtml(rendered);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [readme]);
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
       <div className={styles.sectionTitle}>
