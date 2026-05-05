@@ -66,7 +66,11 @@ const PROVIDER_DEFS: Record<string, ProviderDef> = {
     authUrl: "https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
     tokenUrl: "https://login.microsoftonline.com/common/oauth2/v2.0/token",
     userUrl: "https://graph.microsoft.com/v1.0/me",
-    scopes: "openid email profile User.Read",
+    // offline_access is the Microsoft Identity Platform scope that
+    // unlocks refresh_token issuance; without it the token endpoint
+    // returns access_token only and any later /refresh call has nothing
+    // to exchange.
+    scopes: "openid email profile offline_access User.Read",
   },
   discord: {
     authUrl: "https://discord.com/api/oauth2/authorize",
@@ -86,7 +90,10 @@ const PROVIDER_DEFS: Record<string, ProviderDef> = {
     authUrl: "",
     tokenUrl: "",
     userUrl: "",
-    scopes: "openid email profile",
+    // offline_access is the standard OIDC scope that requests a refresh
+    // token. Most identity providers honour it; the few that don't
+    // simply ignore unknown scopes.
+    scopes: "openid email profile offline_access",
   },
   oauth2: {
     authUrl: "",
@@ -257,8 +264,29 @@ app.get("/:provider/begin", optionalAuth, async (c) => {
     state: nonce,
   });
 
-  if (source.provider === "google") params.set("access_type", "offline");
-  if (source.provider === "microsoft") params.set("response_mode", "query");
+  // Refresh-token plumbing is provider-specific:
+  //   • Google issues a refresh_token only on the FIRST consent unless
+  //     access_type=offline AND prompt=consent are present together —
+  //     subsequent re-auths return access_token only.
+  //   • Microsoft needs the offline_access scope (set in PROVIDER_DEFS)
+  //     plus prompt=consent to refresh the consent grant; response_mode
+  //     pins the callback to query string instead of fragment.
+  //   • Discord returns a refresh_token with the auth-code grant, but
+  //     when the user has already authorized the app it skips the
+  //     consent screen and may omit refresh_token. Forcing prompt=consent
+  //     guarantees we get one — without it the stored access token works
+  //     once and every later refresh fails.
+  if (source.provider === "google") {
+    params.set("access_type", "offline");
+    params.set("prompt", "consent");
+  }
+  if (source.provider === "microsoft") {
+    params.set("response_mode", "query");
+    params.set("prompt", "consent");
+  }
+  if (source.provider === "discord") {
+    params.set("prompt", "consent");
+  }
 
   return c.json({ redirect: `${source.authUrl}?${params}` });
 });
