@@ -136,7 +136,7 @@ export async function collectReferencedImageUrls(
       )
       .all<{ icon_url: string }>(),
     db
-      .prepare("SELECT value FROM config WHERE key = 'site_icon_url'")
+      .prepare("SELECT value FROM site_config WHERE key = 'site_icon_url'")
       .first<{ value: string }>(),
     db
       .prepare(
