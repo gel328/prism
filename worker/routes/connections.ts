@@ -1119,7 +1119,7 @@ app.post("/:id/refresh", requireAuth, async (c) => {
     ) {
       const refreshedAccessToken = await refreshAccessToken();
       if (!refreshedAccessToken) {
-        return c.json({ error: "reauthorization_required" }, 401);
+        return c.json({ error: "reauthorization_required" }, 400);
       }
       profileRes = await fetchProfile(refreshedAccessToken);
     }

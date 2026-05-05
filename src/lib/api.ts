@@ -107,6 +107,12 @@ export function unproxyImageUrl(url: string | null | undefined): string {
   return trimmed;
 }
 
+// Error messages the worker's auth middleware uses when it rejects a
+// request because the session/PAT itself is no good. Anything else
+// returning 401 is a business-logic failure (insufficient scope,
+// upstream provider auth dead, etc.) and must not log the user out.
+const SESSION_INVALID_ERRORS = new Set(["Unauthorized", "Token expired"]);
+
 export class ApiError extends Error {
   status: number;
   data: unknown;
@@ -149,14 +155,21 @@ async function request<T>(
     : await res.text();
 
   if (!res.ok) {
-    if (res.status === 401) {
-      useAuthStore.getState().clearAuth();
-    }
-
     const message =
       typeof data === "object" && data !== null && "error" in data
         ? String((data as Record<string, unknown>).error)
         : `HTTP ${res.status}`;
+
+    // Only clear local session state for 401s that actually mean "your
+    // Prism session is invalid". Other 401-shaped errors (OAuth scope
+    // failures, dead upstream provider tokens on a connection refresh,
+    // PAT scope rejections, etc.) carry a specific error code and must
+    // NOT log the user out — that's how clicking "Refresh" on a stale
+    // social connection used to instantly nuke the dashboard session.
+    if (res.status === 401 && SESSION_INVALID_ERRORS.has(message)) {
+      useAuthStore.getState().clearAuth();
+    }
+
     throw new ApiError(res.status, message, data);
   }
 
