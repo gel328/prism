@@ -54,6 +54,28 @@ function isBlockedIPv6(host: string): boolean {
   return false;
 }
 
+/**
+ * Validate a user-supplied URL we're about to issue an outbound HTTP
+ * request to (webhook delivery, image proxy, image-icon HEAD, etc.).
+ * Returns null if the URL is acceptable, otherwise a short rejection
+ * reason. HTTPS-only and the SSRF blocklist are both required — a worker
+ * fetch to an internal IP is just as dangerous from a webhook as it is
+ * from the image proxy.
+ */
+export function validateOutboundUrl(raw: string): string | null {
+  if (typeof raw !== "string" || !raw) return "url is required";
+  let parsed: URL;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    return "Invalid URL";
+  }
+  if (parsed.protocol !== "https:") return "URL must use https://";
+  if (isBlockedHost(parsed.hostname))
+    return "URL host is not allowed (loopback / private / link-local)";
+  return null;
+}
+
 /** True if `host` (URL.hostname — no port, no brackets) targets an internal,
  *  loopback, link-local, RFC1918, CGNAT, multicast, or otherwise-unsafe
  *  address. Trailing dot and case are normalized. */

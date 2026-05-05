@@ -563,6 +563,39 @@ app.get("/:provider/callback", async (c) => {
     );
   }
 
+  // GitHub's /user response carries `email` only when the user has set their
+  // primary as public, and it has no verified flag. Fetch /user/emails to
+  // pick up the verified primary explicitly so extractProviderEmail can
+  // gate on `email_verified`. Failure here is non-fatal — we just leave
+  // the email unverified.
+  if (provider === "github") {
+    try {
+      const emailsRes = await fetch("https://api.github.com/user/emails", {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          Accept: "application/json",
+          "User-Agent": "Prism/1.0",
+        },
+      });
+      if (emailsRes.ok) {
+        const emails = (await emailsRes.json()) as Array<{
+          email: string;
+          primary: boolean;
+          verified: boolean;
+        }>;
+        const primary = emails.find((e) => e.primary && e.verified);
+        if (primary) {
+          profileData.email = primary.email;
+          profileData.email_verified = true;
+        } else {
+          profileData.email_verified = false;
+        }
+      }
+    } catch {
+      // ignore — extractProviderEmail will refuse to trust an absent flag
+    }
+  }
+
   // `provider` is the base type (github/google/…); `slug` is the source identifier
   const providerUserId = extractProviderUserId(provider, profileData);
   const providerEmail = extractProviderEmail(provider, profileData);
@@ -922,16 +955,23 @@ app.post("/complete", async (c) => {
     if (taken) return c.json({ error: "Username is already taken" }, 409);
 
     const newUserId = randomId();
+    // email_verified is anchored to whether the SOCIAL provider asserted
+    // it — extractProviderEmail returns null when the provider didn't
+    // confirm the address, in which case we fall back to the synthetic
+    // placeholder and start the account at email_verified=0. Hard-coding
+    // `1` here would let an attacker who set victim@example.com on a
+    // fresh, unverified Discord account claim that address on Prism.
+    const trustedEmail = state.providerEmail;
     await c.env.DB.prepare(
       `INSERT INTO users (id, email, username, display_name, role, email_verified, is_active, created_at, updated_at)
-       VALUES (?, ?, ?, ?, 'user', 1, 1, ?, ?)`,
+       VALUES (?, ?, ?, ?, 'user', ?, 1, ?, ?)`,
     )
       .bind(
         newUserId,
-        state.providerEmail ??
-          `${state.provider}_${state.providerUserId}@prism.local`,
+        trustedEmail ?? `${state.provider}_${state.providerUserId}@prism.local`,
         username,
         display_name,
+        trustedEmail ? 1 : 0,
         now,
         now,
       )
@@ -1268,17 +1308,53 @@ function extractProviderUserId(
   }
 }
 
+/**
+ * Pull a TRUSTED email out of the provider's profile response. "Trusted"
+ * means the provider has confirmed the user controls that mailbox — we
+ * use this email to mark `users.email_verified=1` and to assert
+ * `email_verified=true` in OIDC id_tokens, so an unverified provider
+ * email here would let an attacker who set the field on a junk Discord/
+ * GitHub/etc. account claim someone else's address on Prism.
+ *
+ * Each branch must check the provider's own verified flag:
+ *   • discord — `verified: true` on the user object
+ *   • google / generic OIDC — `email_verified: true` claim
+ *   • microsoft graph — no per-email flag, treat as unverified
+ *   • github — `/user` returns `email` only when it's the public primary;
+ *     callers fetch `/user/emails` separately and pass the verified-primary
+ *     address through `profile.email` if and only if `verified=true`
+ *   • telegram — never provides email
+ *
+ * Returns null when the provider didn't confirm the address. Callers
+ * fall back to the synthetic `${provider}_${id}@prism.local` placeholder
+ * and leave `email_verified=0`.
+ */
 function extractProviderEmail(
   provider: string,
   profile: Record<string, unknown>,
 ): string | null {
-  if (provider === "telegram") return null; // Telegram does not provide email
-  const email = (profile.email as string) ?? null;
-  if (provider === "microsoft")
-    return (
-      (profile.mail as string) ?? (profile.userPrincipalName as string) ?? email
-    );
-  return email;
+  if (provider === "telegram") return null;
+  const email = typeof profile.email === "string" ? profile.email : null;
+
+  switch (provider) {
+    case "discord":
+      return profile.verified === true ? email : null;
+    case "google":
+    case "oidc":
+      return profile.email_verified === true ? email : null;
+    case "github":
+      // The connection callback explicitly hits /user/emails and only puts a
+      // verified-primary into profile.email; if that wasn't done (e.g. a
+      // legacy profile cached without the extra fetch), refuse to trust it.
+      return profile.email_verified === true ? email : null;
+    case "microsoft":
+      // Graph has no per-email confirmation — Outlook/Azure-AD addresses
+      // are administratively assigned, but personal accounts can carry an
+      // unverified `mail` field. Treat all as unverified.
+      return null;
+    default:
+      return null;
+  }
 }
 
 function extractDisplayName(

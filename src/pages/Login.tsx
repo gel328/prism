@@ -173,7 +173,7 @@ export function Login() {
 
   const handleSocialLogin = async (provider: string) => {
     const { redirect } = await api.connectionBegin(provider, { mode: "login" });
-    window.location.href = redirect;
+    window.location.assign(redirect);
   };
 
   const handleGpgBegin = async () => {

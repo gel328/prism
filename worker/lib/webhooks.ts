@@ -99,7 +99,11 @@ async function deliverToMatching(
           event,
           payload,
           result.status,
-          result.response,
+          // The upstream's body never lands in any user-/owner-facing
+          // delivery view (admin reads it for diagnostics only). Drop it
+          // here too so a future leak in those endpoints cannot turn the
+          // webhook into a response-oracle for arbitrary URLs.
+          null,
           result.success ? 1 : 0,
           now,
         )

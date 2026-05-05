@@ -59,7 +59,6 @@ export function DurationInput({
 
   useEffect(() => {
     if (focusedRef.current) return;
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional: syncing controlled prop into local buffer; guarded against the focus case via ref so user typing isn't clobbered
     setText(value === null ? "" : formatDuration(value, unit));
   }, [value, unit]);
 

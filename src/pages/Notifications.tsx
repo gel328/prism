@@ -12,7 +12,7 @@ import {
   tokens,
 } from "@fluentui/react-components";
 import { AlertRegular } from "@fluentui/react-icons";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api } from "../lib/api";
@@ -658,12 +658,15 @@ export function Notifications() {
   const [jsonText, setJsonText] = useState("");
   const [jsonError, setJsonError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (data) {
-      setRules(data.rules ?? {});
-      setDirty(false);
-    }
-  }, [data]);
+  // Sync server data into the local draft when it changes. React 19's
+  // strict rules want this expressed as a render-time set rather than an
+  // effect — guarded by an identity ref to avoid the infinite loop.
+  const [syncedData, setSyncedData] = useState<typeof data>(undefined);
+  if (data && data !== syncedData) {
+    setSyncedData(data);
+    setRules(data.rules ?? {});
+    setDirty(false);
+  }
 
   const mutation = useMutation({
     mutationFn: (r: NotificationRules) => api.updateNotificationPrefs(r),

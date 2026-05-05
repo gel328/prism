@@ -17,6 +17,7 @@ import { verifyAnyTotp } from "../lib/totp";
 import { PRISM_INTERNAL_CLIENT_ID, grantSudo, isSudoActive } from "../lib/sudo";
 import { requireAdmin } from "../middleware/auth";
 import { validateImageUrl } from "../lib/imageValidation";
+import { validateOutboundUrl } from "../lib/safeFetch";
 import {
   collectReferencedImageUrls,
   proxyImageUrl,
@@ -2400,11 +2401,8 @@ app.post("/webhooks", async (c) => {
   if (!body.name?.trim() || !body.url?.trim())
     return c.json({ error: "name and url are required" }, 400);
 
-  try {
-    new URL(body.url);
-  } catch {
-    return c.json({ error: "Invalid URL" }, 400);
-  }
+  const urlErr = validateOutboundUrl(body.url.trim());
+  if (urlErr) return c.json({ error: urlErr }, 400);
 
   const events = Array.isArray(body.events)
     ? body.events.filter((e) =>
@@ -2493,11 +2491,8 @@ app.patch("/webhooks/:id", async (c) => {
     values.push(body.name.trim());
   }
   if (body.url !== undefined) {
-    try {
-      new URL(body.url);
-    } catch {
-      return c.json({ error: "Invalid URL" }, 400);
-    }
+    const urlErr = validateOutboundUrl(body.url.trim());
+    if (urlErr) return c.json({ error: urlErr }, 400);
     sets.push("url = ?");
     values.push(body.url.trim());
   }
@@ -2586,7 +2581,6 @@ app.post("/webhooks/:id/test", async (c) => {
 
   const sig = await hmacSign(wh.secret, payload);
   let status: number | null = null;
-  let response: string | null;
   let success = false;
 
   try {
@@ -2602,10 +2596,9 @@ app.post("/webhooks/:id/test", async (c) => {
       signal: AbortSignal.timeout(10_000),
     });
     status = res.status;
-    response = (await res.text()).slice(0, 512);
     success = status >= 200 && status < 300;
-  } catch (err) {
-    response = String(err).slice(0, 512);
+  } catch {
+    // see /api/user/webhooks/:id/test for why we drop the body
   }
 
   await c.env.DB.prepare(
@@ -2617,13 +2610,13 @@ app.post("/webhooks/:id/test", async (c) => {
       "webhook.test",
       payload,
       status,
-      response,
+      null,
       success ? 1 : 0,
       now,
     )
     .run();
 
-  return c.json({ success, status, response });
+  return c.json({ success, status });
 });
 
 // List recent deliveries for a webhook

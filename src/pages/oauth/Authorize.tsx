@@ -155,16 +155,29 @@ export function Authorize() {
 
   const isSiteScope = useCallback((s: string) => s.startsWith("site:"), []);
 
-  // Auto-decline all site scopes when user has no 2FA enrolled
-  useEffect(() => {
-    if (!data?.requires_site_grant || data.site_scopes_grantable) return;
+  // Auto-decline all site scopes when the user has no 2FA enrolled.
+  // Render-time set (guarded by an identity ref) so the React 19 strict
+  // rule against setState-in-effect is satisfied.
+  const [autoDeclinedFor, setAutoDeclinedFor] = useState<{
+    siteGrant: boolean;
+    grantable: boolean;
+  } | null>(null);
+  if (
+    data?.requires_site_grant &&
+    !data.site_scopes_grantable &&
+    (autoDeclinedFor?.siteGrant !== data.requires_site_grant ||
+      autoDeclinedFor?.grantable !== data.site_scopes_grantable)
+  ) {
+    setAutoDeclinedFor({
+      siteGrant: data.requires_site_grant,
+      grantable: data.site_scopes_grantable,
+    });
     setDeclinedScopes((prev) => {
       const next = new Set(prev);
       data.scopes.filter(isSiteScope).forEach((s) => next.add(s));
       return next;
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- only re-run when grant flags change; data.scopes/isSiteScope are stable when those flags don't
-  }, [data?.requires_site_grant, data?.site_scopes_grantable]);
+  }
 
   const confirmPhrase = data?.site_scope_confirm_phrase ?? "grant site access";
   const requiresSiteGrant = data?.requires_site_grant ?? false;

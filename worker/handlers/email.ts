@@ -33,11 +33,15 @@ export async function handleEmailWorker(
     .first<{ id: string; email: string }>();
 
   if (!user) {
-    // Also check alternate emails
+    // Also check alternate emails. The sender MUST match the address being
+    // verified — otherwise anyone who can deliver to verify-<code>@<host>
+    // (i.e. the entire internet) flips the row to verified just by
+    // knowing the code. The matching code lives in user_emails.email so
+    // we look it up case-insensitively.
     const altEmail = await env.DB.prepare(
-      "SELECT id, user_id FROM user_emails WHERE verify_code = ? AND verified = 0",
+      "SELECT id, user_id FROM user_emails WHERE verify_code = ? AND LOWER(email) = ? AND verified = 0",
     )
-      .bind(code)
+      .bind(code, senderEmail)
       .first<{ id: string; user_id: string }>();
     if (altEmail) {
       await env.DB.prepare(

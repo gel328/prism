@@ -27,7 +27,7 @@ import {
   GlobeRegular,
   MailRegular,
 } from "@fluentui/react-icons";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
@@ -165,13 +165,12 @@ export function Profile() {
 
   // Seed the readme textarea from /me on first load. We don't keep the
   // textarea in sync with later refetches because that would clobber the
-  // user's in-progress edits.
-  useEffect(() => {
-    if (me && !readmeLoaded) {
-      setReadme(me.user.profile_readme ?? "");
-      setReadmeLoaded(true);
-    }
-  }, [me, readmeLoaded]);
+  // user's in-progress edits. Expressed as a render-time set (guarded by
+  // readmeLoaded) per React 19's set-state-in-effect rule.
+  if (me && !readmeLoaded) {
+    setReadme(me.user.profile_readme ?? "");
+    setReadmeLoaded(true);
+  }
 
   const handleSave = async () => {
     setSaveLoading(true);

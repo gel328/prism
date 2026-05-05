@@ -17,6 +17,7 @@ import {
   proxyImageUrl,
   sweepOrphanedImageProxyMappings,
 } from "../lib/proxyImage";
+import { validateRedirectUriForRegistration } from "../lib/redirectUri";
 import type { DomainRow } from "../types";
 import { getConfig } from "../lib/config";
 import { sendEmail } from "../lib/email";
@@ -31,21 +32,21 @@ const app = new Hono<AppEnv>();
 
 // ─── Role helpers ─────────────────────────────────────────────────────────────
 
-const ROLE_RANK: Record<string, number> = {
+export const ROLE_RANK: Record<string, number> = {
   owner: 4,
   "co-owner": 3,
   admin: 2,
   member: 1,
 };
 
-function hasRole(
+export function hasRole(
   memberRole: string,
   required: "member" | "admin" | "co-owner" | "owner",
 ): boolean {
   return (ROLE_RANK[memberRole] ?? 0) >= ROLE_RANK[required];
 }
 
-async function getMember(
+export async function getMember(
   db: D1Database,
   teamId: string,
   userId: string,
@@ -1221,11 +1222,9 @@ app.post("/:id/apps", async (c) => {
     return c.json({ error: "At least one redirect_uri required" }, 400);
 
   for (const uri of body.redirect_uris) {
-    try {
-      new URL(uri);
-    } catch {
-      return c.json({ error: `Invalid redirect_uri: ${uri}` }, 400);
-    }
+    const reason = validateRedirectUriForRegistration(uri);
+    if (reason)
+      return c.json({ error: `Invalid redirect_uri (${reason}): ${uri}` }, 400);
   }
 
   const allowedScopes = (

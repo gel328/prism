@@ -26,7 +26,7 @@ import {
   tokens,
 } from "@fluentui/react-components";
 import { CopyRegular, DeleteRegular } from "@fluentui/react-icons";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api, ApiError, type SiteInvite } from "../../lib/api";
@@ -167,7 +167,14 @@ export function AdminInvites() {
     }
   };
 
-  const now = Math.floor(Date.now() / 1000);
+  // `now` lives in state + an interval rather than Date.now() during
+  // render — the latter is an impure call and React 19 lints against it.
+  // Refreshing every 30s is enough to flip "expired" badges promptly.
+  const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
+  useEffect(() => {
+    const id = setInterval(() => setNow(Math.floor(Date.now() / 1000)), 30_000);
+    return () => clearInterval(id);
+  }, []);
 
   return (
     <div className={styles.section}>

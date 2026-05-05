@@ -91,15 +91,19 @@ export function SocialConfirm() {
   }, [key, navigate]);
 
   useEffect(() => {
-    if (data) {
-      if (data.type !== "register") {
-        navigate("/login", { replace: true });
-        return;
-      }
-      setUsername(data.suggested_username ?? "");
-      setDisplayName(data.suggested_display_name ?? "");
+    if (data && data.type !== "register") {
+      navigate("/login", { replace: true });
     }
   }, [data, navigate]);
+
+  // Seed the form draft from the suggested values once per data identity.
+  // Render-time set per React 19's set-state-in-effect rule.
+  const [seededFrom, setSeededFrom] = useState<typeof data>(undefined);
+  if (data && data.type === "register" && data !== seededFrom) {
+    setSeededFrom(data);
+    setUsername(data.suggested_username ?? "");
+    setDisplayName(data.suggested_display_name ?? "");
+  }
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();

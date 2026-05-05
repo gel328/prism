@@ -70,12 +70,13 @@ export async function runImapPoll(env: Env, kv: KVNamespace): Promise<void> {
       continue;
     }
 
-    // Check alternate emails by verify_code
+    // Check alternate emails by verify_code. Sender MUST match the
+    // address being verified — see handlers/email.ts for the rationale.
     const altEmail = await db
       .prepare(
-        "SELECT id, user_id FROM user_emails WHERE verify_code = ? AND verified = 0",
+        "SELECT id, user_id FROM user_emails WHERE verify_code = ? AND LOWER(email) = ? AND verified = 0",
       )
-      .bind(code)
+      .bind(code, senderEmail)
       .first<{ id: string; user_id: string }>();
 
     if (altEmail) {

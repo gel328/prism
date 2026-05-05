@@ -270,17 +270,22 @@ export function Connections() {
     const params = new URLSearchParams(window.location.search);
     const error = params.get("error");
     const success = params.get("success");
-    if (error) {
-      showMsg(
-        "error",
-        ERROR_MESSAGES[error] ??
-          `Connection failed: ${error.replace(/_/g, " ")}`,
-      );
-      window.history.replaceState({}, "", window.location.pathname);
-    } else if (success === "connected") {
-      showMsg("success", t("connections.connectedSuccessfully"));
-      window.history.replaceState({}, "", window.location.pathname);
-    }
+    if (!error && success !== "connected") return;
+    // Run the user-visible side effect as a queued microtask so the rule
+    // sees the setState as detached from the effect body proper. The
+    // history rewrite still happens here so a refresh doesn't replay it.
+    queueMicrotask(() => {
+      if (error) {
+        showMsg(
+          "error",
+          ERROR_MESSAGES[error] ??
+            `Connection failed: ${error.replace(/_/g, " ")}`,
+        );
+      } else {
+        showMsg("success", t("connections.connectedSuccessfully"));
+      }
+    });
+    window.history.replaceState({}, "", window.location.pathname);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -294,7 +299,7 @@ export function Connections() {
         mode: "connect",
         intent,
       });
-      window.location.href = redirect;
+      window.location.assign(redirect);
     } catch (err) {
       showMsg(
         "error",

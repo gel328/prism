@@ -20,6 +20,11 @@ import {
 import { hmacSign } from "../lib/webhooks";
 import { proxyImageUrl } from "../lib/proxyImage";
 import {
+  redirectUriMatchesRegistered,
+  validateRedirectUriForRegistration,
+} from "../lib/redirectUri";
+import { validateOutboundUrl } from "../lib/safeFetch";
+import {
   parseAppScope,
   parseUnboundTeamScope,
   parseBoundTeamScope,
@@ -27,6 +32,7 @@ import {
   UNBOUND_TEAM_SCOPES,
 } from "../lib/scopes";
 import { deliverAppEvent } from "../lib/app-events";
+import { getMember, hasRole, ROLE_RANK } from "./teams";
 import {
   deliverUserEmailNotifications,
   notificationActorMetaFromHeaders,
@@ -533,7 +539,7 @@ app.get("/app-info", optionalAuth, async (c) => {
   if (!oauthApp) return c.json({ error: "invalid_client" }, 400);
 
   const redirectUris = JSON.parse(oauthApp.redirect_uris) as string[];
-  if (!redirectUris.includes(redirect_uri))
+  if (!redirectUriMatchesRegistered(redirect_uri, redirectUris))
     return c.json({ error: "invalid_redirect_uri" }, 400);
 
   const requestedScopes = (scope ?? "").split(" ").filter(Boolean);
@@ -711,13 +717,9 @@ app.post("/authorize", requireAuth, async (c) => {
     revoke_existing_tokens?: boolean;
   }>();
 
-  if (body.action === "deny") {
-    const url = new URL(body.redirect_uri);
-    url.searchParams.set("error", "access_denied");
-    if (body.state) url.searchParams.set("state", body.state);
-    return c.json({ redirect: url.toString() });
-  }
-
+  // Look up the app and validate the redirect_uri BEFORE branching on
+  // action — otherwise the deny path becomes an open-redirect primitive
+  // (any authenticated user can be sent anywhere by hitting Deny).
   const oauthApp = await c.env.DB.prepare(
     "SELECT * FROM oauth_apps WHERE client_id = ? AND is_active = 1",
   )
@@ -726,8 +728,15 @@ app.post("/authorize", requireAuth, async (c) => {
   if (!oauthApp) return c.json({ error: "invalid_client" }, 400);
 
   const redirectUris = JSON.parse(oauthApp.redirect_uris) as string[];
-  if (!redirectUris.includes(body.redirect_uri))
+  if (!redirectUriMatchesRegistered(body.redirect_uri, redirectUris))
     return c.json({ error: "invalid_redirect_uri" }, 400);
+
+  if (body.action === "deny") {
+    const url = new URL(body.redirect_uri);
+    url.searchParams.set("error", "access_denied");
+    if (body.state) url.searchParams.set("state", body.state);
+    return c.json({ redirect: url.toString() });
+  }
 
   // OAuth 2.0 Security BCP §2.1.1: public clients MUST use PKCE.
   // Refuse to issue an authorization code without code_challenge so a code
@@ -1079,7 +1088,7 @@ app.post("/2fa/challenges", async (c) => {
   }
 
   const redirectUris = JSON.parse(oauthApp.redirect_uris) as string[];
-  if (!redirectUris.includes(redirect_uri)) {
+  if (!redirectUriMatchesRegistered(redirect_uri, redirectUris)) {
     return c.json({ error: "invalid_redirect_uri" }, 400);
   }
 
@@ -2038,7 +2047,11 @@ app.post("/revoke", async (c) => {
 async function resolveBearerToken(
   c: { req: { header(name: string): string | undefined }; env: Env },
   requiredScope: string,
-): Promise<{ userId: string; scopes: string[] } | null> {
+): Promise<{
+  userId: string;
+  scopes: string[];
+  clientId: string | null;
+} | null> {
   const auth = c.req.header("Authorization");
   if (!auth?.startsWith("Bearer ")) return null;
   const raw = auth.slice(7);
@@ -2046,6 +2059,10 @@ async function resolveBearerToken(
 
   let resolvedUserId: string;
   let resolvedScopes: string[];
+  // Null when the credential is a PAT — those aren't tied to an OAuth app
+  // and act directly as the user. Set to oauth_apps.client_id for JWT or
+  // opaque OAuth access tokens so callers can apply per-grant policy.
+  let resolvedClientId: string | null = null;
 
   // Personal Access Token (prism_pat_ prefix)
   if (raw.startsWith("prism_pat_")) {
@@ -2078,27 +2095,39 @@ async function resolveBearerToken(
     }
     // Revocation check: look up by jti (= oauth_tokens.id)
     const tokenRow = await c.env.DB.prepare(
-      "SELECT user_id, scopes, expires_at FROM oauth_tokens WHERE id = ?",
+      "SELECT user_id, scopes, expires_at, client_id FROM oauth_tokens WHERE id = ?",
     )
       .bind(payload.jti)
-      .first<{ user_id: string; scopes: string; expires_at: number }>();
+      .first<{
+        user_id: string;
+        scopes: string;
+        expires_at: number;
+        client_id: string;
+      }>();
     if (!tokenRow || tokenRow.expires_at < now) return null;
     const scopes = JSON.parse(tokenRow.scopes) as string[];
     if (!scopes.includes(requiredScope)) return null;
     resolvedUserId = tokenRow.user_id;
     resolvedScopes = scopes;
+    resolvedClientId = tokenRow.client_id;
   } else {
     // Legacy opaque access token (kept for backward compatibility)
     const tokenRow = await c.env.DB.prepare(
-      "SELECT user_id, scopes, expires_at FROM oauth_tokens WHERE access_token = ?",
+      "SELECT user_id, scopes, expires_at, client_id FROM oauth_tokens WHERE access_token = ?",
     )
       .bind(raw)
-      .first<{ user_id: string; scopes: string; expires_at: number }>();
+      .first<{
+        user_id: string;
+        scopes: string;
+        expires_at: number;
+        client_id: string;
+      }>();
     if (!tokenRow || tokenRow.expires_at < now) return null;
     const scopes = JSON.parse(tokenRow.scopes) as string[];
     if (!scopes.includes(requiredScope)) return null;
     resolvedUserId = tokenRow.user_id;
     resolvedScopes = scopes;
+    resolvedClientId = tokenRow.client_id;
   }
 
   // Reject tokens whose user has been deactivated/deleted, and any
@@ -2111,7 +2140,11 @@ async function resolveBearerToken(
     .first<{ id: string }>();
   if (!userRow) return null;
 
-  return { userId: resolvedUserId, scopes: resolvedScopes };
+  return {
+    userId: resolvedUserId,
+    scopes: resolvedScopes,
+    clientId: resolvedClientId,
+  };
 }
 
 // GET /api/oauth/me/apps — list the token owner's OAuth apps (requires apps:read)
@@ -2733,11 +2766,9 @@ app.post("/me/apps", async (c) => {
     return c.json({ error: "redirect_uris is required" }, 400);
 
   for (const uri of body.redirect_uris) {
-    try {
-      new URL(uri);
-    } catch {
-      return c.json({ error: `Invalid redirect_uri: ${uri}` }, 400);
-    }
+    const reason = validateRedirectUriForRegistration(uri);
+    if (reason)
+      return c.json({ error: `Invalid redirect_uri (${reason}): ${uri}` }, 400);
   }
 
   const allowedScopes = (
@@ -2918,11 +2949,12 @@ app.patch("/me/apps/:id", async (c) => {
   }
   if (body.redirect_uris !== undefined) {
     for (const uri of body.redirect_uris) {
-      try {
-        new URL(uri);
-      } catch {
-        return c.json({ error: `Invalid redirect_uri: ${uri}` }, 400);
-      }
+      const reason = validateRedirectUriForRegistration(uri);
+      if (reason)
+        return c.json(
+          { error: `Invalid redirect_uri (${reason}): ${uri}` },
+          400,
+        );
     }
     updates.push("redirect_uris = ?");
     values.push(JSON.stringify(body.redirect_uris));
@@ -3358,8 +3390,42 @@ async function resolveTeamToken(
   c: { req: { header(name: string): string | undefined }; env: Env },
   teamId: string,
   permission: string,
-): Promise<{ userId: string; scopes: string[] } | null> {
+): Promise<{
+  userId: string;
+  scopes: string[];
+  clientId: string | null;
+} | null> {
   return resolveBearerToken(c, `team:${teamId}:${permission}`);
+}
+
+/**
+ * Effective team role for a bearer credential acting on a team:
+ *   • PAT (clientId === null) — the user IS the actor, return their own
+ *     team role
+ *   • OAuth access token — the actor is the *app*; cap by the most-recent
+ *     grantor's CURRENT team_members.role. Demote/kick the grantor and
+ *     the app's effective rights drop with them.
+ *
+ * Returns null if there is no membership row to anchor the action on.
+ */
+async function effectiveTeamRole(
+  db: D1Database,
+  teamId: string,
+  resolved: { userId: string; clientId: string | null },
+): Promise<string | null> {
+  if (resolved.clientId === null) {
+    const member = await getMember(db, teamId, resolved.userId);
+    return member?.role ?? null;
+  }
+  const grant = await db
+    .prepare(
+      "SELECT grantor_user_id FROM team_scope_grants WHERE client_id = ? AND team_id = ? ORDER BY granted_at DESC LIMIT 1",
+    )
+    .bind(resolved.clientId, teamId)
+    .first<{ grantor_user_id: string }>();
+  if (!grant) return null;
+  const member = await getMember(db, teamId, grant.grantor_user_id);
+  return member?.role ?? null;
 }
 
 // GET /api/oauth/me/team/:teamId/info
@@ -3494,8 +3560,18 @@ app.post("/me/team/:teamId/members", async (c) => {
   if (!body.user_id) return c.json({ error: "user_id is required" }, 400);
 
   const role = body.role === "admin" ? "admin" : "member";
-  const now = Math.floor(Date.now() / 1000);
 
+  // Cap by the actor's effective team role — see effectiveTeamRole.
+  // Without this, an app holding `team:<id>:member:write` could promote
+  // a colluding user to admin even though the granting member never had
+  // owner-level rights.
+  const actorRole = await effectiveTeamRole(c.env.DB, teamId, resolved);
+  if (!actorRole || !hasRole(actorRole, "admin"))
+    return c.json({ error: "actor is no longer a team admin" }, 403);
+  if (role === "admin" && !hasRole(actorRole, "owner"))
+    return c.json({ error: "Only the owner can assign admin role" }, 403);
+
+  const now = Math.floor(Date.now() / 1000);
   const existing = await c.env.DB.prepare(
     "SELECT user_id FROM team_members WHERE team_id = ? AND user_id = ?",
   )
@@ -3520,9 +3596,27 @@ app.patch("/me/team/:teamId/members/:userId/role", async (c) => {
   if (!resolved) return c.json({ error: "insufficient_scope" }, 403);
 
   const body = await c.req.json<{ role: string }>();
-  const allowed = ["member", "admin"];
+  const allowed = ["member", "admin", "co-owner"];
   if (!allowed.includes(body.role))
     return c.json({ error: "Invalid role" }, 400);
+
+  const target = await getMember(c.env.DB, teamId, userId);
+  if (!target) return c.json({ error: "Member not found" }, 404);
+
+  // Mirror the dashboard guards in worker/routes/teams.ts so an app with
+  // `team:<id>:member:write` can never escalate beyond what the granting
+  // user could do at the dashboard.
+  if (target.role === "owner")
+    return c.json({ error: "Cannot change owner role" }, 403);
+  const actorRole = await effectiveTeamRole(c.env.DB, teamId, resolved);
+  if (!actorRole || !hasRole(actorRole, "admin"))
+    return c.json({ error: "actor is no longer a team admin" }, 403);
+  if (target.role === "co-owner" && actorRole !== "owner")
+    return c.json({ error: "Only the owner can change co-owner roles" }, 403);
+  if (body.role === "co-owner" && actorRole !== "owner")
+    return c.json({ error: "Only the owner can assign co-owner role" }, 403);
+  if ((ROLE_RANK[body.role] ?? 0) >= (ROLE_RANK[actorRole] ?? 0))
+    return c.json({ error: "Cannot grant a role at or above your own" }, 403);
 
   await c.env.DB.prepare(
     "UPDATE team_members SET role = ? WHERE team_id = ? AND user_id = ?",
@@ -3539,6 +3633,19 @@ app.delete("/me/team/:teamId/members/:userId", async (c) => {
   const userId = c.req.param("userId");
   const resolved = await resolveTeamToken(c, teamId, "member:write");
   if (!resolved) return c.json({ error: "insufficient_scope" }, 403);
+
+  const target = await getMember(c.env.DB, teamId, userId);
+  if (!target) return c.json({ error: "Member not found" }, 404);
+
+  // The dashboard refuses to remove the team owner; OAuth must too,
+  // otherwise an app with member:write can leave the team ownerless.
+  if (target.role === "owner")
+    return c.json({ error: "Cannot remove the team owner" }, 403);
+  const actorRole = await effectiveTeamRole(c.env.DB, teamId, resolved);
+  if (!actorRole || !hasRole(actorRole, "admin"))
+    return c.json({ error: "actor is no longer a team admin" }, 403);
+  if (target.role === "co-owner" && actorRole !== "owner")
+    return c.json({ error: "Only the owner can remove co-owners" }, 403);
 
   await c.env.DB.prepare(
     "DELETE FROM team_members WHERE team_id = ? AND user_id = ?",
@@ -3654,11 +3761,8 @@ app.post("/me/webhooks", async (c) => {
   if (!body.name?.trim() || !body.url?.trim())
     return c.json({ error: "name and url are required" }, 400);
 
-  try {
-    new URL(body.url);
-  } catch {
-    return c.json({ error: "Invalid URL" }, 400);
-  }
+  const urlErr = validateOutboundUrl(body.url.trim());
+  if (urlErr) return c.json({ error: urlErr }, 400);
 
   const events = Array.isArray(body.events)
     ? body.events.filter((e) =>
@@ -3728,11 +3832,8 @@ app.patch("/me/webhooks/:id", async (c) => {
     values.push(body.name.trim());
   }
   if (body.url !== undefined) {
-    try {
-      new URL(body.url);
-    } catch {
-      return c.json({ error: "Invalid URL" }, 400);
-    }
+    const urlErr = validateOutboundUrl(body.url.trim());
+    if (urlErr) return c.json({ error: urlErr }, 400);
     sets.push("url = ?");
     values.push(body.url.trim());
   }
@@ -3855,11 +3956,8 @@ app.post("/me/admin/webhooks", async (c) => {
   if (!body.name?.trim() || !body.url?.trim())
     return c.json({ error: "name and url are required" }, 400);
 
-  try {
-    new URL(body.url);
-  } catch {
-    return c.json({ error: "Invalid URL" }, 400);
-  }
+  const urlErr = validateOutboundUrl(body.url.trim());
+  if (urlErr) return c.json({ error: urlErr }, 400);
 
   const events = Array.isArray(body.events)
     ? body.events.filter((e) =>
@@ -3944,11 +4042,8 @@ app.patch("/me/admin/webhooks/:id", async (c) => {
     values.push(body.name.trim());
   }
   if (body.url !== undefined) {
-    try {
-      new URL(body.url);
-    } catch {
-      return c.json({ error: "Invalid URL" }, 400);
-    }
+    const urlErr = validateOutboundUrl(body.url.trim());
+    if (urlErr) return c.json({ error: urlErr }, 400);
     sets.push("url = ?");
     values.push(body.url.trim());
   }
@@ -4020,7 +4115,6 @@ app.post("/me/admin/webhooks/:id/test", async (c) => {
 
   const sig = await hmacSign(wh.secret, payload);
   let status: number | null = null;
-  let response: string | null;
   let success = false;
 
   try {
@@ -4036,10 +4130,10 @@ app.post("/me/admin/webhooks/:id/test", async (c) => {
       signal: AbortSignal.timeout(10_000),
     });
     status = res.status;
-    response = (await res.text()).slice(0, 512);
     success = status >= 200 && status < 300;
-  } catch (err) {
-    response = String(err).slice(0, 512);
+  } catch {
+    // Connect/timeout errors are reflected as `success=false` with no
+    // body — see /api/user/webhooks/:id/test for the rationale.
   }
 
   await c.env.DB.prepare(
@@ -4051,13 +4145,13 @@ app.post("/me/admin/webhooks/:id/test", async (c) => {
       "webhook.test",
       payload,
       status,
-      response,
+      null,
       success ? 1 : 0,
       now,
     )
     .run();
 
-  return c.json({ success, status, response });
+  return c.json({ success, status });
 });
 
 // GET /api/oauth/me/admin/webhooks/:id/deliveries — delivery history (requires admin:webhooks:read)

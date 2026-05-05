@@ -7,10 +7,12 @@ import { requireAuth, tryPatAuth } from "../middleware/auth";
 import { getConfigValue } from "../lib/config";
 import { computeIsVerified, computeVerified } from "../lib/domainVerify";
 import { validateImageUrl } from "../lib/imageValidation";
+import { validateOutboundUrl } from "../lib/safeFetch";
 import {
   proxyImageUrl,
   sweepOrphanedImageProxyMappings,
 } from "../lib/proxyImage";
+import { validateRedirectUriForRegistration } from "../lib/redirectUri";
 import { parseAppScope } from "../lib/scopes";
 import { APP_EVENT_TYPES } from "../lib/app-events";
 import { deliverUserWebhooks } from "../lib/webhooks";
@@ -322,11 +324,9 @@ app.post("/", async (c) => {
     return c.json({ error: "At least one redirect_uri required" }, 400);
 
   for (const uri of body.redirect_uris) {
-    try {
-      new URL(uri);
-    } catch {
-      return c.json({ error: `Invalid redirect_uri: ${uri}` }, 400);
-    }
+    const reason = validateRedirectUriForRegistration(uri);
+    if (reason)
+      return c.json({ error: `Invalid redirect_uri (${reason}): ${uri}` }, 400);
   }
 
   const allowedScopes = (
@@ -432,6 +432,17 @@ app.patch("/:id", async (c) => {
   if (body.icon_url) {
     const imgErr = await validateImageUrl(body.icon_url);
     if (imgErr) return c.json({ error: `icon_url: ${imgErr}` }, 400);
+  }
+
+  if (body.redirect_uris) {
+    for (const uri of body.redirect_uris) {
+      const reason = validateRedirectUriForRegistration(uri);
+      if (reason)
+        return c.json(
+          { error: `Invalid redirect_uri (${reason}): ${uri}` },
+          400,
+        );
+    }
   }
 
   // Check access rules for any newly-added app:* scopes
@@ -738,11 +749,8 @@ app.post("/:id/webhooks", async (c) => {
   }>();
 
   if (!body.url) return c.json({ error: "url is required" }, 400);
-  try {
-    new URL(body.url);
-  } catch {
-    return c.json({ error: "Invalid url" }, 400);
-  }
+  const urlErr = validateOutboundUrl(body.url);
+  if (urlErr) return c.json({ error: urlErr }, 400);
 
   const events = (body.events ?? ["*"]).filter(
     (e) => e === "*" || APP_EVENT_TYPES.has(e),
@@ -797,6 +805,11 @@ app.patch("/:id/webhooks/:wid", async (c) => {
     secret?: string;
     is_active?: boolean;
   }>();
+
+  if (body.url !== undefined) {
+    const urlErr = validateOutboundUrl(body.url);
+    if (urlErr) return c.json({ error: urlErr }, 400);
+  }
 
   const now = Math.floor(Date.now() / 1000);
   const updated = {
@@ -894,7 +907,9 @@ app.post("/:id/webhooks/:wid/test", async (c) => {
       "ping",
       payload,
       result.status,
-      result.response,
+      // see /api/user/webhooks/:id/test — store no body so test deliveries
+      // can never become an arbitrary-URL response oracle.
+      null,
       result.success ? 1 : 0,
       now,
     )

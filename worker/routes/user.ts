@@ -14,6 +14,7 @@ import {
   sweepOrphanedImageProxyMappings,
 } from "../lib/proxyImage";
 import { validateImageUrl } from "../lib/imageValidation";
+import { validateOutboundUrl } from "../lib/safeFetch";
 import { hmacSign, deliverUserWebhooks } from "../lib/webhooks";
 import {
   deliverUserEmailNotifications,
@@ -814,16 +815,18 @@ app.post("/me/emails/:id/set-primary", async (c) => {
   // Swap: move current primary to user_emails, promote alternate to users.email
   const oldPrimaryId = randomId();
   await c.env.DB.batch([
-    // Insert old primary as alternate
+    // Insert old primary as alternate. Carry the verification *state* but
+    // explicitly drop the verify_token / verify_code — those are tied to a
+    // specific outstanding inbound-mail challenge against the old primary
+    // address; reusing them on a new alternate row would let a user replay
+    // a code they already learned to flip a different address to verified.
     c.env.DB.prepare(
-      "INSERT INTO user_emails (id, user_id, email, verified, verify_token, verify_code, verified_via, verified_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO user_emails (id, user_id, email, verified, verify_token, verify_code, verified_via, verified_at, created_at) VALUES (?, ?, ?, ?, NULL, NULL, ?, ?, ?)",
     ).bind(
       oldPrimaryId,
       user.id,
       userRow.email,
       userRow.email_verified,
-      userRow.email_verify_token,
-      userRow.email_verify_code,
       userRow.email_verified_via,
       userRow.email_verified_at,
       now,
@@ -1056,11 +1059,8 @@ app.post("/webhooks", async (c) => {
   if (!body.name?.trim() || !body.url?.trim())
     return c.json({ error: "name and url are required" }, 400);
 
-  try {
-    new URL(body.url);
-  } catch {
-    return c.json({ error: "Invalid URL" }, 400);
-  }
+  const urlErr = validateOutboundUrl(body.url.trim());
+  if (urlErr) return c.json({ error: urlErr }, 400);
 
   const events = Array.isArray(body.events)
     ? body.events.filter((e) =>
@@ -1141,11 +1141,8 @@ app.patch("/webhooks/:id", async (c) => {
     values.push(body.name.trim());
   }
   if (body.url !== undefined) {
-    try {
-      new URL(body.url);
-    } catch {
-      return c.json({ error: "Invalid URL" }, 400);
-    }
+    const urlErr = validateOutboundUrl(body.url.trim());
+    if (urlErr) return c.json({ error: urlErr }, 400);
     sets.push("url = ?");
     values.push(body.url.trim());
   }
@@ -1217,7 +1214,6 @@ app.post("/webhooks/:id/test", async (c) => {
 
   const sig = await hmacSign(wh.secret, payload);
   let status: number | null = null;
-  let response: string | null;
   let success = false;
 
   try {
@@ -1233,10 +1229,11 @@ app.post("/webhooks/:id/test", async (c) => {
       signal: AbortSignal.timeout(10_000),
     });
     status = res.status;
-    response = (await res.text()).slice(0, 512);
     success = status >= 200 && status < 300;
-  } catch (err) {
-    response = String(err).slice(0, 512);
+  } catch {
+    // see the response_body=null INSERT below — bodies are intentionally
+    // dropped on this path so the test endpoint can never become an
+    // arbitrary-URL response oracle for an authenticated user.
   }
 
   await c.env.DB.prepare(
@@ -1248,13 +1245,18 @@ app.post("/webhooks/:id/test", async (c) => {
       "webhook.test",
       payload,
       status,
-      response,
+      // Don't persist the upstream body — the response field would
+      // otherwise leak to the user-facing deliveries endpoint and let
+      // an authenticated user use the webhook test as an arbitrary-URL
+      // GET reflection oracle. Per-attempt success / status is enough
+      // for diagnostics; bodies are intentionally dropped.
+      null,
       success ? 1 : 0,
       now,
     )
     .run();
 
-  return c.json({ success, status, response });
+  return c.json({ success, status });
 });
 
 // GET /api/user/webhooks/:id/deliveries

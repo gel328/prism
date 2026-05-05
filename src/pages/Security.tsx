@@ -144,15 +144,25 @@ export function Security() {
   const [refreshTtl, setRefreshTtl] = useState<number | null>(null);
   const [savingTtl, setSavingTtl] = useState(false);
 
-  useEffect(() => {
-    if (!me?.user) return;
+  // Sync server prefs into local draft. Expressed as a render-time set
+  // (guarded by an identity ref) per React 19's set-state-in-effect rule.
+  const [syncedTtlSource, setSyncedTtlSource] = useState<{
+    a: number | null;
+    r: number | null;
+  } | null>(null);
+  if (
+    me?.user &&
+    (syncedTtlSource === null ||
+      syncedTtlSource.a !== me.user.access_token_ttl_minutes ||
+      syncedTtlSource.r !== me.user.refresh_token_ttl_days)
+  ) {
     setAccessTtl(me.user.access_token_ttl_minutes);
     setRefreshTtl(me.user.refresh_token_ttl_days);
-  }, [
-    me?.user.access_token_ttl_minutes,
-    me?.user.refresh_token_ttl_days,
-    me?.user,
-  ]);
+    setSyncedTtlSource({
+      a: me.user.access_token_ttl_minutes,
+      r: me.user.refresh_token_ttl_days,
+    });
+  }
 
   const isValidTtl = (v: number | null): boolean =>
     v === null || (Number.isInteger(v) && v >= 1);
