@@ -2,8 +2,10 @@
 
 import {
   Button,
+  Dropdown,
   MessageBar,
   MessageBarBody,
+  Option,
   Spinner,
   Text,
   Textarea,
@@ -15,11 +17,15 @@ import { AlertRegular } from "@fluentui/react-icons";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { api } from "../lib/api";
+import { api, ApiError } from "../lib/api";
 import type {
   NotificationRules,
   NotificationEmailRule,
   NotificationTgRule,
+  NotificationRuleset,
+  NotificationRule,
+  NotificationRuleSendChannel,
+  NotificationLevel,
   NotifEmail,
   NotifTgConnection,
 } from "../lib/api";
@@ -304,6 +310,21 @@ const useStyles = makeStyles({
     borderRadius: tokens.borderRadiusMedium,
     border: `1px solid ${tokens.colorNeutralStroke2}`,
     background: tokens.colorNeutralBackground2,
+  },
+  rulesetBar: {
+    display: "flex",
+    flexDirection: "column",
+    gap: tokens.spacingVerticalXS,
+    padding: `${tokens.spacingVerticalS} ${tokens.spacingHorizontalM}`,
+    borderRadius: tokens.borderRadiusMedium,
+    border: `1px solid ${tokens.colorNeutralStroke2}`,
+    background: tokens.colorNeutralBackground2,
+  },
+  rulesetRow: {
+    display: "flex",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: tokens.spacingHorizontalS,
   },
   selectAllLabel: {
     fontSize: tokens.fontSizeBase200,
@@ -628,6 +649,623 @@ function BulkLevelControls({
   );
 }
 
+// ─── Ruleset section (rule engine) ───────────────────────────────────────────
+//
+// A "ruleset" is an ordered list of conditional rules — each rule has a
+// match (currently an event glob: "*", "security.*", etc.) and an action
+// (drop, or send to one or more channels at brief/full level). Activating
+// a ruleset replaces the per-event prefs at dispatch time. Disabled rules
+// are skipped; "stop" halts further evaluation.
+
+function RulesetSection(props: {
+  rulesets: NotificationRuleset[];
+  editingRuleset: NotificationRuleset | null;
+  editingRulesetId: string | null;
+  setEditingRulesetId: (id: string | null) => void;
+  activeRuleset: NotificationRuleset | null;
+  draftRules: NotificationRule[];
+  draftDirty: boolean;
+  emails: NotifEmail[];
+  tgConnections: NotifTgConnection[];
+  rulesetMessage: { intent: "success" | "error"; text: string } | null;
+  creating: boolean;
+  updating: boolean;
+  deleting: boolean;
+  knownEvents: string[];
+  onNew: () => void;
+  onRename: (rs: NotificationRuleset) => void;
+  onDelete: (rs: NotificationRuleset) => void;
+  onToggleActive: (rs: NotificationRuleset) => void;
+  onSaveDraft: () => void;
+  onDiscardDraft: () => void;
+  onPatchRule: (idx: number, patch: Partial<NotificationRule>) => void;
+  onMoveRule: (idx: number, delta: number) => void;
+  onDeleteRule: (idx: number) => void;
+  onAddRule: () => void;
+}) {
+  const styles = useStyles();
+  const { t } = useTranslation();
+  const {
+    rulesets,
+    editingRuleset,
+    editingRulesetId,
+    setEditingRulesetId,
+    draftRules,
+    draftDirty,
+    rulesetMessage,
+  } = props;
+
+  return (
+    <div className={styles.rulesetBar}>
+      <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
+        <span style={{ fontWeight: 600 }}>
+          {t("notifications.rulesetsLabel")}
+        </span>
+        {" — "}
+        {t("notifications.rulesetsHint")}
+      </Text>
+
+      <div className={styles.rulesetRow}>
+        <Dropdown
+          placeholder={
+            rulesets.length === 0
+              ? t("notifications.rulesetsEmpty")
+              : t("notifications.rulesetsSelectPlaceholder")
+          }
+          disabled={rulesets.length === 0}
+          value={editingRuleset?.name ?? ""}
+          selectedOptions={editingRulesetId ? [editingRulesetId] : []}
+          onOptionSelect={(_, d) => setEditingRulesetId(d.optionValue ?? null)}
+          style={{ minWidth: 220 }}
+        >
+          {rulesets.map((r) => (
+            <Option key={r.id} value={r.id} text={r.name}>
+              {r.name}
+              {r.is_active ? " ⭐" : ""}
+            </Option>
+          ))}
+        </Dropdown>
+        <Button size="small" onClick={props.onNew} disabled={props.creating}>
+          {t("notifications.rulesetsNew")}
+        </Button>
+        {editingRuleset && (
+          <>
+            <Button
+              size="small"
+              appearance={editingRuleset.is_active ? "primary" : "outline"}
+              disabled={props.updating}
+              onClick={() => props.onToggleActive(editingRuleset)}
+            >
+              {editingRuleset.is_active
+                ? t("notifications.rulesetsDeactivate")
+                : t("notifications.rulesetsActivate")}
+            </Button>
+            <Button
+              size="small"
+              appearance="subtle"
+              disabled={props.updating}
+              onClick={() => props.onRename(editingRuleset)}
+            >
+              {t("notifications.rulesetsRename")}
+            </Button>
+            <Button
+              size="small"
+              appearance="subtle"
+              disabled={props.deleting}
+              onClick={() => props.onDelete(editingRuleset)}
+              style={{ color: tokens.colorPaletteRedForeground1 }}
+            >
+              {t("notifications.rulesetsDelete")}
+            </Button>
+          </>
+        )}
+      </div>
+
+      {rulesetMessage && (
+        <Text
+          size={200}
+          style={{
+            color:
+              rulesetMessage.intent === "error"
+                ? tokens.colorPaletteRedForeground1
+                : tokens.colorPaletteGreenForeground1,
+          }}
+        >
+          {rulesetMessage.text}
+        </Text>
+      )}
+
+      {editingRuleset && (
+        <>
+          {draftRules.length === 0 && (
+            <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
+              {t("notifications.rulesetsRulesEmpty")}
+            </Text>
+          )}
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: tokens.spacingVerticalS,
+            }}
+          >
+            {draftRules.map((rule, idx) => (
+              <RuleEditorCard
+                key={rule.id}
+                index={idx}
+                rule={rule}
+                emails={props.emails}
+                tgConnections={props.tgConnections}
+                knownEvents={props.knownEvents}
+                isFirst={idx === 0}
+                isLast={idx === draftRules.length - 1}
+                onPatch={(p) => props.onPatchRule(idx, p)}
+                onMove={(d) => props.onMoveRule(idx, d)}
+                onDelete={() => props.onDeleteRule(idx)}
+              />
+            ))}
+          </div>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <Button size="small" onClick={props.onAddRule}>
+              {t("notifications.rulesetsAddRule")}
+            </Button>
+            <span style={{ flex: 1 }} />
+            {draftDirty && (
+              <Text
+                size={200}
+                style={{ color: tokens.colorPaletteMarigoldForeground1 }}
+              >
+                {t("notifications.rulesetsUnsaved")}
+              </Text>
+            )}
+            <Button
+              size="small"
+              disabled={!draftDirty || props.updating}
+              onClick={props.onDiscardDraft}
+            >
+              {t("common.discard")}
+            </Button>
+            <Button
+              size="small"
+              appearance="primary"
+              disabled={!draftDirty || props.updating}
+              onClick={props.onSaveDraft}
+            >
+              {props.updating ? (
+                <Spinner size="tiny" />
+              ) : (
+                t("common.saveChanges")
+              )}
+            </Button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function RuleAccountFilter(props: {
+  emails: NotifEmail[];
+  tgConnections: NotifTgConnection[];
+  value: string[];
+  onChange: (next: string[]) => void;
+}) {
+  const { t } = useTranslation();
+  const all: { key: string; label: string; icon: string }[] = [
+    ...props.emails.map((e) => ({
+      key: `email:${e.id}`,
+      label: e.email,
+      icon: "✉",
+    })),
+    ...props.tgConnections.map((c) => ({
+      key: `tg:${c.id}`,
+      label: c.username ? `@${c.username}` : c.name,
+      icon: "✈",
+    })),
+  ];
+  const selected = new Set(props.value);
+  const empty = props.value.length === 0;
+
+  function toggle(key: string) {
+    const next = new Set(selected);
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+    props.onChange([...next]);
+  }
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "flex-start",
+        gap: 8,
+        flexWrap: "wrap",
+      }}
+    >
+      <Text size={200} style={{ paddingTop: 4 }}>
+        {t("notifications.rulesetsMatchAccounts")}
+      </Text>
+      <div
+        style={{
+          display: "flex",
+          gap: 4,
+          flexWrap: "wrap",
+          flex: 1,
+          minWidth: 0,
+        }}
+      >
+        <Tooltip
+          content={t("notifications.rulesetsMatchAccountsAllHint")}
+          relationship="description"
+        >
+          <button
+            type="button"
+            onClick={() => props.onChange([])}
+            style={{
+              fontSize: 11,
+              padding: "2px 8px",
+              borderRadius: 12,
+              border: `1px solid ${tokens.colorNeutralStroke1}`,
+              background: empty
+                ? tokens.colorBrandBackground
+                : tokens.colorNeutralBackground1,
+              color: empty
+                ? tokens.colorNeutralForegroundOnBrand
+                : tokens.colorNeutralForeground2,
+              cursor: "pointer",
+            }}
+          >
+            {t("notifications.rulesetsMatchAccountsAll")}
+          </button>
+        </Tooltip>
+        {all.map((acc) => {
+          const on = selected.has(acc.key);
+          return (
+            <button
+              key={acc.key}
+              type="button"
+              onClick={() => toggle(acc.key)}
+              title={acc.label}
+              style={{
+                fontSize: 11,
+                padding: "2px 8px",
+                borderRadius: 12,
+                border: `1px solid ${tokens.colorNeutralStroke1}`,
+                background: on
+                  ? tokens.colorBrandBackground
+                  : tokens.colorNeutralBackground1,
+                color: on
+                  ? tokens.colorNeutralForegroundOnBrand
+                  : tokens.colorNeutralForeground2,
+                cursor: "pointer",
+                maxWidth: 200,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {acc.icon} {acc.label}
+            </button>
+          );
+        })}
+        {all.length === 0 && (
+          <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
+            {t("notifications.rulesetsMatchAccountsNone")}
+          </Text>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function RuleEditorCard(props: {
+  index: number;
+  rule: NotificationRule;
+  emails: NotifEmail[];
+  tgConnections: NotifTgConnection[];
+  knownEvents: string[];
+  isFirst: boolean;
+  isLast: boolean;
+  onPatch: (p: Partial<NotificationRule>) => void;
+  onMove: (delta: number) => void;
+  onDelete: () => void;
+}) {
+  const { t } = useTranslation();
+  const { rule } = props;
+  const enabled = rule.enabled !== false;
+  const sendChannels = rule.action.type === "send" ? rule.action.channels : [];
+
+  function setMatchEvent(ev: string) {
+    props.onPatch({ match: { ...rule.match, event: ev } });
+  }
+  function setActionType(type: "send" | "drop") {
+    if (type === "drop") {
+      props.onPatch({ action: { type: "drop" } });
+    } else {
+      props.onPatch({
+        action: { type: "send", channels: sendChannels },
+      });
+    }
+  }
+  function setChannels(channels: NotificationRuleSendChannel[]) {
+    props.onPatch({ action: { type: "send", channels } });
+  }
+  function addEmailChannel() {
+    const first = props.emails[0];
+    if (!first) return;
+    setChannels([
+      ...sendChannels,
+      { kind: "email", email_id: first.id, level: "full" },
+    ]);
+  }
+  function addTgChannel() {
+    const first = props.tgConnections[0];
+    if (!first) return;
+    setChannels([
+      ...sendChannels,
+      { kind: "tg", connection_id: first.id, level: "full" },
+    ]);
+  }
+
+  return (
+    <div
+      style={{
+        border: `1px solid ${tokens.colorNeutralStroke2}`,
+        borderRadius: tokens.borderRadiusMedium,
+        padding: tokens.spacingHorizontalM,
+        background: enabled
+          ? tokens.colorNeutralBackground1
+          : tokens.colorNeutralBackground3,
+        display: "flex",
+        flexDirection: "column",
+        gap: tokens.spacingVerticalXS,
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
+          #{props.index + 1}
+        </Text>
+        <input
+          type="checkbox"
+          checked={enabled}
+          onChange={(e) => props.onPatch({ enabled: e.target.checked })}
+          aria-label={t("notifications.rulesetsRuleEnabled")}
+        />
+        <input
+          type="text"
+          value={rule.name ?? ""}
+          onChange={(e) => props.onPatch({ name: e.target.value })}
+          placeholder={t("notifications.rulesetsRuleNamePlaceholder")}
+          style={{
+            flex: 1,
+            padding: "4px 8px",
+            fontSize: 13,
+            border: `1px solid ${tokens.colorNeutralStroke1}`,
+            borderRadius: 4,
+            background: tokens.colorNeutralBackground1,
+          }}
+        />
+        <Button
+          size="small"
+          appearance="subtle"
+          disabled={props.isFirst}
+          onClick={() => props.onMove(-1)}
+        >
+          ↑
+        </Button>
+        <Button
+          size="small"
+          appearance="subtle"
+          disabled={props.isLast}
+          onClick={() => props.onMove(1)}
+        >
+          ↓
+        </Button>
+        <Button
+          size="small"
+          appearance="subtle"
+          onClick={props.onDelete}
+          style={{ color: tokens.colorPaletteRedForeground1 }}
+        >
+          ×
+        </Button>
+      </div>
+
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <Text size={200}>{t("notifications.rulesetsMatchEvent")}</Text>
+        <input
+          type="text"
+          list={`events-${rule.id}`}
+          value={rule.match.event ?? ""}
+          onChange={(e) => setMatchEvent(e.target.value)}
+          placeholder="*  or  security.*  or  app.created"
+          style={{
+            flex: 1,
+            padding: "4px 8px",
+            fontFamily: "monospace",
+            fontSize: 12,
+            border: `1px solid ${tokens.colorNeutralStroke1}`,
+            borderRadius: 4,
+            background: tokens.colorNeutralBackground1,
+          }}
+        />
+        <datalist id={`events-${rule.id}`}>
+          {props.knownEvents.map((ev) => (
+            <option key={ev} value={ev} />
+          ))}
+        </datalist>
+      </div>
+
+      <RuleAccountFilter
+        emails={props.emails}
+        tgConnections={props.tgConnections}
+        value={rule.match.accounts ?? []}
+        onChange={(accounts) =>
+          props.onPatch({
+            match: {
+              ...rule.match,
+              accounts: accounts.length > 0 ? accounts : undefined,
+            },
+          })
+        }
+      />
+
+      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <Text size={200}>{t("notifications.rulesetsAction")}</Text>
+        <label style={{ display: "flex", alignItems: "center", gap: 4 }}>
+          <input
+            type="radio"
+            name={`action-${rule.id}`}
+            checked={rule.action.type === "send"}
+            onChange={() => setActionType("send")}
+          />
+          <Text size={200}>{t("notifications.rulesetsActionSend")}</Text>
+        </label>
+        <label style={{ display: "flex", alignItems: "center", gap: 4 }}>
+          <input
+            type="radio"
+            name={`action-${rule.id}`}
+            checked={rule.action.type === "drop"}
+            onChange={() => setActionType("drop")}
+          />
+          <Text size={200}>{t("notifications.rulesetsActionDrop")}</Text>
+        </label>
+      </div>
+
+      {rule.action.type === "send" && (
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 6,
+            paddingLeft: tokens.spacingHorizontalM,
+          }}
+        >
+          {sendChannels.map((ch, ci) => (
+            <RuleChannelRow
+              key={ci}
+              channel={ch}
+              emails={props.emails}
+              tgConnections={props.tgConnections}
+              onChange={(next) => {
+                const copy = sendChannels.slice();
+                copy[ci] = next;
+                setChannels(copy);
+              }}
+              onDelete={() =>
+                setChannels(sendChannels.filter((_, i) => i !== ci))
+              }
+            />
+          ))}
+          <div style={{ display: "flex", gap: 6 }}>
+            <Button
+              size="small"
+              appearance="subtle"
+              onClick={addEmailChannel}
+              disabled={props.emails.length === 0}
+            >
+              + {t("notifications.emailChannel")}
+            </Button>
+            <Button
+              size="small"
+              appearance="subtle"
+              onClick={addTgChannel}
+              disabled={props.tgConnections.length === 0}
+            >
+              + {t("notifications.tgChannel")}
+            </Button>
+          </div>
+        </div>
+      )}
+
+      <label style={{ display: "flex", alignItems: "center", gap: 4 }}>
+        <input
+          type="checkbox"
+          checked={rule.stop === true}
+          onChange={(e) => props.onPatch({ stop: e.target.checked })}
+        />
+        <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
+          {t("notifications.rulesetsStop")}
+        </Text>
+      </label>
+    </div>
+  );
+}
+
+function RuleChannelRow(props: {
+  channel: NotificationRuleSendChannel;
+  emails: NotifEmail[];
+  tgConnections: NotifTgConnection[];
+  onChange: (next: NotificationRuleSendChannel) => void;
+  onDelete: () => void;
+}) {
+  const { t } = useTranslation();
+  const { channel } = props;
+  const setLevel = (level: NotificationLevel) =>
+    props.onChange({ ...channel, level });
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+      <span style={{ fontSize: 13 }}>
+        {channel.kind === "email" ? "✉" : "✈"}
+      </span>
+      <select
+        value={
+          channel.kind === "email" ? channel.email_id : channel.connection_id
+        }
+        onChange={(e) => {
+          if (channel.kind === "email") {
+            props.onChange({ ...channel, email_id: e.target.value });
+          } else {
+            props.onChange({ ...channel, connection_id: e.target.value });
+          }
+        }}
+        style={{
+          flex: 1,
+          padding: "4px 6px",
+          fontSize: 12,
+          border: `1px solid ${tokens.colorNeutralStroke1}`,
+          borderRadius: 4,
+          background: tokens.colorNeutralBackground1,
+        }}
+      >
+        {channel.kind === "email"
+          ? props.emails.map((e) => (
+              <option key={e.id} value={e.id}>
+                {e.email}
+              </option>
+            ))
+          : props.tgConnections.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.username ? `@${c.username}` : c.name}
+              </option>
+            ))}
+      </select>
+      <select
+        value={channel.level}
+        onChange={(e) => setLevel(e.target.value as NotificationLevel)}
+        style={{
+          padding: "4px 6px",
+          fontSize: 12,
+          border: `1px solid ${tokens.colorNeutralStroke1}`,
+          borderRadius: 4,
+          background: tokens.colorNeutralBackground1,
+        }}
+      >
+        <option value="brief">{t("notifications.levelBrief")}</option>
+        <option value="full">{t("notifications.levelFull")}</option>
+      </select>
+      <Button
+        size="small"
+        appearance="subtle"
+        onClick={props.onDelete}
+        style={{ color: tokens.colorPaletteRedForeground1 }}
+      >
+        ×
+      </Button>
+    </div>
+  );
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function Notifications() {
@@ -657,6 +1295,196 @@ export function Notifications() {
   const [jsonOpen, setJsonOpen] = useState(false);
   const [jsonText, setJsonText] = useState("");
   const [jsonError, setJsonError] = useState<string | null>(null);
+
+  // ─── Rulesets (rule engine) ─────────────────────────────────────────────
+  // The server-side dispatch evaluates the active ruleset INSTEAD of the
+  // legacy per-event prefs. The editor below mutates a local draft per
+  // ruleset; saving PUTs the rule array. Activating one ruleset
+  // automatically deactivates any other.
+  const [editingRulesetId, setEditingRulesetId] = useState<string | null>(null);
+  const [draftRules, setDraftRules] = useState<NotificationRule[]>([]);
+  // Compound key: the editor re-syncs whenever the open ruleset changes
+  // OR when the server's authoritative copy of the open one is newer
+  // (e.g. immediately after Save).
+  const [draftSourceKey, setDraftSourceKey] = useState<string | null>(null);
+  const [rulesetMessage, setRulesetMessage] = useState<{
+    intent: "success" | "error";
+    text: string;
+  } | null>(null);
+  const showRulesetMsg = (intent: "success" | "error", text: string) => {
+    setRulesetMessage({ intent, text });
+    setTimeout(() => setRulesetMessage(null), 3500);
+  };
+
+  const { data: rulesetsData } = useQuery({
+    queryKey: ["notification-rulesets"],
+    queryFn: () => api.listNotificationRulesets(),
+  });
+  const rulesets: NotificationRuleset[] = rulesetsData?.rulesets ?? [];
+  const editingRuleset =
+    rulesets.find((r) => r.id === editingRulesetId) ?? null;
+  const activeRuleset = rulesets.find((r) => r.is_active) ?? null;
+
+  // Render-time sync of the editor's draft to the server's authoritative
+  // rules whenever the user opens a different ruleset OR the server's
+  // copy of the open one changed (e.g. after save).
+  const targetKey = editingRuleset
+    ? `${editingRuleset.id}@${editingRuleset.updated_at}`
+    : null;
+  if (editingRuleset && draftSourceKey !== targetKey) {
+    setDraftSourceKey(targetKey);
+    setDraftRules(editingRuleset.rules);
+  }
+  const draftDirty =
+    !!editingRuleset &&
+    JSON.stringify(draftRules) !== JSON.stringify(editingRuleset.rules);
+
+  const createRulesetMut = useMutation({
+    mutationFn: (body: {
+      name: string;
+      rules: NotificationRule[];
+      is_active?: boolean;
+    }) => api.createNotificationRuleset(body),
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ["notification-rulesets"] });
+      setEditingRulesetId(res.ruleset.id);
+      setDraftSourceKey(null);
+      showRulesetMsg("success", t("notifications.rulesetsCreated"));
+    },
+    onError: (err) => {
+      showRulesetMsg(
+        "error",
+        err instanceof ApiError
+          ? err.message
+          : t("notifications.rulesetsSaveFailed"),
+      );
+    },
+  });
+  const updateRulesetMut = useMutation({
+    mutationFn: ({
+      id,
+      body,
+    }: {
+      id: string;
+      body: {
+        name?: string;
+        rules?: NotificationRule[];
+        is_active?: boolean;
+      };
+    }) => api.updateNotificationRuleset(id, body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["notification-rulesets"] });
+      setDraftSourceKey(null);
+      showRulesetMsg("success", t("notifications.rulesetsUpdated"));
+    },
+    onError: (err) => {
+      showRulesetMsg(
+        "error",
+        err instanceof ApiError
+          ? err.message
+          : t("notifications.rulesetsSaveFailed"),
+      );
+    },
+  });
+  const deleteRulesetMut = useMutation({
+    mutationFn: (id: string) => api.deleteNotificationRuleset(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["notification-rulesets"] });
+      setEditingRulesetId(null);
+      setDraftSourceKey(null);
+      showRulesetMsg("success", t("notifications.rulesetsDeleted"));
+    },
+    onError: (err) => {
+      showRulesetMsg(
+        "error",
+        err instanceof ApiError
+          ? err.message
+          : t("notifications.rulesetsSaveFailed"),
+      );
+    },
+  });
+
+  function handleNewRuleset() {
+    const name = window.prompt(t("notifications.rulesetsNamePrompt"));
+    if (!name) return;
+    createRulesetMut.mutate({ name: name.trim(), rules: [], is_active: false });
+  }
+
+  function handleRenameRuleset(rs: NotificationRuleset) {
+    const name = window.prompt(
+      t("notifications.rulesetsRenamePrompt", { name: rs.name }),
+      rs.name,
+    );
+    if (!name || name.trim() === rs.name) return;
+    updateRulesetMut.mutate({
+      id: rs.id,
+      body: { name: name.trim() },
+    });
+  }
+
+  function handleDeleteRuleset(rs: NotificationRuleset) {
+    if (
+      !window.confirm(
+        t("notifications.rulesetsDeleteConfirm", { name: rs.name }),
+      )
+    )
+      return;
+    deleteRulesetMut.mutate(rs.id);
+  }
+
+  function handleToggleActive(rs: NotificationRuleset) {
+    updateRulesetMut.mutate({
+      id: rs.id,
+      body: { is_active: !rs.is_active },
+    });
+  }
+
+  function handleSaveDraft() {
+    if (!editingRuleset) return;
+    updateRulesetMut.mutate({
+      id: editingRuleset.id,
+      body: { rules: draftRules },
+    });
+  }
+
+  function handleDiscardDraft() {
+    if (!editingRuleset) return;
+    setDraftRules(editingRuleset.rules);
+  }
+
+  // Rule-array editing helpers operate on draftRules.
+  function newRule(): NotificationRule {
+    return {
+      id: `r_${Math.random().toString(36).slice(2, 10)}`,
+      enabled: true,
+      match: { event: "*" },
+      action: { type: "send", channels: [] },
+    };
+  }
+
+  function patchDraftRule(idx: number, patch: Partial<NotificationRule>) {
+    setDraftRules((prev) =>
+      prev.map((r, i) => (i === idx ? { ...r, ...patch } : r)),
+    );
+  }
+
+  function moveDraftRule(idx: number, delta: number) {
+    setDraftRules((prev) => {
+      const next = prev.slice();
+      const target = idx + delta;
+      if (target < 0 || target >= next.length) return prev;
+      [next[idx], next[target]] = [next[target], next[idx]];
+      return next;
+    });
+  }
+
+  function deleteDraftRule(idx: number) {
+    setDraftRules((prev) => prev.filter((_, i) => i !== idx));
+  }
+
+  function addDraftRule() {
+    setDraftRules((prev) => [...prev, newRule()]);
+  }
 
   // Sync server data into the local draft when it changes. React 19's
   // strict rules want this expressed as a render-time set rather than an
@@ -878,6 +1706,43 @@ export function Notifications() {
       {mutation.isError && (
         <MessageBar intent="error">
           <MessageBarBody>{t("common.saveFailed")}</MessageBarBody>
+        </MessageBar>
+      )}
+
+      <RulesetSection
+        rulesets={rulesets}
+        editingRuleset={editingRuleset}
+        editingRulesetId={editingRulesetId}
+        setEditingRulesetId={setEditingRulesetId}
+        activeRuleset={activeRuleset}
+        draftRules={draftRules}
+        draftDirty={draftDirty}
+        emails={emails}
+        tgConnections={tgConnections}
+        rulesetMessage={rulesetMessage}
+        creating={createRulesetMut.isPending}
+        updating={updateRulesetMut.isPending}
+        deleting={deleteRulesetMut.isPending}
+        knownEvents={ALL_EVENT_KEYS}
+        onNew={handleNewRuleset}
+        onRename={handleRenameRuleset}
+        onDelete={handleDeleteRuleset}
+        onToggleActive={handleToggleActive}
+        onSaveDraft={handleSaveDraft}
+        onDiscardDraft={handleDiscardDraft}
+        onPatchRule={patchDraftRule}
+        onMoveRule={moveDraftRule}
+        onDeleteRule={deleteDraftRule}
+        onAddRule={addDraftRule}
+      />
+
+      {activeRuleset && (
+        <MessageBar intent="info">
+          <MessageBarBody>
+            {t("notifications.rulesetActiveOverride", {
+              name: activeRuleset.name,
+            })}
+          </MessageBarBody>
         </MessageBar>
       )}
 

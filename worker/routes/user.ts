@@ -1365,29 +1365,25 @@ app.get("/me/notifications", async (c) => {
   });
 });
 
-// PUT /api/user/me/notifications
-app.put("/me/notifications", async (c) => {
-  const user = c.get("user");
-  const body = await c.req.json<{ rules: NotificationRules }>();
-
-  if (
-    !body.rules ||
-    typeof body.rules !== "object" ||
-    Array.isArray(body.rules)
-  )
-    return c.json({ error: "rules must be an object" }, 400);
-
-  // Validate and filter rules
+/**
+ * Strip every field that isn't a known event / channel / level. Returns a
+ * cleaned NotificationRules object. Shared between the prefs PUT and the
+ * notification-rulesets CRUD endpoints so a saved ruleset can never carry
+ * a payload the prefs path itself would refuse.
+ */
+function sanitizeNotificationRules(input: unknown): NotificationRules | null {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return null;
   const valid: NotificationRules = {};
   const validEvents = USER_NOTIFICATION_EVENTS as readonly string[];
-
-  for (const [ev, rule] of Object.entries(body.rules)) {
+  for (const [ev, rule] of Object.entries(input as Record<string, unknown>)) {
     if (!validEvents.includes(ev)) continue;
+    if (!rule || typeof rule !== "object") continue;
     const cleaned: NonNullable<(typeof valid)[string]> = {};
 
-    if (Array.isArray(rule.email)) {
+    const r = rule as { email?: unknown; tg?: unknown };
+    if (Array.isArray(r.email)) {
       const emailEntries: typeof cleaned.email = [];
-      for (const entry of rule.email) {
+      for (const entry of r.email) {
         const { email_id, level } = entry as unknown as Record<string, unknown>;
         if (
           typeof email_id === "string" &&
@@ -1400,9 +1396,9 @@ app.put("/me/notifications", async (c) => {
       if (emailEntries.length) cleaned.email = emailEntries;
     }
 
-    if (Array.isArray(rule.tg)) {
+    if (Array.isArray(r.tg)) {
       const tgEntries: typeof cleaned.tg = [];
-      for (const entry of rule.tg) {
+      for (const entry of r.tg) {
         const { connection_id, level } = entry as unknown as Record<
           string,
           unknown
@@ -1420,6 +1416,38 @@ app.put("/me/notifications", async (c) => {
 
     valid[ev] = cleaned;
   }
+  return valid;
+}
+
+const RULESET_NAME_MAX = 64;
+const RULESET_NAME_RE = /^[\w][\w .,'\-()/]{0,63}$/u;
+
+function validateRulesetName(raw: unknown): { name: string; error?: string } {
+  if (typeof raw !== "string")
+    return { name: "", error: "name must be a string" };
+  const trimmed = raw.trim();
+  if (!trimmed) return { name: "", error: "name is required" };
+  if (trimmed.length > RULESET_NAME_MAX)
+    return {
+      name: trimmed,
+      error: `name must be ${RULESET_NAME_MAX} characters or fewer`,
+    };
+  if (!RULESET_NAME_RE.test(trimmed))
+    return {
+      name: trimmed,
+      error:
+        "name may only contain letters, digits, spaces and . , - _ ( ) / '",
+    };
+  return { name: trimmed };
+}
+
+// PUT /api/user/me/notifications
+app.put("/me/notifications", async (c) => {
+  const user = c.get("user");
+  const body = await c.req.json<{ rules: NotificationRules }>();
+
+  const valid = sanitizeNotificationRules(body.rules);
+  if (valid === null) return c.json({ error: "rules must be an object" }, 400);
 
   await c.env.DB.prepare(
     "INSERT INTO user_notification_prefs (user_id, notification_rules) VALUES (?, ?) ON CONFLICT(user_id) DO UPDATE SET notification_rules = excluded.notification_rules",
@@ -1428,6 +1456,211 @@ app.put("/me/notifications", async (c) => {
     .run();
 
   return c.json({ rules: valid });
+});
+
+// ─── Notification rulesets (rule-engine presets) ─────────────────────────────
+//
+// A ruleset is an ordered list of NotificationRule entries — see
+// worker/lib/notificationRules.ts for the rule shape and the evaluator.
+// At most one ruleset per user is `is_active`; activating one
+// automatically deactivates any other. When a ruleset is active it drives
+// dispatch; otherwise the legacy per-event rules in
+// user_notification_prefs.notification_rules apply.
+
+import {
+  sanitizeRulesArray,
+  type NotificationRule,
+} from "../lib/notificationRules";
+
+interface RulesetRow {
+  id: string;
+  name: string;
+  rules: string;
+  is_active: number;
+  created_at: number;
+  updated_at: number;
+}
+
+function rulesetToJson(row: RulesetRow) {
+  let rules: NotificationRule[] = [];
+  try {
+    const parsed = JSON.parse(row.rules);
+    if (Array.isArray(parsed)) rules = parsed as NotificationRule[];
+  } catch {
+    // ignore — corrupted row, return empty
+  }
+  return {
+    id: row.id,
+    name: row.name,
+    rules,
+    is_active: !!row.is_active,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+}
+
+// GET /api/user/me/notification-rulesets — list every saved ruleset
+app.get("/me/notification-rulesets", async (c) => {
+  const user = c.get("user");
+  const { results } = await c.env.DB.prepare(
+    "SELECT id, name, rules, is_active, created_at, updated_at FROM notification_rulesets WHERE user_id = ? ORDER BY name COLLATE NOCASE ASC",
+  )
+    .bind(user.id)
+    .all<RulesetRow>();
+  return c.json({ rulesets: results.map(rulesetToJson) });
+});
+
+// POST /api/user/me/notification-rulesets — save a new ruleset
+app.post("/me/notification-rulesets", async (c) => {
+  const user = c.get("user");
+  const body = await c.req.json<{
+    name?: unknown;
+    rules?: unknown;
+    is_active?: unknown;
+  }>();
+
+  const { name, error: nameErr } = validateRulesetName(body.name);
+  if (nameErr) return c.json({ error: nameErr }, 400);
+
+  const validation = sanitizeRulesArray(
+    body.rules,
+    USER_NOTIFICATION_EVENTS as readonly string[],
+  );
+  if (validation.error) return c.json({ error: validation.error }, 400);
+  const cleanedRules = validation.rules;
+
+  const id = randomId();
+  const now = Math.floor(Date.now() / 1000);
+  const wantActive = !!body.is_active;
+  try {
+    if (wantActive) {
+      // Single transaction so we never have two active rulesets for a user.
+      await c.env.DB.batch([
+        c.env.DB.prepare(
+          "UPDATE notification_rulesets SET is_active = 0, updated_at = ? WHERE user_id = ? AND is_active = 1",
+        ).bind(now, user.id),
+        c.env.DB.prepare(
+          "INSERT INTO notification_rulesets (id, user_id, name, rules, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, 1, ?, ?)",
+        ).bind(id, user.id, name, JSON.stringify(cleanedRules), now, now),
+      ]);
+    } else {
+      await c.env.DB.prepare(
+        "INSERT INTO notification_rulesets (id, user_id, name, rules, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, 0, ?, ?)",
+      )
+        .bind(id, user.id, name, JSON.stringify(cleanedRules), now, now)
+        .run();
+    }
+  } catch (err) {
+    if (String(err).includes("UNIQUE"))
+      return c.json({ error: "A ruleset with that name already exists" }, 409);
+    throw err;
+  }
+  return c.json(
+    {
+      ruleset: {
+        id,
+        name,
+        rules: cleanedRules,
+        is_active: wantActive,
+        created_at: now,
+        updated_at: now,
+      },
+    },
+    201,
+  );
+});
+
+// PUT /api/user/me/notification-rulesets/:id — rename, replace rules,
+// and/or toggle is_active
+app.put("/me/notification-rulesets/:id", async (c) => {
+  const user = c.get("user");
+  const id = c.req.param("id");
+  const body = await c.req.json<{
+    name?: unknown;
+    rules?: unknown;
+    is_active?: unknown;
+  }>();
+
+  const existing = await c.env.DB.prepare(
+    "SELECT id FROM notification_rulesets WHERE id = ? AND user_id = ?",
+  )
+    .bind(id, user.id)
+    .first<{ id: string }>();
+  if (!existing) return c.json({ error: "Not found" }, 404);
+
+  const sets: string[] = [];
+  const values: unknown[] = [];
+
+  if (body.name !== undefined) {
+    const { name, error: nameErr } = validateRulesetName(body.name);
+    if (nameErr) return c.json({ error: nameErr }, 400);
+    sets.push("name = ?");
+    values.push(name);
+  }
+  if (body.rules !== undefined) {
+    const validation = sanitizeRulesArray(
+      body.rules,
+      USER_NOTIFICATION_EVENTS as readonly string[],
+    );
+    if (validation.error) return c.json({ error: validation.error }, 400);
+    sets.push("rules = ?");
+    values.push(JSON.stringify(validation.rules));
+  }
+  const willToggleActive = body.is_active !== undefined;
+  if (willToggleActive) {
+    sets.push("is_active = ?");
+    values.push(body.is_active ? 1 : 0);
+  }
+  if (!sets.length) return c.json({ error: "Nothing to update" }, 400);
+
+  const now = Math.floor(Date.now() / 1000);
+  sets.push("updated_at = ?");
+  values.push(now, id, user.id);
+
+  try {
+    if (willToggleActive && body.is_active) {
+      // Deactivate every other ruleset first so there's at most one
+      // active per user — see migration 0044.
+      await c.env.DB.batch([
+        c.env.DB.prepare(
+          "UPDATE notification_rulesets SET is_active = 0, updated_at = ? WHERE user_id = ? AND is_active = 1 AND id != ?",
+        ).bind(now, user.id, id),
+        c.env.DB.prepare(
+          `UPDATE notification_rulesets SET ${sets.join(", ")} WHERE id = ? AND user_id = ?`,
+        ).bind(...values),
+      ]);
+    } else {
+      await c.env.DB.prepare(
+        `UPDATE notification_rulesets SET ${sets.join(", ")} WHERE id = ? AND user_id = ?`,
+      )
+        .bind(...values)
+        .run();
+    }
+  } catch (err) {
+    if (String(err).includes("UNIQUE"))
+      return c.json({ error: "A ruleset with that name already exists" }, 409);
+    throw err;
+  }
+
+  const row = await c.env.DB.prepare(
+    "SELECT id, name, rules, is_active, created_at, updated_at FROM notification_rulesets WHERE id = ?",
+  )
+    .bind(id)
+    .first<RulesetRow>();
+  return c.json({ ruleset: row ? rulesetToJson(row) : null });
+});
+
+// DELETE /api/user/me/notification-rulesets/:id
+app.delete("/me/notification-rulesets/:id", async (c) => {
+  const user = c.get("user");
+  const id = c.req.param("id");
+  const result = await c.env.DB.prepare(
+    "DELETE FROM notification_rulesets WHERE id = ? AND user_id = ?",
+  )
+    .bind(id, user.id)
+    .run();
+  if (!result.meta?.changes) return c.json({ error: "Not found" }, 404);
+  return c.json({ message: "Deleted" });
 });
 
 export default app;

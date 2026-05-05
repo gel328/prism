@@ -1120,6 +1120,41 @@ export const api = {
       { rules },
       getToken(),
     ),
+  listNotificationRulesets: () =>
+    request<{ rulesets: NotificationRuleset[] }>(
+      "GET",
+      "/user/me/notification-rulesets",
+      undefined,
+      getToken(),
+    ),
+  createNotificationRuleset: (body: {
+    name: string;
+    rules: NotificationRule[];
+    is_active?: boolean;
+  }) =>
+    request<{ ruleset: NotificationRuleset }>(
+      "POST",
+      "/user/me/notification-rulesets",
+      body,
+      getToken(),
+    ),
+  updateNotificationRuleset: (
+    id: string,
+    body: { name?: string; rules?: NotificationRule[]; is_active?: boolean },
+  ) =>
+    request<{ ruleset: NotificationRuleset }>(
+      "PUT",
+      `/user/me/notification-rulesets/${id}`,
+      body,
+      getToken(),
+    ),
+  deleteNotificationRuleset: (id: string) =>
+    request<{ message: string }>(
+      "DELETE",
+      `/user/me/notification-rulesets/${id}`,
+      undefined,
+      getToken(),
+    ),
 
   // Teams
   listTeams: () =>
@@ -2125,6 +2160,53 @@ export interface NotificationRule {
 }
 
 export type NotificationRules = Record<string, NotificationRule>;
+
+// ─── Rule-engine ruleset (new model) ─────────────────────────────────────────
+//
+// A ruleset is an ordered list of NotificationRule entries. The active
+// ruleset replaces the legacy per-event NotificationRules at dispatch.
+//
+// match.event is a glob: "*" matches everything, "security.*" matches
+// every security event, "app.created" matches exactly one. Channels
+// across matching rules merge; duplicates collapse to the highest level.
+
+export type NotificationLevel = "brief" | "full";
+
+export interface NotificationRuleMatch {
+  event?: string;
+  /**
+   * Account-key filter ("email:<email_id>" or "tg:<connection_id>").
+   * Empty/missing means the rule applies to every account uniformly;
+   * non-empty restricts the rule's effect to those accounts only.
+   */
+  accounts?: string[];
+}
+
+export type NotificationRuleSendChannel =
+  | { kind: "email"; email_id: string; level: NotificationLevel }
+  | { kind: "tg"; connection_id: string; level: NotificationLevel };
+
+export type NotificationRuleAction =
+  | { type: "drop" }
+  | { type: "send"; channels: NotificationRuleSendChannel[] };
+
+export interface NotificationRule {
+  id: string;
+  name?: string;
+  enabled?: boolean;
+  match: NotificationRuleMatch;
+  action: NotificationRuleAction;
+  stop?: boolean;
+}
+
+export interface NotificationRuleset {
+  id: string;
+  name: string;
+  rules: NotificationRule[];
+  is_active: boolean;
+  created_at: number;
+  updated_at: number;
+}
 
 export interface OAuthSource {
   id: string;

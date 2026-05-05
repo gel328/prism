@@ -886,6 +886,7 @@ function withTelegramOperatorMeta(
 // ─── Rules helpers ────────────────────────────────────────────────────────────
 
 import type { NotificationRules } from "../types";
+import { evaluateRuleset, type NotificationRule } from "./notificationRules";
 
 /**
  * Parse notification_rules JSON, falling back to migrating the legacy
@@ -1012,33 +1013,64 @@ export async function deliverUserEmailNotifications(
   appUrl: string,
 ): Promise<void> {
   const db = env.DB;
-  // Load prefs row (all three columns for migration support)
-  const prefsRow = await db
+  // Active ruleset takes precedence over the per-event prefs. Users who
+  // never activate one keep the legacy behaviour.
+  const activeRuleset = await db
     .prepare(
-      "SELECT events, tg_events, notification_rules FROM user_notification_prefs WHERE user_id = ?",
+      "SELECT rules FROM notification_rulesets WHERE user_id = ? AND is_active = 1 LIMIT 1",
     )
     .bind(userId)
-    .first<{ events: string; tg_events: string; notification_rules: string }>();
+    .first<{ rules: string }>();
 
-  if (!prefsRow) return;
+  let emailRules: Array<{ email_id: string; level: "brief" | "full" }>;
+  let tgRules: Array<{ connection_id: string; level: "brief" | "full" }>;
 
-  // Resolve first telegram connection for legacy migration path
-  const firstTg = await db
-    .prepare(
-      "SELECT id FROM social_connections WHERE user_id = ? AND provider = 'telegram' ORDER BY connected_at ASC LIMIT 1",
-    )
-    .bind(userId)
-    .first<{ id: string }>();
+  if (activeRuleset) {
+    let parsedRules: NotificationRule[] = [];
+    try {
+      const parsed = JSON.parse(activeRuleset.rules);
+      if (Array.isArray(parsed)) parsedRules = parsed as NotificationRule[];
+    } catch {
+      // Corrupted ruleset — silently fall back to no delivery rather than
+      // throwing, since this code runs from waitUntil at write paths.
+    }
+    const resolved = evaluateRuleset(parsedRules, event);
+    emailRules = resolved.emails;
+    tgRules = resolved.tgs;
+  } else {
+    // Load prefs row (all three columns for migration support)
+    const prefsRow = await db
+      .prepare(
+        "SELECT events, tg_events, notification_rules FROM user_notification_prefs WHERE user_id = ?",
+      )
+      .bind(userId)
+      .first<{
+        events: string;
+        tg_events: string;
+        notification_rules: string;
+      }>();
 
-  const rules = parseNotificationRules(
-    prefsRow.notification_rules,
-    prefsRow.events,
-    prefsRow.tg_events,
-    firstTg?.id ?? null,
-  );
+    if (!prefsRow) return;
 
-  const emailRules = rules[event]?.email ?? [];
-  const tgRules = rules[event]?.tg ?? [];
+    // Resolve first telegram connection for legacy migration path
+    const firstTg = await db
+      .prepare(
+        "SELECT id FROM social_connections WHERE user_id = ? AND provider = 'telegram' ORDER BY connected_at ASC LIMIT 1",
+      )
+      .bind(userId)
+      .first<{ id: string }>();
+
+    const rules = parseNotificationRules(
+      prefsRow.notification_rules,
+      prefsRow.events,
+      prefsRow.tg_events,
+      firstTg?.id ?? null,
+    );
+
+    emailRules = rules[event]?.email ?? [];
+    tgRules = rules[event]?.tg ?? [];
+  }
+
   if (!emailRules.length && !tgRules.length) return;
 
   const config = await getConfig(db);
