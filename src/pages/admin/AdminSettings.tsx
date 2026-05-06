@@ -111,12 +111,19 @@ export function AdminSettings() {
   const [nowSec, setNowSec] = useState(() => Math.floor(Date.now() / 1000));
   const [migratingCodes, setMigratingCodes] = useState(false);
   const [migratingSecrets, setMigratingSecrets] = useState(false);
+  const [migratingD1Secrets, setMigratingD1Secrets] = useState(false);
   const [migratingTeamsAsUsers, setMigratingTeamsAsUsers] = useState(false);
   const [migratingImageProxy, setMigratingImageProxy] = useState(false);
 
   const { data: secretsStatus, refetch: refetchSecretsStatus } = useQuery({
     queryKey: ["admin-secrets-status"],
     queryFn: api.adminSecretsStatus,
+  });
+
+  const { data: d1SecretsStatus, refetch: refetchD1SecretsStatus } = useQuery({
+    queryKey: ["admin-d1-secrets-status"],
+    queryFn: api.adminD1SecretsStatus,
+    enabled: tab === "danger",
   });
 
   const { data: teamsAsUsersStatus, refetch: refetchTeamsAsUsersStatus } =
@@ -201,6 +208,25 @@ export function AdminSettings() {
       );
     } finally {
       setMigratingSecrets(false);
+    }
+  };
+
+  const handleMigrateD1Secrets = async () => {
+    setMigratingD1Secrets(true);
+    try {
+      const res = await api.adminMigrateD1Secrets();
+      const total = Object.values(res.migrated).reduce((a, b) => a + b, 0);
+      showMsg("success", t("admin.d1SecretsMigrateSuccess", { count: total }));
+      await refetchD1SecretsStatus();
+    } catch (err) {
+      showMsg(
+        "error",
+        err instanceof ApiError
+          ? err.message
+          : t("admin.d1SecretsMigrateFailed"),
+      );
+    } finally {
+      setMigratingD1Secrets(false);
     }
   };
 
@@ -1201,6 +1227,96 @@ export function AdminSettings() {
               icon={migratingSecrets ? <Spinner size="tiny" /> : undefined}
             >
               {t("admin.secretsMigrateButton")}
+            </Button>
+          </div>
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 8,
+              alignItems: "flex-start",
+            }}
+          >
+            <Text weight="semibold">{t("admin.d1SecretsMigrateTitle")}</Text>
+            <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
+              {t("admin.d1SecretsMigrateDesc")}
+            </Text>
+            {d1SecretsStatus &&
+              (() => {
+                const totalPlain =
+                  d1SecretsStatus.pat_plaintext +
+                  d1SecretsStatus.oauth_tokens_access_plaintext +
+                  d1SecretsStatus.oauth_tokens_refresh_plaintext +
+                  d1SecretsStatus.oauth_codes_plaintext +
+                  d1SecretsStatus.site_invites_plaintext +
+                  d1SecretsStatus.team_invites_plaintext +
+                  d1SecretsStatus.email_verify_users_plaintext +
+                  d1SecretsStatus.user_emails_verify_plaintext +
+                  d1SecretsStatus.oauth_2fa_codes_plaintext +
+                  d1SecretsStatus.totp_authenticators_plaintext +
+                  d1SecretsStatus.webhooks_plaintext +
+                  d1SecretsStatus.app_webhooks_plaintext +
+                  d1SecretsStatus.social_connections_access_plaintext +
+                  d1SecretsStatus.social_connections_refresh_plaintext;
+                return (
+                  <Text
+                    size={200}
+                    style={{
+                      color: d1SecretsStatus.binding_configured
+                        ? tokens.colorNeutralForeground2
+                        : tokens.colorPaletteYellowForeground1,
+                      fontFamily: "monospace",
+                    }}
+                  >
+                    {d1SecretsStatus.binding_configured
+                      ? t("admin.d1SecretsMigrateStatusBound", {
+                          total: totalPlain,
+                          pat: d1SecretsStatus.pat_plaintext,
+                          oauth: d1SecretsStatus.oauth_tokens_access_plaintext,
+                          codes: d1SecretsStatus.oauth_codes_plaintext,
+                          invites:
+                            d1SecretsStatus.site_invites_plaintext +
+                            d1SecretsStatus.team_invites_plaintext,
+                          email:
+                            d1SecretsStatus.email_verify_users_plaintext +
+                            d1SecretsStatus.user_emails_verify_plaintext,
+                          totp: d1SecretsStatus.totp_authenticators_plaintext,
+                          webhooks:
+                            d1SecretsStatus.webhooks_plaintext +
+                            d1SecretsStatus.app_webhooks_plaintext,
+                          social:
+                            d1SecretsStatus.social_connections_access_plaintext +
+                            d1SecretsStatus.social_connections_refresh_plaintext,
+                        })
+                      : t("admin.secretsMigrateStatusUnbound")}
+                  </Text>
+                );
+              })()}
+            <Button
+              appearance="outline"
+              onClick={handleMigrateD1Secrets}
+              disabled={
+                migratingD1Secrets ||
+                !d1SecretsStatus?.binding_configured ||
+                d1SecretsStatus.pat_plaintext +
+                  d1SecretsStatus.oauth_tokens_access_plaintext +
+                  d1SecretsStatus.oauth_tokens_refresh_plaintext +
+                  d1SecretsStatus.oauth_codes_plaintext +
+                  d1SecretsStatus.site_invites_plaintext +
+                  d1SecretsStatus.team_invites_plaintext +
+                  d1SecretsStatus.email_verify_users_plaintext +
+                  d1SecretsStatus.user_emails_verify_plaintext +
+                  d1SecretsStatus.oauth_2fa_codes_plaintext +
+                  d1SecretsStatus.totp_authenticators_plaintext +
+                  d1SecretsStatus.webhooks_plaintext +
+                  d1SecretsStatus.app_webhooks_plaintext +
+                  d1SecretsStatus.social_connections_access_plaintext +
+                  d1SecretsStatus.social_connections_refresh_plaintext ===
+                  0
+              }
+              icon={migratingD1Secrets ? <Spinner size="tiny" /> : undefined}
+            >
+              {t("admin.d1SecretsMigrateButton")}
             </Button>
           </div>
           <div

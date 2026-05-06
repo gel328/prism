@@ -1,5 +1,7 @@
 // Cloudflare Email Worker handler — receives inbound emails for email verification
 
+import { hashLookupCandidate } from "../lib/secretCrypto";
+
 export async function handleEmailWorker(
   message: EmailMessage & { setReject(reason: string): void },
   env: Env,
@@ -25,11 +27,18 @@ export async function handleEmailWorker(
     return;
   }
 
-  // Look up the user who owns this verify code
+  // Look up the user who owns this verify code. Try plaintext (legacy)
+  // and the keyed hash so accounts created before SECRETS_KEY was wired
+  // up keep working until the admin migrate sweep runs.
+  const codeLookup = await hashLookupCandidate(env, code);
+  if (!codeLookup) {
+    message.setReject("Invalid verification code");
+    return;
+  }
   const user = await env.DB.prepare(
-    "SELECT id, email FROM users WHERE email_verify_code = ? AND email_verified = 0",
+    "SELECT id, email FROM users WHERE (email_verify_code = ? OR email_verify_code = ?) AND email_verified = 0",
   )
-    .bind(code)
+    .bind(code, codeLookup)
     .first<{ id: string; email: string }>();
 
   if (!user) {
@@ -39,9 +48,9 @@ export async function handleEmailWorker(
     // knowing the code. The matching code lives in user_emails.email so
     // we look it up case-insensitively.
     const altEmail = await env.DB.prepare(
-      "SELECT id, user_id FROM user_emails WHERE verify_code = ? AND LOWER(email) = ? AND verified = 0",
+      "SELECT id, user_id FROM user_emails WHERE (verify_code = ? OR verify_code = ?) AND LOWER(email) = ? AND verified = 0",
     )
-      .bind(code, senderEmail)
+      .bind(code, codeLookup, senderEmail)
       .first<{ id: string; user_id: string }>();
     if (altEmail) {
       await env.DB.prepare(

@@ -26,7 +26,7 @@ import {
 import type { NotificationRules } from "../types";
 import { getConfig, getConfigValue } from "../lib/config";
 import { getGithubReadmeFromCache } from "../lib/githubReadme";
-import { encryptSecret } from "../lib/secretCrypto";
+import { encryptSecret, decryptSecret, hashSecret } from "../lib/secretCrypto";
 import { sendEmail, verifyEmailTemplate } from "../lib/email";
 import type {
   UserRow,
@@ -347,9 +347,7 @@ app.patch("/me", async (c) => {
     changedFields.avatar_url = body.avatar_url ?? "";
 
   c.executionCtx.waitUntil(
-    deliverUserWebhooks(c.env.DB, user.id, "profile.updated", {}).catch(
-      () => {},
-    ),
+    deliverUserWebhooks(c.env, user.id, "profile.updated", {}).catch(() => {}),
   );
   c.executionCtx.waitUntil(
     deliverUserEmailNotifications(
@@ -720,11 +718,12 @@ app.post("/me/emails", async (c) => {
   const now = Math.floor(Date.now() / 1000);
   const id = randomId();
   const verifyToken = randomBase64url(24);
+  const storedVerifyToken = await hashSecret(c.env, verifyToken);
 
   await c.env.DB.prepare(
     "INSERT INTO user_emails (id, user_id, email, verified, verify_token, created_at) VALUES (?, ?, ?, 0, ?, ?)",
   )
-    .bind(id, user.id, email, verifyToken, now)
+    .bind(id, user.id, email, storedVerifyToken, now)
     .run();
 
   // Send verification email if provider is configured
@@ -773,8 +772,9 @@ app.post("/me/emails/:id/resend", async (c) => {
     return c.json({ error: "Email sending is not configured" }, 503);
 
   const verifyToken = randomBase64url(24);
+  const storedVerifyToken = await hashSecret(c.env, verifyToken);
   await c.env.DB.prepare("UPDATE user_emails SET verify_token = ? WHERE id = ?")
-    .bind(verifyToken, emailRow.id)
+    .bind(storedVerifyToken, emailRow.id)
     .run();
 
   const verifyUrl = `${c.env.APP_URL}/api/auth/verify-email?token=${verifyToken}&alt=1`;
@@ -972,6 +972,11 @@ app.post("/tokens", async (c) => {
     ? now + body.expires_in_days * 86400
     : null;
 
+  // Token is shown to the user once and never re-displayed; storing the
+  // HMAC-keyed hash means a leak of the D1 row never gives bearer access.
+  // Plaintext fallback (when SECRETS_KEY isn't bound) is still wrapped
+  // by hashSecret which short-circuits to a no-op.
+  const storedToken = await hashSecret(c.env, token);
   await c.env.DB.prepare(
     `INSERT INTO personal_access_tokens (id, user_id, name, token, scopes, expires_at, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?)`,
@@ -980,7 +985,7 @@ app.post("/tokens", async (c) => {
       id,
       user.id,
       body.name.trim(),
-      token,
+      storedToken,
       JSON.stringify(scopes),
       expiresAt,
       now,
@@ -1093,6 +1098,11 @@ app.post("/webhooks", async (c) => {
       )
     : [];
   const secret = body.secret?.trim() || randomBase64url(32);
+  // Encrypt the signing secret at rest. The plaintext is returned in
+  // the create response so the caller can copy it into their receiver,
+  // but later GETs never expose it (admin/user list endpoints already
+  // omit the column).
+  const storedSecret = await encryptSecret(c.env, secret);
   const now = Math.floor(Date.now() / 1000);
   const id = randomId();
 
@@ -1103,7 +1113,7 @@ app.post("/webhooks", async (c) => {
       id,
       body.name.trim(),
       body.url.trim(),
-      secret,
+      storedSecret,
       JSON.stringify(events),
       user.id,
       user.id,
@@ -1173,7 +1183,7 @@ app.patch("/webhooks/:id", async (c) => {
   }
   if (body.secret !== undefined) {
     sets.push("secret = ?");
-    values.push(body.secret);
+    values.push(await encryptSecret(c.env, body.secret));
   }
   if (body.events !== undefined) {
     const filtered = body.events.filter((e) =>
@@ -1237,7 +1247,8 @@ app.post("/webhooks/:id/test", async (c) => {
     data: { message: "Test delivery from Prism" },
   });
 
-  const sig = await hmacSign(wh.secret, payload);
+  const signingSecret = (await decryptSecret(c.env, wh.secret)) ?? wh.secret;
+  const sig = await hmacSign(signingSecret, payload);
   let status: number | null = null;
   let success = false;
 

@@ -4,7 +4,7 @@
 
 import { getConfig } from "../lib/config";
 import { pollVerifyEmails } from "../lib/imap";
-import { decryptSecret } from "../lib/secretCrypto";
+import { decryptSecret, hashLookupCandidate } from "../lib/secretCrypto";
 
 export async function runImapPoll(env: Env, kv: KVNamespace): Promise<void> {
   const db = env.DB;
@@ -42,12 +42,16 @@ export async function runImapPoll(env: Env, kv: KVNamespace): Promise<void> {
 
     const now = Math.floor(Date.now() / 1000);
 
-    // Look up user by verify code (primary email)
+    // Look up user by verify code (primary email). Try both plaintext
+    // (legacy) and the keyed hash so users created before SECRETS_KEY
+    // was wired up keep verifying.
+    const codeLookup = await hashLookupCandidate(env, code);
+    if (!codeLookup) continue;
     const user = await db
       .prepare(
-        "SELECT id, email FROM users WHERE email_verify_code = ? AND email_verified = 0",
+        "SELECT id, email FROM users WHERE (email_verify_code = ? OR email_verify_code = ?) AND email_verified = 0",
       )
-      .bind(code)
+      .bind(code, codeLookup)
       .first<{ id: string; email: string }>();
 
     if (user) {
@@ -74,9 +78,9 @@ export async function runImapPoll(env: Env, kv: KVNamespace): Promise<void> {
     // address being verified — see handlers/email.ts for the rationale.
     const altEmail = await db
       .prepare(
-        "SELECT id, user_id FROM user_emails WHERE verify_code = ? AND LOWER(email) = ? AND verified = 0",
+        "SELECT id, user_id FROM user_emails WHERE (verify_code = ? OR verify_code = ?) AND LOWER(email) = ? AND verified = 0",
       )
-      .bind(code, senderEmail)
+      .bind(code, codeLookup, senderEmail)
       .first<{ id: string; user_id: string }>();
 
     if (altEmail) {

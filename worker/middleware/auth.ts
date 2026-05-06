@@ -4,6 +4,7 @@ import type { Context, MiddlewareHandler, Next } from "hono";
 import { verifyJWT } from "../lib/jwt";
 import { getJwtSecret } from "../lib/config";
 import { readSessionCookie } from "../lib/cookies";
+import { hashLookupCandidate } from "../lib/secretCrypto";
 import type { Variables } from "../types";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
@@ -129,11 +130,21 @@ export function tryPatAuth(scopes: {
     if (!raw.startsWith("prism_pat_")) return await next();
 
     const now = Math.floor(Date.now() / 1000);
+    // The token column may be plaintext (legacy) or HMAC-keyed hash
+    // (post-migration). Look up under both forms so PATs issued before
+    // SECRETS_KEY was wired up keep working until the admin migrate runs.
+    const lookupHash = await hashLookupCandidate(c.env, raw);
+    if (!lookupHash) return c.json({ error: "Unauthorized" }, 401);
     const pat = await c.env.DB.prepare(
-      "SELECT user_id, scopes, expires_at FROM personal_access_tokens WHERE token = ?",
+      "SELECT id, user_id, scopes, expires_at FROM personal_access_tokens WHERE token = ? OR token = ?",
     )
-      .bind(raw)
-      .first<{ user_id: string; scopes: string; expires_at: number | null }>();
+      .bind(raw, lookupHash)
+      .first<{
+        id: string;
+        user_id: string;
+        scopes: string;
+        expires_at: number | null;
+      }>();
     if (!pat) return c.json({ error: "Unauthorized" }, 401);
     if (pat.expires_at !== null && pat.expires_at < now)
       return c.json({ error: "Token expired" }, 401);
@@ -175,9 +186,9 @@ export function tryPatAuth(scopes: {
     // Best-effort: bump last-used timestamp; never block the request on this
     c.executionCtx.waitUntil(
       c.env.DB.prepare(
-        "UPDATE personal_access_tokens SET last_used_at = ? WHERE token = ?",
+        "UPDATE personal_access_tokens SET last_used_at = ? WHERE id = ?",
       )
-        .bind(now, raw)
+        .bind(now, pat.id)
         .run()
         .then(() => undefined)
         .catch(() => undefined),

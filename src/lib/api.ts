@@ -734,6 +734,20 @@ export const api = {
       {},
       getToken(),
     ),
+  adminD1SecretsStatus: () =>
+    request<AdminD1SecretsStatus>(
+      "GET",
+      "/admin/d1-secrets/status",
+      undefined,
+      getToken(),
+    ),
+  adminMigrateD1Secrets: () =>
+    request<AdminD1SecretsMigrateResult>(
+      "POST",
+      "/admin/d1-secrets/migrate",
+      {},
+      getToken(),
+    ),
   adminStats: () =>
     request<AdminStats>("GET", "/admin/stats", undefined, getToken()),
   adminListUsers: (page = 1, limit = 20, search = "") =>
@@ -2133,6 +2147,63 @@ export interface AdminSecretsMigrateResult {
   };
   before: AdminSecretsStatus;
   after: AdminSecretsStatus;
+}
+
+/** Counts for the row-level (D1) bearer-style secrets covered by the
+ *  /d1-secrets/* endpoints — separate from /secrets/* which only handles
+ *  config-shaped secrets. */
+export interface AdminD1SecretsStatus {
+  binding_configured: boolean;
+  pat_total: number;
+  pat_plaintext: number;
+  oauth_tokens_total: number;
+  oauth_tokens_access_plaintext: number;
+  oauth_tokens_refresh_plaintext: number;
+  oauth_codes_total: number;
+  oauth_codes_plaintext: number;
+  site_invites_total: number;
+  site_invites_plaintext: number;
+  team_invites_total: number;
+  team_invites_plaintext: number;
+  email_verify_users_total: number;
+  email_verify_users_plaintext: number;
+  user_emails_verify_total: number;
+  user_emails_verify_plaintext: number;
+  oauth_2fa_codes_total: number;
+  oauth_2fa_codes_plaintext: number;
+  totp_authenticators_total: number;
+  totp_authenticators_plaintext: number;
+  webhooks_total: number;
+  webhooks_plaintext: number;
+  app_webhooks_total: number;
+  app_webhooks_plaintext: number;
+  social_connections_access_total: number;
+  social_connections_access_plaintext: number;
+  social_connections_refresh_total: number;
+  social_connections_refresh_plaintext: number;
+}
+
+export interface AdminD1SecretsMigrateResult {
+  migrated: {
+    pat: number;
+    oauth_tokens_access: number;
+    oauth_tokens_refresh: number;
+    oauth_codes: number;
+    site_invites: number;
+    team_invites: number;
+    users_email_verify_token: number;
+    users_email_verify_code: number;
+    user_emails_verify_token: number;
+    user_emails_verify_code: number;
+    oauth_2fa_codes: number;
+    totp_authenticators: number;
+    webhooks: number;
+    app_webhooks: number;
+    social_connections_access: number;
+    social_connections_refresh: number;
+  };
+  before: AdminD1SecretsStatus;
+  after: AdminD1SecretsStatus;
 }
 
 export interface AdminUserList {

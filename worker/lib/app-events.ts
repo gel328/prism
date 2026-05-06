@@ -6,6 +6,7 @@
 //   user.updated        — a user with an active token updated their profile
 
 import { randomId } from "./crypto";
+import { decryptSecret } from "./secretCrypto";
 import { deliverOnce } from "./webhooks";
 
 export const APP_EVENT_TYPES = new Set([
@@ -20,7 +21,7 @@ export const APP_EVENT_TYPES = new Set([
  * never surface to users.
  */
 export async function deliverAppEvent(
-  db: D1Database,
+  env: Env,
   appId: string,
   event: string,
   data: unknown,
@@ -29,18 +30,16 @@ export async function deliverAppEvent(
   const payload = JSON.stringify({ event, timestamp: now, data });
 
   // 1. Store in SSE/WS queue (rowid auto-increments — used as cursor).
-  await db
-    .prepare(
-      "INSERT INTO app_event_queue (app_id, event_type, payload, created_at) VALUES (?, ?, ?, ?)",
-    )
+  await env.DB.prepare(
+    "INSERT INTO app_event_queue (app_id, event_type, payload, created_at) VALUES (?, ?, ?, ?)",
+  )
     .bind(appId, event, payload, now)
     .run();
 
   // 2. Deliver to matching app webhooks.
-  const { results } = await db
-    .prepare(
-      "SELECT id, url, secret, events FROM app_webhooks WHERE app_id = ? AND is_active = 1",
-    )
+  const { results } = await env.DB.prepare(
+    "SELECT id, url, secret, events FROM app_webhooks WHERE app_id = ? AND is_active = 1",
+  )
     .bind(appId)
     .all<{ id: string; url: string; secret: string; events: string }>();
 
@@ -52,19 +51,19 @@ export async function deliverAppEvent(
   await Promise.all(
     matching.map(async (wh) => {
       const deliveryId = randomId();
+      const signingSecret = (await decryptSecret(env, wh.secret)) ?? wh.secret;
       const result = await deliverOnce(
         wh.url,
-        wh.secret,
+        signingSecret,
         deliveryId,
         event,
         payload,
       );
-      await db
-        .prepare(
-          `INSERT INTO app_webhook_deliveries
+      await env.DB.prepare(
+        `INSERT INTO app_webhook_deliveries
              (id, webhook_id, event_type, payload, response_status, response_body, success, delivered_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        )
+      )
         .bind(
           deliveryId,
           wh.id,

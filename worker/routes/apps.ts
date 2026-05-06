@@ -2,7 +2,11 @@
 
 import { Hono, type Context, type Next } from "hono";
 import { randomId, randomBase64url } from "../lib/crypto";
-import { encryptSecret, timingSafeSecretEqual } from "../lib/secretCrypto";
+import {
+  encryptSecret,
+  decryptSecret,
+  timingSafeSecretEqual,
+} from "../lib/secretCrypto";
 import { requireAuth, tryPatAuth } from "../middleware/auth";
 import { getConfigValue } from "../lib/config";
 import { computeIsVerified, computeVerified } from "../lib/domainVerify";
@@ -379,7 +383,7 @@ app.post("/", async (c) => {
     JSON.stringify(body.redirect_uris),
   );
   c.executionCtx.waitUntil(
-    deliverUserWebhooks(c.env.DB, user.id, "app.created", {
+    deliverUserWebhooks(c.env, user.id, "app.created", {
       app_id: id,
       name: body.name,
     }).catch(() => {}),
@@ -538,7 +542,7 @@ app.patch("/:id", async (c) => {
     row.team_id,
   );
   c.executionCtx.waitUntil(
-    deliverUserWebhooks(c.env.DB, user.id, "app.updated", { app_id: id }).catch(
+    deliverUserWebhooks(c.env, user.id, "app.updated", { app_id: id }).catch(
       () => {},
     ),
   );
@@ -626,7 +630,7 @@ app.delete("/:id", async (c) => {
   }
 
   c.executionCtx.waitUntil(
-    deliverUserWebhooks(c.env.DB, user.id, "app.deleted", { app_id: id }).catch(
+    deliverUserWebhooks(c.env, user.id, "app.deleted", { app_id: id }).catch(
       () => {},
     ),
   );
@@ -756,6 +760,7 @@ app.post("/:id/webhooks", async (c) => {
     (e) => e === "*" || APP_EVENT_TYPES.has(e),
   );
   const secret = body.secret?.trim() || randomBase64url(32);
+  const storedSecret = await encryptSecret(c.env, secret);
   const whId = randomId();
   const now = Math.floor(Date.now() / 1000);
 
@@ -763,7 +768,7 @@ app.post("/:id/webhooks", async (c) => {
     `INSERT INTO app_webhooks (id, app_id, url, secret, events, is_active, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, 1, ?, ?)`,
   )
-    .bind(whId, id, body.url, secret, JSON.stringify(events), now, now)
+    .bind(whId, id, body.url, storedSecret, JSON.stringify(events), now, now)
     .run();
 
   return c.json(
@@ -812,6 +817,10 @@ app.patch("/:id/webhooks/:wid", async (c) => {
   }
 
   const now = Math.floor(Date.now() / 1000);
+  // wh.secret is already in stored form (encrypted ciphertext or legacy
+  // plaintext); only re-encrypt when the caller actually supplies a new
+  // value, otherwise keep the existing column as-is.
+  const newSecret = body.secret?.trim();
   const updated = {
     url: body.url ?? wh.url,
     events: body.events
@@ -819,7 +828,7 @@ app.patch("/:id/webhooks/:wid", async (c) => {
           body.events.filter((e) => e === "*" || APP_EVENT_TYPES.has(e)),
         )
       : wh.events,
-    secret: body.secret?.trim() || wh.secret,
+    secret: newSecret ? await encryptSecret(c.env, newSecret) : wh.secret,
     is_active:
       body.is_active !== undefined ? (body.is_active ? 1 : 0) : wh.is_active,
   };
@@ -894,7 +903,14 @@ app.post("/:id/webhooks/:wid/test", async (c) => {
   const now = Math.floor(Date.now() / 1000);
   const deliveryId = randomId();
   const payload = JSON.stringify({ event: "ping", timestamp: now, data: {} });
-  const result = await deliver(wh.url, wh.secret, deliveryId, "ping", payload);
+  const signingSecret = (await decryptSecret(c.env, wh.secret)) ?? wh.secret;
+  const result = await deliver(
+    wh.url,
+    signingSecret,
+    deliveryId,
+    "ping",
+    payload,
+  );
 
   await c.env.DB.prepare(
     `INSERT INTO app_webhook_deliveries

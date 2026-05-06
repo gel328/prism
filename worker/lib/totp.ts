@@ -1,5 +1,7 @@
 // TOTP implementation (RFC 6238 / RFC 4226) using Web Crypto
 
+import { decryptSecret } from "./secretCrypto";
+
 const BASE32_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
 
 export function generateTotpSecret(): string {
@@ -131,12 +133,17 @@ export async function hashBackupCodes(codes: string[]): Promise<string[]> {
 /**
  * Verify a TOTP code against any of the user's enabled authenticators or backup codes.
  * Consumes a backup code if matched (single-use).
+ *
+ * `env` is required so the stored authenticator secret can be decrypted
+ * via the SECRETS_KEY-backed envelope; legacy plaintext rows pass
+ * through `decryptSecret` as a no-op.
  */
 export async function verifyAnyTotp(
-  db: D1Database,
+  env: Env,
   userId: string,
   code: string,
 ): Promise<boolean> {
+  const db = env.DB;
   const recovery = await db
     .prepare("SELECT * FROM user_totp_recovery WHERE user_id = ?")
     .bind(userId)
@@ -182,7 +189,8 @@ export async function verifyAnyTotp(
       created_at: number;
     }>();
   for (const t of totps.results) {
-    if (await verifyTotp(code, t.secret)) return true;
+    const plainSecret = (await decryptSecret(env, t.secret)) ?? t.secret;
+    if (await verifyTotp(code, plainSecret)) return true;
   }
   return false;
 }

@@ -9,7 +9,10 @@ import {
 import {
   SENSITIVE_CONFIG_KEYS,
   encryptSecret,
+  decryptSecret,
+  hashSecret,
   isEncryptedSecret,
+  isHashedSecret,
   isSecretsKeyConfigured,
 } from "../lib/secretCrypto";
 import { sendEmail } from "../lib/email";
@@ -214,7 +217,7 @@ app.patch("/config", async (c) => {
   await setConfigValues(c.env.DB, encrypted);
 
   await logAudit(
-    c.env.DB,
+    c.env,
     c.get("user").id,
     "admin.config.update",
     "site_config",
@@ -341,7 +344,7 @@ app.post("/secrets/migrate", async (c) => {
   }
 
   await logAudit(
-    c.env.DB,
+    c.env,
     c.get("user").id,
     "admin.secrets.migrate",
     "secrets",
@@ -422,6 +425,404 @@ async function collectSecretsStatus(env: Env): Promise<SecretsMigrateStatus> {
     config_sensitive_plaintext: cfgPlain,
   };
 }
+
+// ─── D1 row-level secrets migration ──────────────────────────────────────────
+//
+// The first `/secrets/migrate` endpoint above only covers config-shaped
+// secrets (oauth_apps.client_secret, oauth_sources.client_secret,
+// site_config sensitive keys, users.github_readme_token). This second
+// endpoint covers the bearer-style row data — PATs, OAuth tokens,
+// OAuth codes, invite tokens, email-verify tokens, 2FA codes — which
+// switch from plaintext to keyed-HMAC hash, plus the recoverable
+// secrets (TOTP seeds, webhook signing secrets, social OAuth tokens)
+// which switch to AES-GCM ciphertext.
+//
+// Idempotent: rows already in stored form are left alone. Safe to
+// re-run after new plaintext rows accumulate (e.g. between deploys).
+
+interface D1SecretsMigrateStatus {
+  binding_configured: boolean;
+  pat_total: number;
+  pat_plaintext: number;
+  oauth_tokens_total: number;
+  oauth_tokens_access_plaintext: number;
+  oauth_tokens_refresh_plaintext: number;
+  oauth_codes_total: number;
+  oauth_codes_plaintext: number;
+  site_invites_total: number;
+  site_invites_plaintext: number;
+  team_invites_total: number;
+  team_invites_plaintext: number;
+  email_verify_users_total: number;
+  email_verify_users_plaintext: number;
+  user_emails_verify_total: number;
+  user_emails_verify_plaintext: number;
+  oauth_2fa_codes_total: number;
+  oauth_2fa_codes_plaintext: number;
+  totp_authenticators_total: number;
+  totp_authenticators_plaintext: number;
+  webhooks_total: number;
+  webhooks_plaintext: number;
+  app_webhooks_total: number;
+  app_webhooks_plaintext: number;
+  social_connections_access_total: number;
+  social_connections_access_plaintext: number;
+  social_connections_refresh_total: number;
+  social_connections_refresh_plaintext: number;
+}
+
+const ENC = "__ENC_v1__";
+const HASH = "__HASH_v1__";
+
+async function countTotal(env: Env, sql: string): Promise<number> {
+  return (await env.DB.prepare(sql).first<{ n: number }>())?.n ?? 0;
+}
+
+async function countPlaintextHashed(
+  env: Env,
+  table: string,
+  col: string,
+): Promise<{ total: number; plain: number }> {
+  // Plaintext = NOT NULL AND NOT empty AND prefix is neither __HASH_v1__
+  // nor __ENC_v1__. Tokens and codes never legitimately start with `__`,
+  // so this prefix check is reliable.
+  const total = await countTotal(
+    env,
+    `SELECT COUNT(*) AS n FROM ${table} WHERE ${col} IS NOT NULL AND ${col} != ''`,
+  );
+  const plain =
+    (
+      await env.DB.prepare(
+        `SELECT COUNT(*) AS n FROM ${table} WHERE ${col} IS NOT NULL AND ${col} != '' AND substr(${col}, 1, 11) != ? AND substr(${col}, 1, 10) != ?`,
+      )
+        .bind(HASH, ENC)
+        .first<{ n: number }>()
+    )?.n ?? 0;
+  return { total, plain };
+}
+
+async function collectD1SecretsStatus(
+  env: Env,
+): Promise<D1SecretsMigrateStatus> {
+  const [
+    pat,
+    otAccess,
+    otRefresh,
+    oc,
+    si,
+    ti,
+    uVerifyTok,
+    uVerifyCode,
+    ueVerifyTok,
+    ueVerifyCode,
+    twoFa,
+    totp,
+    webhooks,
+    appWebhooks,
+    scAccess,
+    scRefresh,
+  ] = await Promise.all([
+    countPlaintextHashed(env, "personal_access_tokens", "token"),
+    countPlaintextHashed(env, "oauth_tokens", "access_token"),
+    countPlaintextHashed(env, "oauth_tokens", "refresh_token"),
+    countPlaintextHashed(env, "oauth_codes", "code"),
+    countPlaintextHashed(env, "site_invites", "token"),
+    countPlaintextHashed(env, "team_invites", "token"),
+    countPlaintextHashed(env, "users", "email_verify_token"),
+    countPlaintextHashed(env, "users", "email_verify_code"),
+    countPlaintextHashed(env, "user_emails", "verify_token"),
+    countPlaintextHashed(env, "user_emails", "verify_code"),
+    countPlaintextHashed(env, "oauth_2fa_codes", "code"),
+    countPlaintextHashed(env, "totp_authenticators", "secret"),
+    countPlaintextHashed(env, "webhooks", "secret"),
+    countPlaintextHashed(env, "app_webhooks", "secret"),
+    countPlaintextHashed(env, "social_connections", "access_token"),
+    countPlaintextHashed(env, "social_connections", "refresh_token"),
+  ]);
+
+  return {
+    binding_configured: isSecretsKeyConfigured(env),
+    pat_total: pat.total,
+    pat_plaintext: pat.plain,
+    oauth_tokens_total: otAccess.total,
+    oauth_tokens_access_plaintext: otAccess.plain,
+    oauth_tokens_refresh_plaintext: otRefresh.plain,
+    oauth_codes_total: oc.total,
+    oauth_codes_plaintext: oc.plain,
+    site_invites_total: si.total,
+    site_invites_plaintext: si.plain,
+    team_invites_total: ti.total,
+    team_invites_plaintext: ti.plain,
+    email_verify_users_total: Math.max(uVerifyTok.total, uVerifyCode.total),
+    email_verify_users_plaintext: uVerifyTok.plain + uVerifyCode.plain,
+    user_emails_verify_total: Math.max(ueVerifyTok.total, ueVerifyCode.total),
+    user_emails_verify_plaintext: ueVerifyTok.plain + ueVerifyCode.plain,
+    oauth_2fa_codes_total: twoFa.total,
+    oauth_2fa_codes_plaintext: twoFa.plain,
+    totp_authenticators_total: totp.total,
+    totp_authenticators_plaintext: totp.plain,
+    webhooks_total: webhooks.total,
+    webhooks_plaintext: webhooks.plain,
+    app_webhooks_total: appWebhooks.total,
+    app_webhooks_plaintext: appWebhooks.plain,
+    social_connections_access_total: scAccess.total,
+    social_connections_access_plaintext: scAccess.plain,
+    social_connections_refresh_total: scRefresh.total,
+    social_connections_refresh_plaintext: scRefresh.plain,
+  };
+}
+
+app.get("/d1-secrets/status", async (c) => {
+  return c.json(await collectD1SecretsStatus(c.env));
+});
+
+// Convert each plaintext column to its stored form (hash or ciphertext)
+// using the SECRETS_KEY-backed helpers. Streams in batches so a single
+// invocation doesn't exceed worker CPU limits on large tables.
+async function migrateColumnHash(
+  env: Env,
+  table: string,
+  pkCol: string,
+  col: string,
+): Promise<number> {
+  let migrated = 0;
+  // 200 rows per page keeps the worker well under CPU budget even when
+  // every row needs an HMAC. Loop until we see a page with no rows
+  // requiring conversion.
+  while (true) {
+    const { results } = await env.DB.prepare(
+      `SELECT ${pkCol} AS pk, ${col} AS v FROM ${table}
+         WHERE ${col} IS NOT NULL AND ${col} != ''
+           AND substr(${col}, 1, 11) != ? AND substr(${col}, 1, 10) != ?
+         LIMIT 200`,
+    )
+      .bind(HASH, ENC)
+      .all<{ pk: string; v: string }>();
+    if (results.length === 0) return migrated;
+    for (const row of results) {
+      const hashed = await hashSecret(env, row.v);
+      if (!hashed || isHashedSecret(row.v)) continue;
+      await env.DB.prepare(`UPDATE ${table} SET ${col} = ? WHERE ${pkCol} = ?`)
+        .bind(hashed, row.pk)
+        .run();
+      migrated++;
+    }
+  }
+}
+
+async function migrateColumnEncrypt(
+  env: Env,
+  table: string,
+  pkCol: string,
+  col: string,
+): Promise<number> {
+  let migrated = 0;
+  while (true) {
+    const { results } = await env.DB.prepare(
+      `SELECT ${pkCol} AS pk, ${col} AS v FROM ${table}
+         WHERE ${col} IS NOT NULL AND ${col} != ''
+           AND substr(${col}, 1, 11) != ? AND substr(${col}, 1, 10) != ?
+         LIMIT 200`,
+    )
+      .bind(HASH, ENC)
+      .all<{ pk: string; v: string }>();
+    if (results.length === 0) return migrated;
+    for (const row of results) {
+      const ct = await encryptSecret(env, row.v);
+      if (!ct || isEncryptedSecret(row.v)) continue;
+      await env.DB.prepare(`UPDATE ${table} SET ${col} = ? WHERE ${pkCol} = ?`)
+        .bind(ct, row.pk)
+        .run();
+      migrated++;
+    }
+  }
+}
+
+app.post("/d1-secrets/migrate", async (c) => {
+  if (!isSecretsKeyConfigured(c.env)) {
+    return c.json(
+      {
+        error:
+          "SECRETS_KEY binding is not configured. Add the secrets_store_secrets binding in wrangler.jsonc and redeploy first.",
+      },
+      400,
+    );
+  }
+
+  // Smoke-test the binding before touching rows so a malformed
+  // SECRETS_KEY doesn't half-migrate the database.
+  try {
+    await encryptSecret(c.env, "smoke-test");
+    await hashSecret(c.env, "smoke-test");
+  } catch (err) {
+    return c.json(
+      {
+        error: `SECRETS_KEY rejected by Web Crypto: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      },
+      400,
+    );
+  }
+
+  const before = await collectD1SecretsStatus(c.env);
+
+  // ── Hash-only columns (bearer-style verifiers) ──────────────────────────
+  const patCount = await migrateColumnHash(
+    c.env,
+    "personal_access_tokens",
+    "id",
+    "token",
+  );
+  const oauthAccessCount = await migrateColumnHash(
+    c.env,
+    "oauth_tokens",
+    "id",
+    "access_token",
+  );
+  const oauthRefreshCount = await migrateColumnHash(
+    c.env,
+    "oauth_tokens",
+    "id",
+    "refresh_token",
+  );
+  // oauth_codes uses `code` as the natural primary key but the value
+  // also IS the column we're rewriting, so we use rowid for the WHERE.
+  const oauthCodesCount = await migrateColumnHash(
+    c.env,
+    "oauth_codes",
+    "rowid",
+    "code",
+  );
+  const siteInvitesCount = await migrateColumnHash(
+    c.env,
+    "site_invites",
+    "id",
+    "token",
+  );
+  // team_invites uses token as PK; rewrite via rowid to avoid the
+  // self-collision once token = hash(token).
+  const teamInvitesCount = await migrateColumnHash(
+    c.env,
+    "team_invites",
+    "rowid",
+    "token",
+  );
+  const usersTokenCount = await migrateColumnHash(
+    c.env,
+    "users",
+    "id",
+    "email_verify_token",
+  );
+  const usersCodeCount = await migrateColumnHash(
+    c.env,
+    "users",
+    "id",
+    "email_verify_code",
+  );
+  const userEmailsTokenCount = await migrateColumnHash(
+    c.env,
+    "user_emails",
+    "id",
+    "verify_token",
+  );
+  const userEmailsCodeCount = await migrateColumnHash(
+    c.env,
+    "user_emails",
+    "id",
+    "verify_code",
+  );
+  const twoFaCount = await migrateColumnHash(
+    c.env,
+    "oauth_2fa_codes",
+    "rowid",
+    "code",
+  );
+
+  // ── Encrypt-only columns (recoverable for outbound use) ─────────────────
+  const totpCount = await migrateColumnEncrypt(
+    c.env,
+    "totp_authenticators",
+    "id",
+    "secret",
+  );
+  const webhooksCount = await migrateColumnEncrypt(
+    c.env,
+    "webhooks",
+    "id",
+    "secret",
+  );
+  const appWebhooksCount = await migrateColumnEncrypt(
+    c.env,
+    "app_webhooks",
+    "id",
+    "secret",
+  );
+  const scAccessCount = await migrateColumnEncrypt(
+    c.env,
+    "social_connections",
+    "id",
+    "access_token",
+  );
+  const scRefreshCount = await migrateColumnEncrypt(
+    c.env,
+    "social_connections",
+    "id",
+    "refresh_token",
+  );
+
+  await logAudit(
+    c.env,
+    c.get("user").id,
+    "admin.d1_secrets.migrate",
+    "secrets",
+    null,
+    {
+      pat: patCount,
+      oauth_tokens_access: oauthAccessCount,
+      oauth_tokens_refresh: oauthRefreshCount,
+      oauth_codes: oauthCodesCount,
+      site_invites: siteInvitesCount,
+      team_invites: teamInvitesCount,
+      users_email_verify_token: usersTokenCount,
+      users_email_verify_code: usersCodeCount,
+      user_emails_verify_token: userEmailsTokenCount,
+      user_emails_verify_code: userEmailsCodeCount,
+      oauth_2fa_codes: twoFaCount,
+      totp_authenticators: totpCount,
+      webhooks: webhooksCount,
+      app_webhooks: appWebhooksCount,
+      social_connections_access: scAccessCount,
+      social_connections_refresh: scRefreshCount,
+    },
+    getIp(c),
+    c.executionCtx,
+  );
+
+  const after = await collectD1SecretsStatus(c.env);
+  return c.json({
+    migrated: {
+      pat: patCount,
+      oauth_tokens_access: oauthAccessCount,
+      oauth_tokens_refresh: oauthRefreshCount,
+      oauth_codes: oauthCodesCount,
+      site_invites: siteInvitesCount,
+      team_invites: teamInvitesCount,
+      users_email_verify_token: usersTokenCount,
+      users_email_verify_code: usersCodeCount,
+      user_emails_verify_token: userEmailsTokenCount,
+      user_emails_verify_code: userEmailsCodeCount,
+      oauth_2fa_codes: twoFaCount,
+      totp_authenticators: totpCount,
+      webhooks: webhooksCount,
+      app_webhooks: appWebhooksCount,
+      social_connections_access: scAccessCount,
+      social_connections_refresh: scRefreshCount,
+    },
+    before,
+    after,
+  });
+});
 
 // ─── User management ──────────────────────────────────────────────────────────
 
@@ -554,7 +955,7 @@ app.patch("/users/:id", async (c) => {
     .run();
 
   await logAudit(
-    c.env.DB,
+    c.env,
     admin.id,
     "admin.user.update",
     "user",
@@ -585,7 +986,7 @@ app.delete("/users/:id", async (c) => {
     sweepOrphanedImageProxyMappings(c.env.DB).catch(() => {}),
   );
   await logAudit(
-    c.env.DB,
+    c.env,
     admin.id,
     "admin.user.delete",
     "user",
@@ -711,7 +1112,7 @@ app.patch("/apps/:id", async (c) => {
     .bind(...values)
     .run();
   await logAudit(
-    c.env.DB,
+    c.env,
     admin.id,
     "admin.app.update",
     "oauth_app",
@@ -933,7 +1334,7 @@ app.post("/reset/request", async (c) => {
     if (!body.totp_code) {
       return c.json({ error: "totp_required" }, 400);
     }
-    const ok = await verifyAnyTotp(c.env.DB, user.id, body.totp_code);
+    const ok = await verifyAnyTotp(c.env, user.id, body.totp_code);
     if (!ok) return c.json({ error: "invalid_totp" }, 400);
     if (sessionId) {
       const config = await getConfig(c.env.DB);
@@ -1028,7 +1429,7 @@ app.post("/reset/confirm", async (c) => {
     if (!body.totp_code) {
       return c.json({ error: "totp_required" }, 400);
     }
-    const ok = await verifyAnyTotp(c.env.DB, user.id, body.totp_code);
+    const ok = await verifyAnyTotp(c.env, user.id, body.totp_code);
     if (!ok) return c.json({ error: "invalid_totp" }, 400);
   }
 
@@ -1166,7 +1567,7 @@ app.post("/migrate-teams-as-users", async (c) => {
   const appsRealigned = appUpdate.meta?.changes ?? 0;
 
   await logAudit(
-    c.env.DB,
+    c.env,
     admin.id,
     "admin.migrate_teams_as_users",
     "users",
@@ -1211,7 +1612,7 @@ app.post("/migrate-image-proxy", async (c) => {
     registered++;
   }
   await logAudit(
-    c.env.DB,
+    c.env,
     admin.id,
     "admin.migrate_image_proxy",
     "image_proxy_mappings",
@@ -1229,7 +1630,7 @@ app.post("/sweep-image-proxy", async (c) => {
   const admin = c.get("user");
   const { deleted } = await sweepOrphanedImageProxyMappings(c.env.DB);
   await logAudit(
-    c.env.DB,
+    c.env,
     admin.id,
     "admin.sweep_image_proxy",
     "image_proxy_mappings",
@@ -1327,7 +1728,7 @@ app.delete("/image-proxy/:id", async (c) => {
     .bind(id)
     .run();
   await logAudit(
-    c.env.DB,
+    c.env,
     admin.id,
     "admin.image_proxy.delete",
     "image_proxy_mappings",
@@ -1427,7 +1828,7 @@ app.delete("/teams/:id", async (c) => {
   );
 
   await logAudit(
-    c.env.DB,
+    c.env,
     admin.id,
     "admin.team.delete",
     "team",
@@ -1836,7 +2237,7 @@ app.post("/debug", async (c) => {
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 async function logAudit(
-  db: D1Database,
+  env: Env,
   userId: string,
   action: string,
   resourceType: string | null,
@@ -1846,10 +2247,9 @@ async function logAudit(
   ctx: ExecutionContext,
 ) {
   const now = Math.floor(Date.now() / 1000);
-  await db
-    .prepare(
-      "INSERT INTO audit_log (id, user_id, action, resource_type, resource_id, metadata, ip_address, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-    )
+  await env.DB.prepare(
+    "INSERT INTO audit_log (id, user_id, action, resource_type, resource_id, metadata, ip_address, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+  )
     .bind(
       randomId(),
       userId,
@@ -1863,7 +2263,7 @@ async function logAudit(
     .run();
   // Fire webhooks subscribed to this event — best-effort, non-blocking
   ctx.waitUntil(
-    deliverAdminWebhooks(db, action, {
+    deliverAdminWebhooks(env, action, {
       user_id: userId,
       resource_type: resourceType,
       resource_id: resourceId,
@@ -1902,6 +2302,7 @@ app.post("/invites", async (c) => {
   const now = Math.floor(Date.now() / 1000);
   const id = randomId();
   const token = randomBase64url(24);
+  const storedToken = await hashSecret(c.env, token);
   const expiresAt = body.expires_in_days
     ? now + body.expires_in_days * 86400
     : null;
@@ -1912,7 +2313,7 @@ app.post("/invites", async (c) => {
   )
     .bind(
       id,
-      token,
+      storedToken,
       body.email?.toLowerCase().trim() ?? null,
       body.note ?? null,
       body.max_uses ?? null,
@@ -1947,7 +2348,7 @@ app.post("/invites", async (c) => {
   }
 
   await logAudit(
-    c.env.DB,
+    c.env,
     admin.id,
     "invite.create",
     "site_invite",
@@ -1977,7 +2378,7 @@ app.delete("/invites/:id", async (c) => {
     .run();
 
   await logAudit(
-    c.env.DB,
+    c.env,
     admin.id,
     "invite.revoke",
     "site_invite",
@@ -2221,7 +2622,7 @@ app.post("/oauth-sources", async (c) => {
   }
 
   await logAudit(
-    c.env.DB,
+    c.env,
     admin.id,
     "oauth_source.create",
     "oauth_source",
@@ -2316,7 +2717,7 @@ app.patch("/oauth-sources/:id", async (c) => {
     .run();
 
   await logAudit(
-    c.env.DB,
+    c.env,
     admin.id,
     "oauth_source.update",
     "oauth_source",
@@ -2343,7 +2744,7 @@ app.delete("/oauth-sources/:id", async (c) => {
     .bind(id)
     .run();
   await logAudit(
-    c.env.DB,
+    c.env,
     admin.id,
     "oauth_source.delete",
     "oauth_source",
@@ -2410,6 +2811,7 @@ app.post("/webhooks", async (c) => {
       )
     : [];
   const secret = body.secret?.trim() || randomBase64url(32);
+  const storedSecret = await encryptSecret(c.env, secret);
   const now = Math.floor(Date.now() / 1000);
   const id = randomId();
 
@@ -2420,7 +2822,7 @@ app.post("/webhooks", async (c) => {
       id,
       body.name.trim(),
       body.url.trim(),
-      secret,
+      storedSecret,
       JSON.stringify(events),
       c.get("user").id,
       now,
@@ -2429,7 +2831,7 @@ app.post("/webhooks", async (c) => {
     .run();
 
   await logAudit(
-    c.env.DB,
+    c.env,
     c.get("user").id,
     "webhook.create",
     "webhook",
@@ -2498,7 +2900,7 @@ app.patch("/webhooks/:id", async (c) => {
   }
   if (body.secret !== undefined) {
     sets.push("secret = ?");
-    values.push(body.secret);
+    values.push(await encryptSecret(c.env, body.secret));
   }
   if (body.events !== undefined) {
     const filtered = body.events.filter((e) =>
@@ -2523,7 +2925,7 @@ app.patch("/webhooks/:id", async (c) => {
     .run();
 
   await logAudit(
-    c.env.DB,
+    c.env,
     c.get("user").id,
     "webhook.update",
     "webhook",
@@ -2550,7 +2952,7 @@ app.delete("/webhooks/:id", async (c) => {
     .run();
 
   await logAudit(
-    c.env.DB,
+    c.env,
     c.get("user").id,
     "webhook.delete",
     "webhook",
@@ -2579,7 +2981,8 @@ app.post("/webhooks/:id/test", async (c) => {
     data: { message: "Test delivery from Prism" },
   });
 
-  const sig = await hmacSign(wh.secret, payload);
+  const signingSecret = (await decryptSecret(c.env, wh.secret)) ?? wh.secret;
+  const sig = await hmacSign(signingSecret, payload);
   let status: number | null = null;
   let success = false;
 

@@ -32,6 +32,20 @@ const REDACTED_FIELDS = new Set([
   "captcha_secret_key",
   "recovery_code",
   "totp_secret",
+  "secret",
+  "nonce",
+  "backup_codes",
+  "backup_code",
+  "verify_code",
+  "verify_token",
+  "email_verify_code",
+  "email_verify_token",
+  "invite_token",
+  "github_readme_token",
+  "github_client_secret",
+  "google_client_secret",
+  "microsoft_client_secret",
+  "discord_client_secret",
 ]);
 
 const REDACTED = "[REDACTED]";

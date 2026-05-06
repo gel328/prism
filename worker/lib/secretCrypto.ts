@@ -1,4 +1,4 @@
-// Envelope encryption for sensitive fields stored in D1.
+// Envelope encryption + keyed hashing for sensitive fields stored in D1.
 //
 // Most "secrets" in this codebase — OAuth app client_secret, OAuth source
 // (external IdP) client_secret, captcha secret keys, SMTP/IMAP passwords,
@@ -6,24 +6,39 @@
 // module wraps them with AES-GCM using a master key sourced from a
 // Cloudflare Secrets Store binding (`env.SECRETS_KEY`).
 //
+// Bearer-style secrets that need indexed lookup (PATs, OAuth tokens, OAuth
+// codes, invite tokens, email-verify tokens, 2FA codes/nonces, individual
+// backup codes) cannot be encrypted at rest with AES-GCM and still be
+// looked up by value — AES-GCM is non-deterministic. Those use the
+// `hashSecret` path instead: a deterministic HMAC-SHA256 keyed by an
+// HKDF-derived subkey of the master key. The plaintext is never
+// recoverable; the user-supplied candidate is hashed and compared
+// against the stored hash.
+//
 // Design choices:
 //   - Single binding. Per-secret bindings don't scale to dynamic rows
 //     (admins create OAuth sources / users create OAuth apps at runtime).
 //     A site-wide master key + envelope encryption is the standard
 //     pattern for this.
-//   - Optional binding. If `env.SECRETS_KEY` is absent, encryptSecret is
-//     a no-op (returns plaintext) and decryptSecret short-circuits any
-//     value lacking the prefix. This keeps the legacy plaintext path
-//     working until an admin runs the migrate flow.
-//   - Self-describing format: ciphertext rows start with `__ENC_v1__` so
-//     we can tell at-a-glance whether a row is encrypted. Real OAuth
-//     client secrets are random alphanumeric, never start with this.
-//   - Idempotent: encryptSecret on already-encrypted input returns it
-//     unchanged so the migration job can be re-run safely.
+//   - Optional binding. If `env.SECRETS_KEY` is absent, encryptSecret /
+//     hashSecret are no-ops (return plaintext) and the inverse helpers
+//     short-circuit any value lacking the prefix. This keeps the legacy
+//     plaintext path working until an admin runs the migrate flow.
+//   - Self-describing format: ciphertext rows start with `__ENC_v1__`
+//     and hash rows start with `__HASH_v1__` so we can tell at-a-glance
+//     what shape a row is in. Real tokens / codes / passwords are random
+//     alphanumeric and never start with `__`.
+//   - Idempotent: encryptSecret / hashSecret on already-transformed
+//     input return it unchanged so the migration job can be re-run.
+//   - Domain-separated subkey: hashing uses an HKDF-derived HMAC subkey
+//     ("prism:hash-subkey:v1") rather than the raw master key, so the
+//     same master can safely serve both AES-GCM and HMAC-SHA256.
 
 const ENC_PREFIX = "__ENC_v1__";
+const HASH_PREFIX = "__HASH_v1__";
 const KEY_LENGTH = 32;
 const IV_LENGTH = 12;
+const HASH_SUBKEY_INFO = "prism:hash-subkey:v1";
 
 /** Site-config keys whose values must be encrypted at rest. Anything
  *  missing from this list is stored as-is. Keep this list aligned with
@@ -40,20 +55,25 @@ export const SENSITIVE_CONFIG_KEYS: ReadonlySet<string> = new Set([
   "github_readme_token",
 ]);
 
-let cachedKey: Promise<CryptoKey> | null = null;
-
-/** Reset cached key — used by tests and the admin "I rotated the master
- *  key" flow. Not exported elsewhere because the binding is read-only. */
-export function resetSecretsKeyCache(): void {
-  cachedKey = null;
+interface KeyPair {
+  aes: CryptoKey;
+  hmac: CryptoKey;
 }
 
-async function getMasterKey(env: Env): Promise<CryptoKey> {
+let cachedKeys: Promise<KeyPair> | null = null;
+
+/** Reset cached keys — used by tests and the admin "I rotated the master
+ *  key" flow. Not exported elsewhere because the binding is read-only. */
+export function resetSecretsKeyCache(): void {
+  cachedKeys = null;
+}
+
+async function getKeys(env: Env): Promise<KeyPair> {
   if (!env.SECRETS_KEY) {
     throw new Error("SECRETS_KEY binding is not configured");
   }
-  if (!cachedKey) {
-    cachedKey = (async () => {
+  if (!cachedKeys) {
+    cachedKeys = (async () => {
       const raw = await env.SECRETS_KEY!.get();
       if (!raw) throw new Error("SECRETS_KEY value is empty");
       const bytes = base64UrlToBytes(raw.trim());
@@ -62,17 +82,66 @@ async function getMasterKey(env: Env): Promise<CryptoKey> {
           `SECRETS_KEY must be ${KEY_LENGTH} bytes encoded as base64url`,
         );
       }
-      return crypto.subtle.importKey("raw", bytes, { name: "AES-GCM" }, false, [
-        "encrypt",
-        "decrypt",
-      ]);
+      // AES key is imported from the raw master bytes directly so any
+      // ciphertext written before the HMAC subkey existed remains
+      // decryptable byte-for-byte.
+      const aes = await crypto.subtle.importKey(
+        "raw",
+        bytes,
+        { name: "AES-GCM" },
+        false,
+        ["encrypt", "decrypt"],
+      );
+      // HMAC subkey is derived via HKDF for domain separation. Salt is
+      // empty (HKDF spec allows this); the info string pins the use to
+      // hashing v1 so any future variants (e.g. a different hash
+      // construction) get a different subkey.
+      const hkdfMaterial = await crypto.subtle.importKey(
+        "raw",
+        bytes,
+        "HKDF",
+        false,
+        ["deriveBits"],
+      );
+      const hmacBits = await crypto.subtle.deriveBits(
+        {
+          name: "HKDF",
+          hash: "SHA-256",
+          salt: new Uint8Array(0),
+          info: new TextEncoder().encode(HASH_SUBKEY_INFO),
+        },
+        hkdfMaterial,
+        256,
+      );
+      const hmac = await crypto.subtle.importKey(
+        "raw",
+        hmacBits,
+        { name: "HMAC", hash: "SHA-256" },
+        false,
+        ["sign"],
+      );
+      return { aes, hmac };
     })();
   }
-  return cachedKey;
+  return cachedKeys;
 }
 
 export function isEncryptedSecret(value: string | null | undefined): boolean {
   return typeof value === "string" && value.startsWith(ENC_PREFIX);
+}
+
+export function isHashedSecret(value: string | null | undefined): boolean {
+  return typeof value === "string" && value.startsWith(HASH_PREFIX);
+}
+
+/** True when a value LOOKS like an internal stored representation (cipher
+ *  or hash). Use this to reject candidate inputs from the wire — no real
+ *  user-facing token/code/password starts with `__`, so a candidate that
+ *  does is either a probe or accidental copy-paste of stored material. */
+export function looksLikeStoredSecret(
+  value: string | null | undefined,
+): boolean {
+  return isEncryptedSecret(value) || isHashedSecret(value);
 }
 
 export function isSecretsKeyConfigured(env: Env): boolean {
@@ -94,12 +163,12 @@ export async function encryptSecret(
   if (isEncryptedSecret(plaintext)) return plaintext;
   if (!env.SECRETS_KEY) return plaintext;
 
-  const key = await getMasterKey(env);
+  const { aes } = await getKeys(env);
   const iv = crypto.getRandomValues(new Uint8Array(IV_LENGTH));
   const ct = new Uint8Array(
     await crypto.subtle.encrypt(
       { name: "AES-GCM", iv },
-      key,
+      aes,
       new TextEncoder().encode(plaintext),
     ),
   );
@@ -134,11 +203,101 @@ export async function decryptSecret(
   const ct = base64UrlToBytes(rest.slice(sep + 1));
   if (!iv || !ct) throw new Error("Malformed encrypted secret");
 
-  const key = await getMasterKey(env);
+  const { aes } = await getKeys(env);
   const pt = new Uint8Array(
-    await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, ct),
+    await crypto.subtle.decrypt({ name: "AES-GCM", iv }, aes, ct),
   );
   return new TextDecoder().decode(pt);
+}
+
+/** Hash a plaintext secret with the keyed HMAC-SHA256 subkey. Output is
+ *  deterministic for a given (key, input), which is what makes indexed
+ *  lookup possible. No-op when:
+ *    - value is null/empty (returned as-is)
+ *    - value is already hashed (returned as-is — idempotent)
+ *    - SECRETS_KEY is not bound (returned as-is — legacy plaintext)
+ *
+ *  Use for bearer-style tokens where the server only ever needs to
+ *  verify (not recover) the original value: PATs, OAuth tokens, OAuth
+ *  codes, invite tokens, email-verify codes, 2FA codes, backup codes.
+ */
+export async function hashSecret(
+  env: Env,
+  plaintext: string | null | undefined,
+): Promise<string | null> {
+  if (plaintext == null || plaintext === "") {
+    return (plaintext as string | null) ?? null;
+  }
+  if (isHashedSecret(plaintext)) return plaintext;
+  if (!env.SECRETS_KEY) return plaintext;
+
+  const { hmac } = await getKeys(env);
+  const sig = new Uint8Array(
+    await crypto.subtle.sign("HMAC", hmac, new TextEncoder().encode(plaintext)),
+  );
+  return `${HASH_PREFIX}${bytesToBase64Url(sig)}`;
+}
+
+/** Hash a user-supplied candidate so it can be used in a `WHERE col = ?`
+ *  lookup against a hashed column. Returns null when the candidate is
+ *  null/empty or LOOKS like a stored cipher/hash (rejecting suspicious
+ *  inputs prevents an attacker from submitting a stored hash directly
+ *  and matching the row by exact-string compare in the legacy plaintext
+ *  fallback clause).
+ *
+ *  When SECRETS_KEY is unbound this returns the candidate unchanged so
+ *  legacy plaintext lookups continue working.
+ *
+ *  Use the OR-pattern at lookup sites:
+ *      WHERE col = ? OR col = ?
+ *      bind(rawCandidate, await hashLookupCandidate(env, rawCandidate))
+ *  so unmigrated plaintext rows and migrated hashed rows both match.
+ */
+export async function hashLookupCandidate(
+  env: Env,
+  candidate: string | null | undefined,
+): Promise<string | null> {
+  if (typeof candidate !== "string" || candidate === "") return null;
+  if (looksLikeStoredSecret(candidate)) return null;
+  if (!env.SECRETS_KEY) return candidate;
+  const { hmac } = await getKeys(env);
+  const sig = new Uint8Array(
+    await crypto.subtle.sign("HMAC", hmac, new TextEncoder().encode(candidate)),
+  );
+  return `${HASH_PREFIX}${bytesToBase64Url(sig)}`;
+}
+
+/** Constant-time comparison: hashes the candidate and compares to the
+ *  stored hash. Falls back to direct string compare when the stored
+ *  value is legacy plaintext, so verification still works on rows that
+ *  haven't been migrated yet. */
+export async function timingSafeHashEqual(
+  env: Env,
+  stored: string | null | undefined,
+  candidate: string,
+): Promise<boolean> {
+  if (!stored || !candidate) return false;
+  const expected = isHashedSecret(stored) ? stored : stored; // plaintext path: compare directly below
+  const actual = isHashedSecret(stored)
+    ? ((await hashSecret(env, candidate)) ?? "")
+    : candidate;
+  return constantTimeStringEqual(expected, actual);
+}
+
+function constantTimeStringEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) {
+    let acc = 1;
+    const max = Math.max(a.length, b.length);
+    for (let i = 0; i < max; i++) {
+      acc |= (a.charCodeAt(i) || 0) ^ (b.charCodeAt(i) || 0);
+    }
+    return acc === 0;
+  }
+  let acc = 0;
+  for (let i = 0; i < a.length; i++) {
+    acc |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return acc === 0;
 }
 
 /** Constant-time comparison helper that decrypts the stored value first.
@@ -152,22 +311,7 @@ export async function timingSafeSecretEqual(
   if (!stored || !candidate) return false;
   const plain = await decryptSecret(env, stored);
   if (plain == null) return false;
-  // Same constant-time impl as lib/crypto's timingSafeStrEqual; inlined
-  // here to avoid a circular import.
-  if (plain.length !== candidate.length) {
-    // Still walk both lengths so we don't leak length via timing.
-    let acc = 1;
-    const max = Math.max(plain.length, candidate.length);
-    for (let i = 0; i < max; i++) {
-      acc |= (plain.charCodeAt(i) || 0) ^ (candidate.charCodeAt(i) || 0);
-    }
-    return acc === 0;
-  }
-  let acc = 0;
-  for (let i = 0; i < plain.length; i++) {
-    acc |= plain.charCodeAt(i) ^ candidate.charCodeAt(i);
-  }
-  return acc === 0;
+  return constantTimeStringEqual(plain, candidate);
 }
 
 // ─── base64url ───────────────────────────────────────────────────────────────

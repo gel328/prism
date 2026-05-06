@@ -2,7 +2,13 @@
 
 import { Hono } from "hono";
 import { getConfig, getRsaKeyPair } from "../lib/config";
-import { encryptSecret, timingSafeSecretEqual } from "../lib/secretCrypto";
+import {
+  encryptSecret,
+  decryptSecret,
+  hashSecret,
+  hashLookupCandidate,
+  timingSafeSecretEqual,
+} from "../lib/secretCrypto";
 import { getMLDSAKey } from "../lib/mldsa";
 import { signAccessToken, verifyAccessToken, extractAud } from "../lib/jwt";
 import { randomBase64url, randomId, verifyPkce } from "../lib/crypto";
@@ -487,7 +493,7 @@ app.delete("/consents/:client_id", requireAuth, async (c) => {
   if (appRow) {
     c.executionCtx.waitUntil(
       Promise.all([
-        deliverAppEvent(c.env.DB, appRow.id, "user.token_revoked", {
+        deliverAppEvent(c.env, appRow.id, "user.token_revoked", {
           user_id: user.id,
         }).catch(() => {}),
         deliverUserEmailNotifications(
@@ -782,7 +788,7 @@ app.post("/authorize", requireAuth, async (c) => {
         twoFaOk = true;
       }
     } else if (body.totp_code) {
-      twoFaOk = await verifyAnyTotp(c.env.DB, user.id, body.totp_code);
+      twoFaOk = await verifyAnyTotp(c.env, user.id, body.totp_code);
     }
 
     if (!twoFaOk) {
@@ -947,14 +953,16 @@ app.post("/authorize", requireAuth, async (c) => {
     ).catch(() => {}),
   );
 
-  // Issue authorization code (10 minute TTL)
+  // Issue authorization code (10 minute TTL). Stored as keyed-HMAC hash
+  // so a D1 leak doesn't surrender redeemable codes.
   const code = randomBase64url(32);
+  const storedCode = await hashSecret(c.env, code);
   await c.env.DB.prepare(
     `INSERT INTO oauth_codes (code, client_id, user_id, redirect_uri, scopes, code_challenge, code_challenge_method, nonce, expires_at, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   )
     .bind(
-      code,
+      storedCode,
       body.client_id,
       user.id,
       body.redirect_uri,
@@ -983,7 +991,7 @@ app.post("/authorize", requireAuth, async (c) => {
 
   // Notify the app that a user just granted access
   c.executionCtx.waitUntil(
-    deliverAppEvent(c.env.DB, oauthApp.id, "user.token_granted", {
+    deliverAppEvent(c.env, oauthApp.id, "user.token_granted", {
       user_id: user.id,
       scopes: boundScopes,
       granted_at: now,
@@ -1441,7 +1449,7 @@ app.post("/2fa/authorize", requireAuth, async (c) => {
         method = "passkey";
       }
     } else if (body.totp_code) {
-      if (await verifyAnyTotp(c.env.DB, user.id, body.totp_code)) {
+      if (await verifyAnyTotp(c.env, user.id, body.totp_code)) {
         method = "totp";
       }
     }
@@ -1477,12 +1485,13 @@ app.post("/2fa/authorize", requireAuth, async (c) => {
   // can decide whether to accept a sudo-bypassed confirmation for the action.
   // Apps performing very high-stakes operations should require method !== "sudo".
   const code = randomBase64url(32);
+  const storedCode = await hashSecret(c.env, code);
   await c.env.DB.prepare(
     `INSERT INTO oauth_2fa_codes (code, client_id, user_id, redirect_uri, action, nonce, method, code_challenge, code_challenge_method, expires_at, verified_at, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   )
     .bind(
-      code,
+      storedCode,
       challenge.client_id,
       user.id,
       challenge.redirect_uri,
@@ -1573,10 +1582,12 @@ app.post("/2fa/verify", async (c) => {
     }
   }
 
+  const codeLookup = await hashLookupCandidate(c.env, code);
+  if (!codeLookup) return c.json({ error: "invalid_grant" }, 400);
   const codeRow = await c.env.DB.prepare(
-    "SELECT * FROM oauth_2fa_codes WHERE code = ?",
+    "SELECT * FROM oauth_2fa_codes WHERE code = ? OR code = ?",
   )
-    .bind(code)
+    .bind(code, codeLookup)
     .first<import("../types").OAuth2FACodeRow>();
   // Bind the code to (client_id, redirect_uri) before any other check so a
   // stolen code is useless to a different app or sent to a different URI.
@@ -1636,7 +1647,7 @@ app.post("/2fa/verify", async (c) => {
   const updated = await c.env.DB.prepare(
     "UPDATE oauth_2fa_codes SET used_at = ? WHERE code = ? AND used_at IS NULL",
   )
-    .bind(now, code)
+    .bind(now, codeRow.code)
     .run();
   if (!updated.meta.changes) {
     return c.json(
@@ -1719,10 +1730,12 @@ app.post("/token", async (c) => {
   // ── Authorization Code grant ─────────────────────────────────────────────
   if (grant_type === "authorization_code") {
     const now = Math.floor(Date.now() / 1000);
+    const codeLookup = await hashLookupCandidate(c.env, code);
+    if (!codeLookup) return c.json({ error: "invalid_grant" }, 400);
     const codeRow = await c.env.DB.prepare(
-      "SELECT * FROM oauth_codes WHERE code = ?",
+      "SELECT * FROM oauth_codes WHERE code = ? OR code = ?",
     )
-      .bind(code)
+      .bind(code, codeLookup)
       .first<OAuthCodeRow>();
 
     if (!codeRow || codeRow.client_id !== clientId)
@@ -1774,9 +1787,10 @@ app.post("/token", async (c) => {
         );
     }
 
-    // Consume code
+    // Consume code — match the row we just selected (codeRow.code is
+    // already in stored form, so a single direct compare is enough).
     await c.env.DB.prepare("DELETE FROM oauth_codes WHERE code = ?")
-      .bind(code)
+      .bind(codeRow.code)
       .run();
 
     const user = await c.env.DB.prepare(
@@ -1819,14 +1833,21 @@ app.post("/token", async (c) => {
       accessToken = randomBase64url(48);
     }
 
+    // Store the HMAC-keyed hash of the bearer values so a D1 leak doesn't
+    // surrender every active session. JWT access tokens are also hashed
+    // here even though they're verified by signature (lookup uses the jti
+    // column) — keeps the column shape uniform and lets revocation match
+    // the supplied JWT via the OR-pattern.
+    const storedAccess = await hashSecret(c.env, accessToken);
+    const storedRefresh = await hashSecret(c.env, refreshToken);
     await c.env.DB.prepare(
       `INSERT INTO oauth_tokens (id, access_token, refresh_token, client_id, user_id, scopes, expires_at, refresh_expires_at, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
       .bind(
         jti,
-        accessToken,
-        refreshToken,
+        storedAccess,
+        storedRefresh,
         clientId,
         user.id,
         JSON.stringify(scopes),
@@ -1863,10 +1884,12 @@ app.post("/token", async (c) => {
   // ── Refresh Token grant ──────────────────────────────────────────────────
   if (grant_type === "refresh_token") {
     const now = Math.floor(Date.now() / 1000);
+    const refreshLookup = await hashLookupCandidate(c.env, refresh_token);
+    if (!refreshLookup) return c.json({ error: "invalid_grant" }, 400);
     const tokenRow = await c.env.DB.prepare(
-      "SELECT * FROM oauth_tokens WHERE refresh_token = ?",
+      "SELECT * FROM oauth_tokens WHERE refresh_token = ? OR refresh_token = ?",
     )
-      .bind(refresh_token)
+      .bind(refresh_token, refreshLookup)
       .first<OAuthTokenRow>();
 
     if (!tokenRow || tokenRow.client_id !== clientId)
@@ -1910,10 +1933,11 @@ app.post("/token", async (c) => {
       newAccessToken = randomBase64url(48);
     }
 
+    const storedNewAccess = await hashSecret(c.env, newAccessToken);
     await c.env.DB.prepare(
       "UPDATE oauth_tokens SET access_token = ?, expires_at = ? WHERE id = ?",
     )
-      .bind(newAccessToken, now + atTtl, tokenRow.id)
+      .bind(storedNewAccess, now + atTtl, tokenRow.id)
       .run();
 
     return c.json({
@@ -1937,10 +1961,12 @@ app.get("/userinfo", async (c) => {
   const accessToken = auth.slice(7);
 
   const now = Math.floor(Date.now() / 1000);
+  const accessLookup = await hashLookupCandidate(c.env, accessToken);
+  if (!accessLookup) return c.json({ error: "invalid_token" }, 401);
   const tokenRow = await c.env.DB.prepare(
-    "SELECT * FROM oauth_tokens WHERE access_token = ?",
+    "SELECT * FROM oauth_tokens WHERE access_token = ? OR access_token = ?",
   )
-    .bind(accessToken)
+    .bind(accessToken, accessLookup)
     .first<OAuthTokenRow>();
 
   if (!tokenRow || tokenRow.expires_at < now)
@@ -1996,10 +2022,12 @@ app.post("/introspect", async (c) => {
       return c.json({ active: false });
     }
   } else {
+    const tokenLookup = await hashLookupCandidate(c.env, token);
+    if (!tokenLookup) return c.json({ active: false });
     tokenRow = await c.env.DB.prepare(
-      "SELECT * FROM oauth_tokens WHERE access_token = ?",
+      "SELECT * FROM oauth_tokens WHERE access_token = ? OR access_token = ?",
     )
-      .bind(token)
+      .bind(token, tokenLookup)
       .first<OAuthTokenRow>();
   }
 
@@ -2024,11 +2052,17 @@ app.post("/revoke", async (c) => {
   const params = Object.fromEntries(new URLSearchParams(body));
   const token = params.token;
   if (token) {
-    await c.env.DB.prepare(
-      "DELETE FROM oauth_tokens WHERE access_token = ? OR refresh_token = ?",
-    )
-      .bind(token, token)
-      .run();
+    const tokenLookup = await hashLookupCandidate(c.env, token);
+    // hashLookupCandidate returns null only for malicious inputs (those
+    // that look like our internal stored representation); silently
+    // accept and no-op.
+    if (tokenLookup) {
+      await c.env.DB.prepare(
+        "DELETE FROM oauth_tokens WHERE access_token = ? OR access_token = ? OR refresh_token = ? OR refresh_token = ?",
+      )
+        .bind(token, tokenLookup, token, tokenLookup)
+        .run();
+    }
   }
   return new Response(null, { status: 200 });
 });
@@ -2066,20 +2100,27 @@ async function resolveBearerToken(
 
   // Personal Access Token (prism_pat_ prefix)
   if (raw.startsWith("prism_pat_")) {
+    const lookupHash = await hashLookupCandidate(c.env, raw);
+    if (!lookupHash) return null;
     const pat = await c.env.DB.prepare(
-      "SELECT user_id, scopes, expires_at FROM personal_access_tokens WHERE token = ?",
+      "SELECT id, user_id, scopes, expires_at FROM personal_access_tokens WHERE token = ? OR token = ?",
     )
-      .bind(raw)
-      .first<{ user_id: string; scopes: string; expires_at: number | null }>();
+      .bind(raw, lookupHash)
+      .first<{
+        id: string;
+        user_id: string;
+        scopes: string;
+        expires_at: number | null;
+      }>();
     if (!pat) return null;
     if (pat.expires_at !== null && pat.expires_at < now) return null;
     const scopes = JSON.parse(pat.scopes) as string[];
     if (!scopes.includes(requiredScope)) return null;
     // Update last_used_at asynchronously (best-effort)
     c.env.DB.prepare(
-      "UPDATE personal_access_tokens SET last_used_at = ? WHERE token = ?",
+      "UPDATE personal_access_tokens SET last_used_at = ? WHERE id = ?",
     )
-      .bind(now, raw)
+      .bind(now, pat.id)
       .run()
       .catch(() => {});
     resolvedUserId = pat.user_id;
@@ -2112,10 +2153,12 @@ async function resolveBearerToken(
     resolvedClientId = tokenRow.client_id;
   } else {
     // Legacy opaque access token (kept for backward compatibility)
+    const accessLookup = await hashLookupCandidate(c.env, raw);
+    if (!accessLookup) return null;
     const tokenRow = await c.env.DB.prepare(
-      "SELECT user_id, scopes, expires_at, client_id FROM oauth_tokens WHERE access_token = ?",
+      "SELECT user_id, scopes, expires_at, client_id FROM oauth_tokens WHERE access_token = ? OR access_token = ?",
     )
-      .bind(raw)
+      .bind(raw, accessLookup)
       .first<{
         user_id: string;
         scopes: string;
@@ -2573,6 +2616,7 @@ app.post("/me/invites", async (c) => {
   const now = Math.floor(Date.now() / 1000);
   const id = randomId();
   const token = randomBase64url(24);
+  const storedToken = await hashSecret(c.env, token);
   const expiresAt = body.expires_in_days
     ? now + body.expires_in_days * 86400
     : null;
@@ -2583,7 +2627,7 @@ app.post("/me/invites", async (c) => {
   )
     .bind(
       id,
-      token,
+      storedToken,
       body.email?.toLowerCase().trim() ?? null,
       body.note ?? null,
       body.max_uses ?? null,
@@ -4113,7 +4157,8 @@ app.post("/me/admin/webhooks/:id/test", async (c) => {
     data: { message: "Test delivery from Prism" },
   });
 
-  const sig = await hmacSign(wh.secret, payload);
+  const signingSecret = (await decryptSecret(c.env, wh.secret)) ?? wh.secret;
+  const sig = await hmacSign(signingSecret, payload);
   let status: number | null = null;
   let success = false;
 

@@ -11,13 +11,20 @@ import {
   verifyPassword,
 } from "../lib/crypto";
 import { sendEmail, verifyEmailTemplate } from "../lib/email";
+import {
+  encryptSecret,
+  hashSecret,
+  hashLookupCandidate,
+  decryptSecret,
+  isHashedSecret,
+} from "../lib/secretCrypto";
 import { signJWT } from "../lib/jwt";
 import {
   generateBackupCodes,
   generateTotpSecret,
-  hashBackupCode,
   hashBackupCodes,
   totpUri,
+  verifyAnyTotp,
   verifyTotp,
 } from "../lib/totp";
 import {
@@ -42,7 +49,6 @@ import type {
   PasskeyRow,
   SiteInviteRow,
   TotpAuthenticatorRow,
-  TotpRecoveryRow,
   UserRow,
   Variables,
 } from "../types";
@@ -160,10 +166,12 @@ app.post("/register", async (c) => {
       return c.json({ error: "An invite token is required to register" }, 403);
 
     const now = Math.floor(Date.now() / 1000);
+    const inviteLookup = await hashLookupCandidate(c.env, body.invite_token);
+    if (!inviteLookup) return c.json({ error: "Invalid invite token" }, 403);
     const invite = await c.env.DB.prepare(
-      "SELECT * FROM site_invites WHERE token = ?",
+      "SELECT * FROM site_invites WHERE token = ? OR token = ?",
     )
-      .bind(body.invite_token)
+      .bind(body.invite_token, inviteLookup)
       .first<SiteInviteRow>();
 
     if (!invite) return c.json({ error: "Invalid invite token" }, 403);
@@ -210,6 +218,7 @@ app.post("/register", async (c) => {
   const verifyToken = config.require_email_verification
     ? randomBase64url(24)
     : null;
+  const storedVerifyToken = await hashSecret(c.env, verifyToken);
 
   try {
     await c.env.DB.prepare(
@@ -223,7 +232,7 @@ app.post("/register", async (c) => {
         passwordHash,
         body.display_name ?? body.username,
         config.require_email_verification ? 0 : 1,
-        verifyToken,
+        storedVerifyToken,
         now,
         now,
       )
@@ -443,7 +452,7 @@ app.post("/login", async (c) => {
     if (!body.totp_code) {
       return c.json({ error: "TOTP code required", totp_required: true }, 200);
     }
-    const ok = await verifyAnyTotp(c.env.DB, user.id, body.totp_code);
+    const ok = await verifyAnyTotp(c.env, user.id, body.totp_code);
     if (!ok) {
       c.executionCtx.waitUntil(
         logLoginError(
@@ -488,12 +497,16 @@ app.get("/verify-email", async (c) => {
 
   const now = Math.floor(Date.now() / 1000);
 
+  const tokenLookup = await hashLookupCandidate(c.env, token);
+  if (!tokenLookup)
+    return c.redirect(`${c.env.APP_URL}/verify-email?status=invalid`);
+
   if (isAlt) {
     // Alternate email verification
     const altEmail = await c.env.DB.prepare(
-      "SELECT id, verified FROM user_emails WHERE verify_token = ?",
+      "SELECT id, verified FROM user_emails WHERE verify_token = ? OR verify_token = ?",
     )
-      .bind(token)
+      .bind(token, tokenLookup)
       .first<{ id: string; verified: number }>();
     if (!altEmail)
       return c.redirect(`${c.env.APP_URL}/verify-email?status=invalid`);
@@ -509,9 +522,9 @@ app.get("/verify-email", async (c) => {
 
   // Primary email verification
   const user = await c.env.DB.prepare(
-    "SELECT * FROM users WHERE email_verify_token = ?",
+    "SELECT * FROM users WHERE email_verify_token = ? OR email_verify_token = ?",
   )
-    .bind(token)
+    .bind(token, tokenLookup)
     .first<UserRow>();
   if (!user) return c.redirect(`${c.env.APP_URL}/verify-email?status=invalid`);
 
@@ -567,14 +580,35 @@ app.post("/email-verify-code", requireAuth, async (c) => {
   if (user.email_verified)
     return c.json({ error: "Email is already verified" }, 400);
 
-  // Reuse existing code or generate a new one
-  let code = user.email_verify_code;
-  if (!code) {
+  // Reuse existing code or generate a new one. Stored value is the
+  // keyed hash (or legacy plaintext when SECRETS_KEY is unbound) — but
+  // the user is shown the plaintext via the response so they can paste
+  // it into the email subject.
+  let code: string;
+  const storedCode = user.email_verify_code;
+  if (storedCode && !isHashedSecret(storedCode)) {
+    // Legacy unmigrated plaintext row — return as-is so the user can
+    // continue with the same code. Migration will hash it later.
+    code = storedCode;
+  } else if (storedCode) {
+    // Already hashed: we can't recover the plaintext, so generate a
+    // fresh code and overwrite. (Rare path: only triggers if the user
+    // previously requested a code, then SECRETS_KEY was rotated /
+    // migration ran.)
     code = randomId(12);
+    const newStored = await hashSecret(c.env, code);
     await c.env.DB.prepare(
       "UPDATE users SET email_verify_code = ? WHERE id = ?",
     )
-      .bind(code, user.id)
+      .bind(newStored, user.id)
+      .run();
+  } else {
+    code = randomId(12);
+    const newStored = await hashSecret(c.env, code);
+    await c.env.DB.prepare(
+      "UPDATE users SET email_verify_code = ? WHERE id = ?",
+    )
+      .bind(newStored, user.id)
       .run();
   }
 
@@ -673,10 +707,12 @@ app.post("/resend-verify-email", requireAuth, async (c) => {
   if (config.email_provider === "none")
     return c.json({ error: "Email sending is not configured" }, 503);
 
-  // Generate a fresh token
+  // Generate a fresh token; stored as the keyed hash but emailed as
+  // plaintext so the click-through URL is verifiable.
   const verifyToken = randomBase64url(24);
+  const storedVerifyToken = await hashSecret(c.env, verifyToken);
   await c.env.DB.prepare("UPDATE users SET email_verify_token = ? WHERE id = ?")
-    .bind(verifyToken, user.id)
+    .bind(storedVerifyToken, user.id)
     .run();
 
   const verifyUrl = `${c.env.APP_URL}/api/auth/verify-email?token=${verifyToken}`;
@@ -704,59 +740,6 @@ app.post("/resend-verify-email", requireAuth, async (c) => {
 });
 
 // ─── TOTP (multi-authenticator) ───────────────────────────────────────────────
-
-// Verify a code against any of the user's enabled authenticators or backup codes.
-// Consumes a backup code if matched.
-async function verifyAnyTotp(
-  db: D1Database,
-  userId: string,
-  code: string,
-): Promise<boolean> {
-  const recovery = await db
-    .prepare("SELECT * FROM user_totp_recovery WHERE user_id = ?")
-    .bind(userId)
-    .first<TotpRecoveryRow>();
-  if (recovery) {
-    const codes = JSON.parse(recovery.backup_codes) as string[];
-    const normalized = code.replace(/-/g, "").toUpperCase();
-    let idx = -1;
-    for (let i = 0; i < codes.length; i++) {
-      const stored = codes[i];
-      if (stored.startsWith("$sha256$")) {
-        if (stored === (await hashBackupCode(normalized))) {
-          idx = i;
-          break;
-        }
-      } else {
-        // old plaintext format — compare normalised on both sides
-        if (stored.replace(/-/g, "").toUpperCase() === normalized) {
-          idx = i;
-          break;
-        }
-      }
-    }
-    if (idx !== -1) {
-      codes.splice(idx, 1);
-      await db
-        .prepare(
-          "UPDATE user_totp_recovery SET backup_codes = ? WHERE user_id = ?",
-        )
-        .bind(JSON.stringify(codes), userId)
-        .run();
-      return true;
-    }
-  }
-  const totps = await db
-    .prepare(
-      "SELECT * FROM totp_authenticators WHERE user_id = ? AND enabled = 1",
-    )
-    .bind(userId)
-    .all<TotpAuthenticatorRow>();
-  for (const t of totps.results) {
-    if (await verifyTotp(code, t.secret)) return true;
-  }
-  return false;
-}
 
 app.get("/totp/list", requireAuth, async (c) => {
   const user = c.get("user");
@@ -788,10 +771,14 @@ app.post("/totp/setup", requireAuth, async (c) => {
   const name = body.name?.trim() || "Authenticator";
   const now = Math.floor(Date.now() / 1000);
 
+  // Encrypt the seed at rest. The plaintext is also returned to the
+  // client (for the QR code / manual entry) on this single response —
+  // after that, all reads go through decryptSecret to compute OTPs.
+  const storedSecret = await encryptSecret(c.env, secret);
   await c.env.DB.prepare(
     "INSERT INTO totp_authenticators (id, user_id, name, secret, enabled, created_at) VALUES (?, ?, ?, ?, 0, ?)",
   )
-    .bind(id, user.id, name, secret, now)
+    .bind(id, user.id, name, storedSecret, now)
     .run();
 
   const uri = totpUri(secret, user.email, config.site_name);
@@ -810,7 +797,8 @@ app.post("/totp/verify", requireAuth, async (c) => {
   if (!auth) return c.json({ error: "Authenticator not found" }, 404);
   if (auth.enabled) return c.json({ error: "Already enabled" }, 409);
 
-  const ok = await verifyTotp(body.code, auth.secret);
+  const plainSecret = (await decryptSecret(c.env, auth.secret)) ?? auth.secret;
+  const ok = await verifyTotp(body.code, plainSecret);
   if (!ok) return c.json({ error: "Invalid TOTP code" }, 400);
 
   await c.env.DB.prepare(
@@ -866,7 +854,7 @@ app.delete("/totp/:id", requireAuth, async (c) => {
     .first<{ id: string; name: string }>();
   if (!auth) return c.json({ error: "Authenticator not found" }, 404);
 
-  const ok = await verifyAnyTotp(c.env.DB, user.id, body.code);
+  const ok = await verifyAnyTotp(c.env, user.id, body.code);
   if (!ok) return c.json({ error: "Invalid TOTP code" }, 400);
 
   await c.env.DB.prepare(
@@ -918,7 +906,7 @@ app.post("/totp/backup-codes", requireAuth, async (c) => {
   if ((count?.n ?? 0) === 0)
     return c.json({ error: "No TOTP authenticators enabled" }, 400);
 
-  const ok = await verifyAnyTotp(c.env.DB, user.id, body.code);
+  const ok = await verifyAnyTotp(c.env, user.id, body.code);
   if (!ok) return c.json({ error: "Invalid TOTP code" }, 400);
 
   const backupCodes = generateBackupCodes();

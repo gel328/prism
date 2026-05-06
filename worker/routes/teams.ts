@@ -2,6 +2,7 @@
 
 import { Hono } from "hono";
 import { randomId, randomBase64url } from "../lib/crypto";
+import { hashSecret, hashLookupCandidate } from "../lib/secretCrypto";
 import { requireAuth, optionalAuth } from "../middleware/auth";
 import { computeIsVerified } from "../lib/domainVerify";
 import {
@@ -129,10 +130,13 @@ app.get("/join/:token", optionalAuth, async (c) => {
   const token = c.req.param("token");
   const now = Math.floor(Date.now() / 1000);
 
+  const tokenLookup = await hashLookupCandidate(c.env, token);
+  if (!tokenLookup)
+    return c.json({ error: "Invite not found or expired" }, 404);
   const invite = await c.env.DB.prepare(
-    "SELECT * FROM team_invites WHERE token = ? AND expires_at > ?",
+    "SELECT * FROM team_invites WHERE (token = ? OR token = ?) AND expires_at > ?",
   )
-    .bind(token, now)
+    .bind(token, tokenLookup, now)
     .first<InviteRow>();
 
   if (!invite) return c.json({ error: "Invite not found or expired" }, 404);
@@ -163,10 +167,13 @@ app.post("/join/:token", requireAuth, async (c) => {
   const token = c.req.param("token");
   const now = Math.floor(Date.now() / 1000);
 
+  const tokenLookup = await hashLookupCandidate(c.env, token);
+  if (!tokenLookup)
+    return c.json({ error: "Invite not found or expired" }, 404);
   const invite = await c.env.DB.prepare(
-    "SELECT * FROM team_invites WHERE token = ? AND expires_at > ?",
+    "SELECT * FROM team_invites WHERE (token = ? OR token = ?) AND expires_at > ?",
   )
-    .bind(token, now)
+    .bind(token, tokenLookup, now)
     .first<InviteRow>();
 
   if (!invite) return c.json({ error: "Invite not found or expired" }, 404);
@@ -188,7 +195,7 @@ app.post("/join/:token", requireAuth, async (c) => {
     ).bind(invite.team_id, user.id, invite.role, now),
     c.env.DB.prepare(
       "UPDATE team_invites SET uses = uses + 1 WHERE token = ?",
-    ).bind(token),
+    ).bind(invite.token),
   ]);
 
   return c.json({ team_id: invite.team_id, message: "Joined team" });
@@ -724,12 +731,22 @@ app.post("/:id/invites", async (c) => {
   const now = Math.floor(Date.now() / 1000);
   const expiresAt = now + ttlHours * 3600;
   const token = randomBase64url(24);
+  const storedToken = await hashSecret(c.env, token);
 
   await c.env.DB.prepare(
     `INSERT INTO team_invites (token, team_id, role, created_by, email, max_uses, uses, expires_at, created_at)
      VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)`,
   )
-    .bind(token, id, role, user.id, body.email ?? null, maxUses, expiresAt, now)
+    .bind(
+      storedToken,
+      id,
+      role,
+      user.id,
+      body.email ?? null,
+      maxUses,
+      expiresAt,
+      now,
+    )
     .run();
 
   const inviteLink = `${c.env.APP_URL}/teams/join/${token}`;
@@ -795,10 +812,14 @@ app.delete("/:id/invites/:token", async (c) => {
   if (!hasRole(member.role, "admin"))
     return c.json({ error: "Forbidden" }, 403);
 
+  const tokenLookup = await hashLookupCandidate(c.env, token);
+  // For revoke, missing/suspicious tokens are silently treated as a no-op
+  // delete — caller already gated by team admin role above, so a probe
+  // here can't be used to enumerate invites.
   await c.env.DB.prepare(
-    "DELETE FROM team_invites WHERE token = ? AND team_id = ?",
+    "DELETE FROM team_invites WHERE (token = ? OR token = ?) AND team_id = ?",
   )
-    .bind(token, id)
+    .bind(token, tokenLookup ?? token, id)
     .run();
 
   return c.json({ message: "Invite revoked" });

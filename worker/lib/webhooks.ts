@@ -1,5 +1,7 @@
 // Webhook delivery — HMAC-signed HTTP POST to registered endpoints
 
+import { decryptSecret } from "./secretCrypto";
+
 const DELIVERY_TIMEOUT_MS = 10_000;
 
 function randomHex(): string {
@@ -64,7 +66,7 @@ export async function deliverOnce(
 }
 
 async function deliverToMatching(
-  db: D1Database,
+  env: Env,
   rows: Array<{ id: string; url: string; secret: string; events: string }>,
   event: string,
   data: unknown,
@@ -82,17 +84,20 @@ async function deliverToMatching(
   await Promise.all(
     matching.map(async (wh) => {
       const deliveryId = randomHex();
+      // The signing secret is stored encrypted at rest; decrypt before
+      // handing it to the HMAC routine. Legacy plaintext rows pass
+      // through unchanged.
+      const signingSecret = (await decryptSecret(env, wh.secret)) ?? wh.secret;
       const result = await deliverOnce(
         wh.url,
-        wh.secret,
+        signingSecret,
         deliveryId,
         event,
         payload,
       );
-      await db
-        .prepare(
-          "INSERT INTO webhook_deliveries (id, webhook_id, event_type, payload, response_status, response_body, success, delivered_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        )
+      await env.DB.prepare(
+        "INSERT INTO webhook_deliveries (id, webhook_id, event_type, payload, response_status, response_body, success, delivered_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      )
         .bind(
           deliveryId,
           wh.id,
@@ -115,33 +120,30 @@ async function deliverToMatching(
 // Fire-and-forget delivery to admin-scope webhooks (user_id IS NULL).
 // Call with .catch(() => {}) at the call site.
 export async function deliverAdminWebhooks(
-  db: D1Database,
+  env: Env,
   event: string,
   data: unknown,
 ): Promise<void> {
-  const { results } = await db
-    .prepare(
-      "SELECT id, url, secret, events FROM webhooks WHERE is_active = 1 AND user_id IS NULL",
-    )
-    .all<{ id: string; url: string; secret: string; events: string }>();
+  const { results } = await env.DB.prepare(
+    "SELECT id, url, secret, events FROM webhooks WHERE is_active = 1 AND user_id IS NULL",
+  ).all<{ id: string; url: string; secret: string; events: string }>();
 
-  await deliverToMatching(db, results, event, data);
+  await deliverToMatching(env, results, event, data);
 }
 
 // Fire-and-forget delivery to user-scope webhooks for a specific user.
 // Call with .catch(() => {}) at the call site.
 export async function deliverUserWebhooks(
-  db: D1Database,
+  env: Env,
   userId: string,
   event: string,
   data: unknown,
 ): Promise<void> {
-  const { results } = await db
-    .prepare(
-      "SELECT id, url, secret, events FROM webhooks WHERE is_active = 1 AND user_id = ?",
-    )
+  const { results } = await env.DB.prepare(
+    "SELECT id, url, secret, events FROM webhooks WHERE is_active = 1 AND user_id = ?",
+  )
     .bind(userId)
     .all<{ id: string; url: string; secret: string; events: string }>();
 
-  await deliverToMatching(db, results, event, data);
+  await deliverToMatching(env, results, event, data);
 }

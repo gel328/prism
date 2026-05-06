@@ -4,7 +4,7 @@ import { Hono } from "hono";
 import type { Context } from "hono";
 import { randomId, randomBase64url, sha256Hex } from "../lib/crypto";
 import { getConfig, getJwtSecret } from "../lib/config";
-import { decryptSecret } from "../lib/secretCrypto";
+import { decryptSecret, encryptSecret } from "../lib/secretCrypto";
 import { requireAuth, optionalAuth } from "../middleware/auth";
 import { signJWT } from "../lib/jwt";
 import { setSessionCookie } from "../lib/cookies";
@@ -656,6 +656,8 @@ app.get("/:provider/callback", async (c) => {
     if (alreadyLinked)
       return c.redirect(`${c.env.APP_URL}/connections?error=already_connected`);
 
+    const storedAccess = await encryptSecret(c.env, accessToken);
+    const storedRefresh = await encryptSecret(c.env, refreshToken);
     await c.env.DB.prepare(
       "INSERT INTO social_connections (id, user_id, provider, provider_user_id, access_token, refresh_token, token_expires_at, profile_data, connected_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
@@ -664,8 +666,8 @@ app.get("/:provider/callback", async (c) => {
         userId,
         slug,
         providerUserId,
-        accessToken,
-        refreshToken,
+        storedAccess,
+        storedRefresh,
         tokenExpiresAt,
         JSON.stringify(profileData),
         now,
@@ -746,12 +748,14 @@ app.get("/:provider/callback", async (c) => {
   if (linkedUsers.length === 1) {
     // Single account — log in directly and refresh the token
     const user = linkedUsers[0];
+    const storedAccess = await encryptSecret(c.env, accessToken);
+    const storedRefresh = await encryptSecret(c.env, refreshToken);
     await c.env.DB.prepare(
       "UPDATE social_connections SET access_token = ?, refresh_token = ?, token_expires_at = ?, profile_data = ? WHERE user_id = ? AND provider = ? AND provider_user_id = ?",
     )
       .bind(
-        accessToken,
-        refreshToken,
+        storedAccess,
+        storedRefresh,
         tokenExpiresAt,
         JSON.stringify(profileData),
         user.id,
@@ -907,12 +911,14 @@ app.post("/complete", async (c) => {
       .first<UserRow>();
     if (!user) return c.json({ error: "User not found" }, 404);
 
+    const storedAccess = await encryptSecret(c.env, state.accessToken);
+    const storedRefresh = await encryptSecret(c.env, state.refreshToken);
     await c.env.DB.prepare(
       "UPDATE social_connections SET access_token = ?, refresh_token = ?, token_expires_at = ?, profile_data = ? WHERE user_id = ? AND provider = ? AND provider_user_id = ?",
     )
       .bind(
-        state.accessToken,
-        state.refreshToken,
+        storedAccess,
+        storedRefresh,
         state.tokenExpiresAt,
         JSON.stringify(state.profileData),
         user.id,
@@ -1007,6 +1013,8 @@ app.post("/complete", async (c) => {
       )
       .run();
 
+    const storedAccess = await encryptSecret(c.env, state.accessToken);
+    const storedRefresh = await encryptSecret(c.env, state.refreshToken);
     await c.env.DB.prepare(
       "INSERT INTO social_connections (id, user_id, provider, provider_user_id, access_token, refresh_token, token_expires_at, profile_data, connected_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
@@ -1015,8 +1023,8 @@ app.post("/complete", async (c) => {
         newUserId,
         state.provider,
         state.providerUserId,
-        state.accessToken,
-        state.refreshToken,
+        storedAccess,
+        storedRefresh,
         state.tokenExpiresAt,
         JSON.stringify(state.profileData),
         now,
@@ -1077,6 +1085,8 @@ app.post("/:id/refresh", requireAuth, async (c) => {
 
   const refreshAccessToken = async () => {
     if (!conn.refresh_token) return null;
+    const plainRefresh =
+      (await decryptSecret(c.env, conn.refresh_token)) ?? conn.refresh_token;
     let tokenRes: Response;
     try {
       tokenRes = await fetch(source.tokenUrl, {
@@ -1089,7 +1099,7 @@ app.post("/:id/refresh", requireAuth, async (c) => {
           client_id: source.clientId,
           client_secret: source.clientSecret,
           grant_type: "refresh_token",
-          refresh_token: conn.refresh_token,
+          refresh_token: plainRefresh,
         }),
       });
     } catch (err) {
@@ -1112,7 +1122,7 @@ app.post("/:id/refresh", requireAuth, async (c) => {
     const nextRefreshToken =
       typeof tokenJson.refresh_token === "string"
         ? tokenJson.refresh_token
-        : conn.refresh_token;
+        : plainRefresh;
     const nextExpiresIn =
       typeof tokenJson.expires_in === "number"
         ? tokenJson.expires_in
@@ -1124,12 +1134,14 @@ app.post("/:id/refresh", requireAuth, async (c) => {
       nextExpiresIn && Number.isFinite(nextExpiresIn) && nextExpiresIn > 0
         ? now + Math.floor(nextExpiresIn)
         : null;
+    const storedNextAccess = await encryptSecret(c.env, nextAccessToken);
+    const storedNextRefresh = await encryptSecret(c.env, nextRefreshToken);
     await c.env.DB.prepare(
       "UPDATE social_connections SET access_token = ?, refresh_token = ?, token_expires_at = ? WHERE id = ? AND user_id = ?",
     )
       .bind(
-        nextAccessToken,
-        nextRefreshToken,
+        storedNextAccess,
+        storedNextRefresh,
         nextTokenExpiresAt,
         conn.id,
         user.id,
@@ -1139,10 +1151,12 @@ app.post("/:id/refresh", requireAuth, async (c) => {
   };
 
   if (!conn.access_token) return c.json({ error: "no_access_token" }, 400);
+  const plainAccessToken =
+    (await decryptSecret(c.env, conn.access_token)) ?? conn.access_token;
 
   let profileData: Record<string, unknown>;
   try {
-    let profileRes = await fetchProfile(conn.access_token);
+    let profileRes = await fetchProfile(plainAccessToken);
     if (
       !profileRes.ok &&
       (profileRes.status === 401 || profileRes.status === 403)

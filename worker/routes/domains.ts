@@ -91,7 +91,7 @@ app.post("/", async (c) => {
   }
 
   c.executionCtx.waitUntil(
-    deliverUserWebhooks(c.env.DB, user.id, "domain.added", {
+    deliverUserWebhooks(c.env, user.id, "domain.added", {
       domain_id: id,
       domain,
     }).catch(() => {}),
@@ -182,7 +182,7 @@ app.post("/:id/verify", async (c) => {
       .bind(now, nextReverify, succeededMethod, id)
       .run();
     c.executionCtx.waitUntil(
-      deliverUserWebhooks(c.env.DB, user.id, "domain.verified", {
+      deliverUserWebhooks(c.env, user.id, "domain.verified", {
         domain_id: id,
         domain: row.domain,
         verification_method: succeededMethod,
@@ -341,7 +341,7 @@ app.delete("/:id", async (c) => {
 
   await c.env.DB.prepare("DELETE FROM domains WHERE id = ?").bind(id).run();
   c.executionCtx.waitUntil(
-    deliverUserWebhooks(c.env.DB, user.id, "domain.deleted", {
+    deliverUserWebhooks(c.env, user.id, "domain.deleted", {
       domain_id: id,
       domain: row.domain,
     }).catch(() => {}),
