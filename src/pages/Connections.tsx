@@ -11,6 +11,7 @@ import {
   DialogSurface,
   DialogTitle,
   DialogTrigger,
+  Image,
   MessageBar,
   Text,
   Title2,
@@ -98,13 +99,7 @@ function ProviderIcon({
   if (!src) return null;
   return (
     <div className={className}>
-      <img
-        src={src}
-        alt={alt}
-        width={18}
-        height={18}
-        style={{ objectFit: "contain" }}
-      />
+      <Image src={src} alt={alt} width={18} height={18} fit="contain" />
     </div>
   );
 }

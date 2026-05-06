@@ -6,7 +6,7 @@
 // applies, so a paste of a malicious SVG can't run inline scripts even
 // in the preview.
 
-import { Field, Input, Text, tokens } from "@fluentui/react-components";
+import { Field, Image, Input, Text, tokens } from "@fluentui/react-components";
 import { useTranslation } from "react-i18next";
 import { useEffect, useState } from "react";
 import { unproxyImageUrl, useProxiedImage } from "../lib/api";
@@ -68,17 +68,15 @@ export function ImageUrlInput({ label, value, onChange, placeholder }: Props) {
             gap: 8,
           }}
         >
-          <img
+          <Image
             src={previewSrc}
             alt="preview"
+            shape="rounded"
+            fit="cover"
+            bordered
+            width={48}
+            height={48}
             onError={() => setLoadError(true)}
-            style={{
-              width: 48,
-              height: 48,
-              objectFit: "cover",
-              borderRadius: 4,
-              border: `1px solid ${tokens.colorNeutralStroke1}`,
-            }}
           />
           <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
             {t("imageUrl.preview")}

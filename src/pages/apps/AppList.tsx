@@ -13,6 +13,7 @@ import {
   DialogTitle,
   DialogTrigger,
   Field,
+  Image,
   Input,
   MessageBar,
   Spinner,
@@ -222,12 +223,13 @@ export function AppList() {
             <CardHeader
               image={
                 app.icon_url ? (
-                  <img
+                  <Image
                     src={app.icon_url}
                     alt={app.name}
+                    shape="rounded"
+                    fit="cover"
                     width={32}
                     height={32}
-                    style={{ borderRadius: 4 }}
                   />
                 ) : (
                   <GlobeRegular fontSize={32} />

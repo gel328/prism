@@ -2,6 +2,8 @@
 
 import {
   Button,
+  Checkbox,
+  Combobox,
   Dialog,
   DialogActions,
   DialogBody,
@@ -15,6 +17,8 @@ import {
   MessageBar,
   MessageBarBody,
   Option,
+  Radio,
+  RadioGroup,
   Spinner,
   Text,
   Textarea,
@@ -1022,25 +1026,17 @@ function RuleEditorCard(props: {
         <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
           #{props.index + 1}
         </Text>
-        <input
-          type="checkbox"
+        <Checkbox
           checked={enabled}
-          onChange={(e) => props.onPatch({ enabled: e.target.checked })}
+          onChange={(_, d) => props.onPatch({ enabled: !!d.checked })}
           aria-label={t("notifications.rulesetsRuleEnabled")}
         />
-        <input
-          type="text"
+        <Input
+          size="small"
           value={rule.name ?? ""}
-          onChange={(e) => props.onPatch({ name: e.target.value })}
+          onChange={(_, d) => props.onPatch({ name: d.value })}
           placeholder={t("notifications.rulesetsRuleNamePlaceholder")}
-          style={{
-            flex: 1,
-            padding: "4px 8px",
-            fontSize: 13,
-            border: `1px solid ${tokens.colorNeutralStroke1}`,
-            borderRadius: 4,
-            background: tokens.colorNeutralBackground1,
-          }}
+          style={{ flex: 1 }}
         />
         <Button
           size="small"
@@ -1070,27 +1066,23 @@ function RuleEditorCard(props: {
 
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <Text size={200}>{t("notifications.rulesetsMatchEvent")}</Text>
-        <input
-          type="text"
-          list={`events-${rule.id}`}
+        <Combobox
+          freeform
+          size="small"
           value={rule.match.event ?? ""}
-          onChange={(e) => setMatchEvent(e.target.value)}
+          selectedOptions={rule.match.event ? [rule.match.event] : []}
+          onInput={(e) => setMatchEvent((e.target as HTMLInputElement).value)}
+          onOptionSelect={(_, d) => setMatchEvent(d.optionValue ?? "")}
           placeholder="*  or  security.*  or  app.created"
-          style={{
-            flex: 1,
-            padding: "4px 8px",
-            fontFamily: "monospace",
-            fontSize: 12,
-            border: `1px solid ${tokens.colorNeutralStroke1}`,
-            borderRadius: 4,
-            background: tokens.colorNeutralBackground1,
-          }}
-        />
-        <datalist id={`events-${rule.id}`}>
+          input={{ style: { fontFamily: "monospace", fontSize: 12 } }}
+          style={{ flex: 1 }}
+        >
           {props.knownEvents.map((ev) => (
-            <option key={ev} value={ev} />
+            <Option key={ev} value={ev}>
+              {ev}
+            </Option>
           ))}
-        </datalist>
+        </Combobox>
       </div>
 
       <RuleAccountFilter
@@ -1109,24 +1101,14 @@ function RuleEditorCard(props: {
 
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
         <Text size={200}>{t("notifications.rulesetsAction")}</Text>
-        <label style={{ display: "flex", alignItems: "center", gap: 4 }}>
-          <input
-            type="radio"
-            name={`action-${rule.id}`}
-            checked={rule.action.type === "send"}
-            onChange={() => setActionType("send")}
-          />
-          <Text size={200}>{t("notifications.rulesetsActionSend")}</Text>
-        </label>
-        <label style={{ display: "flex", alignItems: "center", gap: 4 }}>
-          <input
-            type="radio"
-            name={`action-${rule.id}`}
-            checked={rule.action.type === "drop"}
-            onChange={() => setActionType("drop")}
-          />
-          <Text size={200}>{t("notifications.rulesetsActionDrop")}</Text>
-        </label>
+        <RadioGroup
+          layout="horizontal"
+          value={rule.action.type}
+          onChange={(_, d) => setActionType(d.value as "send" | "drop")}
+        >
+          <Radio value="send" label={t("notifications.rulesetsActionSend")} />
+          <Radio value="drop" label={t("notifications.rulesetsActionDrop")} />
+        </RadioGroup>
       </div>
 
       {rule.action.type === "send" && (
@@ -1175,16 +1157,15 @@ function RuleEditorCard(props: {
         </div>
       )}
 
-      <label style={{ display: "flex", alignItems: "center", gap: 4 }}>
-        <input
-          type="checkbox"
-          checked={rule.stop === true}
-          onChange={(e) => props.onPatch({ stop: e.target.checked })}
-        />
-        <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-          {t("notifications.rulesetsStop")}
-        </Text>
-      </label>
+      <Checkbox
+        checked={rule.stop === true}
+        onChange={(_, d) => props.onPatch({ stop: !!d.checked })}
+        label={
+          <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
+            {t("notifications.rulesetsStop")}
+          </Text>
+        }
+      />
     </div>
   );
 }
@@ -1205,52 +1186,65 @@ function RuleChannelRow(props: {
       <span style={{ fontSize: 13 }}>
         {channel.kind === "email" ? "✉" : "✈"}
       </span>
-      <select
+      <Dropdown
+        size="small"
         value={
-          channel.kind === "email" ? channel.email_id : channel.connection_id
+          channel.kind === "email"
+            ? (props.emails.find((e) => e.id === channel.email_id)?.email ?? "")
+            : (() => {
+                const c = props.tgConnections.find(
+                  (c) => c.id === channel.connection_id,
+                );
+                return c ? (c.username ? `@${c.username}` : c.name) : "";
+              })()
         }
-        onChange={(e) => {
+        selectedOptions={[
+          channel.kind === "email" ? channel.email_id : channel.connection_id,
+        ]}
+        onOptionSelect={(_, d) => {
+          const value = d.optionValue ?? "";
           if (channel.kind === "email") {
-            props.onChange({ ...channel, email_id: e.target.value });
+            props.onChange({ ...channel, email_id: value });
           } else {
-            props.onChange({ ...channel, connection_id: e.target.value });
+            props.onChange({ ...channel, connection_id: value });
           }
         }}
-        style={{
-          flex: 1,
-          padding: "4px 6px",
-          fontSize: 12,
-          border: `1px solid ${tokens.colorNeutralStroke1}`,
-          borderRadius: 4,
-          background: tokens.colorNeutralBackground1,
-        }}
+        style={{ flex: 1, minWidth: 0 }}
       >
         {channel.kind === "email"
           ? props.emails.map((e) => (
-              <option key={e.id} value={e.id}>
+              <Option key={e.id} value={e.id} text={e.email}>
                 {e.email}
-              </option>
+              </Option>
             ))
-          : props.tgConnections.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.username ? `@${c.username}` : c.name}
-              </option>
-            ))}
-      </select>
-      <select
-        value={channel.level}
-        onChange={(e) => setLevel(e.target.value as NotificationLevel)}
-        style={{
-          padding: "4px 6px",
-          fontSize: 12,
-          border: `1px solid ${tokens.colorNeutralStroke1}`,
-          borderRadius: 4,
-          background: tokens.colorNeutralBackground1,
-        }}
+          : props.tgConnections.map((c) => {
+              const label = c.username ? `@${c.username}` : c.name;
+              return (
+                <Option key={c.id} value={c.id} text={label}>
+                  {label}
+                </Option>
+              );
+            })}
+      </Dropdown>
+      <Dropdown
+        size="small"
+        value={
+          channel.level === "brief"
+            ? t("notifications.levelBrief")
+            : t("notifications.levelFull")
+        }
+        selectedOptions={[channel.level]}
+        onOptionSelect={(_, d) =>
+          setLevel((d.optionValue ?? "brief") as NotificationLevel)
+        }
       >
-        <option value="brief">{t("notifications.levelBrief")}</option>
-        <option value="full">{t("notifications.levelFull")}</option>
-      </select>
+        <Option value="brief" text={t("notifications.levelBrief")}>
+          {t("notifications.levelBrief")}
+        </Option>
+        <Option value="full" text={t("notifications.levelFull")}>
+          {t("notifications.levelFull")}
+        </Option>
+      </Dropdown>
       <Button
         size="small"
         appearance="subtle"

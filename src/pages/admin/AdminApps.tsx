@@ -10,6 +10,7 @@ import {
   DialogSurface,
   DialogTitle,
   Field,
+  Image,
   Input,
   MessageBar,
   Spinner,
@@ -132,12 +133,13 @@ export function AdminApps() {
                     style={{ display: "flex", alignItems: "center", gap: 8 }}
                   >
                     {app.icon_url && (
-                      <img
+                      <Image
                         src={app.icon_url}
                         alt={app.name}
+                        shape="rounded"
+                        fit="cover"
                         width={24}
                         height={24}
-                        style={{ borderRadius: 4 }}
                       />
                     )}
                     <div>
@@ -179,12 +181,13 @@ export function AdminApps() {
                       style={{ display: "flex", alignItems: "center", gap: 6 }}
                     >
                       {app.team_avatar_url ? (
-                        <img
+                        <Image
                           src={app.team_avatar_url}
                           alt=""
+                          shape="rounded"
+                          fit="cover"
                           width={16}
                           height={16}
-                          style={{ borderRadius: 4 }}
                         />
                       ) : null}
                       <Text size={200} weight="semibold">

@@ -3,6 +3,7 @@
 import {
   Avatar,
   Button,
+  Card,
   Spinner,
   Text,
   Title2,
@@ -39,14 +40,11 @@ const useStyles = makeStyles({
   },
   accountList: { display: "flex", flexDirection: "column", gap: "8px" },
   accountRow: {
-    display: "flex",
+    flexDirection: "row",
     alignItems: "center",
     gap: "12px",
-    padding: "12px 16px",
-    borderRadius: "8px",
-    border: `1px solid ${tokens.colorNeutralStroke1}`,
-    background: tokens.colorNeutralBackground1,
     cursor: "pointer",
+    transition: "background 0.15s",
     ":hover": { background: tokens.colorNeutralBackground3 },
   },
 });
@@ -140,13 +138,10 @@ export function SocialSelect() {
 
         <div className={styles.accountList}>
           {data.users.map((u) => (
-            <div
+            <Card
               key={u.id}
               className={styles.accountRow}
               onClick={() => handleSelect(u.id)}
-              role="button"
-              tabIndex={0}
-              onKeyDown={(e) => e.key === "Enter" && handleSelect(u.id)}
             >
               <Avatar
                 name={u.display_name}
@@ -164,7 +159,7 @@ export function SocialSelect() {
                   @{u.username}
                 </Text>
               </div>
-            </div>
+            </Card>
           ))}
         </div>
 

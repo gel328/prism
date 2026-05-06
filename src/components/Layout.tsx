@@ -3,6 +3,7 @@
 import {
   Avatar,
   Button,
+  Image,
   Menu,
   MenuButton,
   MenuDivider,
@@ -242,10 +243,13 @@ export function Layout() {
           style={{ display: "flex", alignItems: "center", gap: 10, flex: 1 }}
         >
           {site?.site_icon_url && (
-            <img
+            <Image
               src={site.site_icon_url}
               alt="logo"
-              style={{ width: 28, height: 28, borderRadius: 4 }}
+              shape="rounded"
+              fit="cover"
+              width={28}
+              height={28}
             />
           )}
           <Text weight="semibold" size={400}>
@@ -438,10 +442,13 @@ export function Layout() {
         />
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           {site?.site_icon_url && (
-            <img
+            <Image
               src={site.site_icon_url}
               alt="logo"
-              style={{ width: 24, height: 24, borderRadius: 4 }}
+              shape="rounded"
+              fit="cover"
+              width={24}
+              height={24}
             />
           )}
           <Text weight="semibold" size={400}>
