@@ -1459,5 +1459,11 @@
     "httpsRequired": "Image URL must use HTTPS",
     "preview": "Preview",
     "loadFailed": "Could not load image from this URL"
+  },
+  "notFound": {
+    "title": "Page not found",
+    "description": "We couldn't find the page you were looking for. It may have moved or never existed.",
+    "goBack": "Go back",
+    "goHome": "Go home"
   }
 }

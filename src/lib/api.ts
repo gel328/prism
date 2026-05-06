@@ -141,6 +141,10 @@ async function request<T>(
   const res = await fetch(`${BASE}${path}`, {
     method,
     headers,
+    // Send the session cookie alongside the Bearer header. We set the cookie
+    // on login so the SSR pass can authenticate without JS; this keeps it in
+    // sync on subsequent client-side API calls.
+    credentials: "include",
     body:
       body instanceof FormData
         ? body
@@ -177,6 +181,7 @@ async function request<T>(
 }
 
 function getToken(): string | undefined {
+  if (typeof localStorage === "undefined") return undefined;
   return localStorage.getItem("token") ?? undefined;
 }
 

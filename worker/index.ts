@@ -31,6 +31,7 @@ import publicTeamsRoutes from "./routes/public-teams";
 import gpgRoutes from "./routes/gpg";
 import adminRoutes from "./routes/admin";
 import proxyRoutes from "./routes/proxy";
+import { ssrHandler } from "./ssr";
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -81,13 +82,11 @@ app.route("/", publicRoutes);
 app.notFound(async (c) => {
   if (c.req.path.startsWith("/api/"))
     return c.json({ error: "Not found" }, 404);
-  if (c.env.ASSETS)
-    return new Response(
-      ...(await c.env.ASSETS.fetch(c.req.raw).then(
-        (r) => [r.body, r] as const,
-      )),
-    );
-  return new Response(null, { status: 404 });
+  if (c.req.path.startsWith("/.well-known/"))
+    return new Response(null, { status: 404 });
+  // Anything that wasn't an API route and didn't match a static asset is a
+  // user-facing page — render it on the server.
+  return await ssrHandler(c);
 });
 
 app.onError((err, c) => {

@@ -1,7 +1,9 @@
 // Auth routes: register, login, logout, 2FA, passkeys, email verify, social OAuth callback
 
 import { Hono } from "hono";
+import type { Context } from "hono";
 import { getConfig, getConfigValue, getJwtSecret } from "../lib/config";
+import { clearSessionCookie, setSessionCookie } from "../lib/cookies";
 import {
   hashPassword,
   randomId,
@@ -86,12 +88,12 @@ function getIp(c: {
 }
 
 async function issueSession(
-  db: D1Database,
-  secret: string,
+  c: Context<AppEnv>,
   user: UserRow,
   ttlSeconds: number,
-  appUrl: string,
 ): Promise<string> {
+  const db = c.env.DB;
+  const secret = await getJwtSecret(c.env.KV_SESSIONS);
   const sessionId = randomId(32);
   const now = Math.floor(Date.now() / 1000);
   const token = await signJWT(
@@ -101,7 +103,7 @@ async function issueSession(
       email: user.email,
       username: user.username,
       display_name: user.display_name,
-      avatar_url: await proxyImageUrl(appUrl, db, user.avatar_url),
+      avatar_url: await proxyImageUrl(c.env.APP_URL, db, user.avatar_url),
       unproxied_avatar_url: user.avatar_url,
       email_verified: user.email_verified === 1,
       sessionId,
@@ -116,6 +118,10 @@ async function issueSession(
     )
     .bind(sessionId, user.id, hash, now + ttlSeconds, now)
     .run();
+  // Mirror the JWT into a cookie so SSR can authenticate the next request
+  // without any client JS. Bearer-header callers get the token in the JSON
+  // body as before.
+  setSessionCookie(c, token, ttlSeconds);
   return token;
 }
 
@@ -274,13 +280,7 @@ app.post("/register", async (c) => {
   if (!user) return c.json({ error: "User not found after creation" }, 500);
 
   const ttl = config.session_ttl_days * 24 * 60 * 60;
-  const token = await issueSession(
-    c.env.DB,
-    await getJwtSecret(c.env.KV_SESSIONS),
-    user,
-    ttl,
-    c.env.APP_URL,
-  );
+  const token = await issueSession(c, user, ttl);
   return c.json(
     { token, user: await safeUser(c.env.APP_URL, c.env.DB, user) },
     201,
@@ -461,13 +461,7 @@ app.post("/login", async (c) => {
 
   const config = await getConfig(c.env.DB);
   const ttl = config.session_ttl_days * 24 * 60 * 60;
-  const token = await issueSession(
-    c.env.DB,
-    await getJwtSecret(c.env.KV_SESSIONS),
-    user,
-    ttl,
-    c.env.APP_URL,
-  );
+  const token = await issueSession(c, user, ttl);
   return c.json({
     token,
     user: await safeUser(c.env.APP_URL, c.env.DB, user),
@@ -481,6 +475,7 @@ app.post("/logout", requireAuth, async (c) => {
   await c.env.DB.prepare("DELETE FROM sessions WHERE id = ?")
     .bind(sessionId)
     .run();
+  clearSessionCookie(c);
   return c.json({ message: "Logged out" });
 });
 
@@ -1143,13 +1138,7 @@ app.post("/passkey/auth/finish", async (c) => {
 
   const config = await getConfig(c.env.DB);
   const ttl = config.session_ttl_days * 24 * 60 * 60;
-  const token = await issueSession(
-    c.env.DB,
-    await getJwtSecret(c.env.KV_SESSIONS),
-    user,
-    ttl,
-    c.env.APP_URL,
-  );
+  const token = await issueSession(c, user, ttl);
   return c.json({
     token,
     user: await safeUser(c.env.APP_URL, c.env.DB, user),
@@ -1537,13 +1526,7 @@ app.post("/gpg-login", async (c) => {
   }
 
   const ttl = gpgLoginConfig.session_ttl_days * 24 * 60 * 60;
-  const token = await issueSession(
-    c.env.DB,
-    await getJwtSecret(c.env.KV_SESSIONS),
-    user,
-    ttl,
-    c.env.APP_URL,
-  );
+  const token = await issueSession(c, user, ttl);
   return c.json({
     token,
     user: await safeUser(c.env.APP_URL, c.env.DB, user),

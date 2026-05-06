@@ -5,6 +5,7 @@ import { isInitialized, setConfigValue, getJwtSecret } from "../lib/config";
 import { hashPassword } from "../lib/crypto";
 import { randomId } from "../lib/crypto";
 import { signJWT } from "../lib/jwt";
+import { setSessionCookie } from "../lib/cookies";
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -95,6 +96,8 @@ app.post("/", async (c) => {
   )
     .bind(sessionId, userId, tokenHash, now + sessionTtl, now)
     .run();
+
+  setSessionCookie(c, token, sessionTtl);
 
   return c.json(
     {

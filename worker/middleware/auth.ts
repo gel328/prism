@@ -3,19 +3,36 @@
 import type { Context, MiddlewareHandler, Next } from "hono";
 import { verifyJWT } from "../lib/jwt";
 import { getJwtSecret } from "../lib/config";
+import { readSessionCookie } from "../lib/cookies";
 import type { Variables } from "../types";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
+
+// Session token can come from one of three places, in priority order:
+//   1. Authorization: Bearer <jwt>  (CLI, scripts, original SPA flow)
+//   2. X-Session-Token: <jwt>       (legacy header)
+//   3. prism_session cookie         (SSR-friendly, set on login/register)
+//
+// PATs (`prism_pat_…`) never go through this — they're handled by `tryPatAuth`
+// before this middleware runs.
+function readSessionToken(c: Context<AppEnv>): string | null {
+  const authHeader = c.req.header("Authorization");
+  if (authHeader?.startsWith("Bearer ")) {
+    const t = authHeader.slice(7);
+    // PATs use a different middleware; ignore them here.
+    if (!t.startsWith("prism_pat_")) return t;
+  }
+  const xst = c.req.header("X-Session-Token");
+  if (xst) return xst;
+  return readSessionCookie(c);
+}
 
 export async function requireAuth(c: Context<AppEnv>, next: Next) {
   // An earlier middleware may have authenticated this request via an alternate
   // scheme (e.g. app client credentials). Don't clobber that.
   if (c.get("user") || c.get("appSelfAuth")) return await next();
 
-  const authHeader = c.req.header("Authorization");
-  const token = authHeader?.startsWith("Bearer ")
-    ? authHeader.slice(7)
-    : c.req.header("X-Session-Token");
+  const token = readSessionToken(c);
 
   if (!token) {
     return c.json({ error: "Unauthorized" }, 401);
@@ -52,10 +69,7 @@ export async function requireAuth(c: Context<AppEnv>, next: Next) {
 }
 
 export const requireAdmin: MiddlewareHandler<AppEnv> = async (c, next) => {
-  const authHeader = c.req.header("Authorization");
-  const token = authHeader?.startsWith("Bearer ")
-    ? authHeader.slice(7)
-    : c.req.header("X-Session-Token");
+  const token = readSessionToken(c);
 
   if (!token) return c.json({ error: "Unauthorized" }, 401);
 
@@ -174,10 +188,7 @@ export function tryPatAuth(scopes: {
 }
 
 export async function optionalAuth(c: Context<AppEnv>, next: Next) {
-  const authHeader = c.req.header("Authorization");
-  const token = authHeader?.startsWith("Bearer ")
-    ? authHeader.slice(7)
-    : c.req.header("X-Session-Token");
+  const token = readSessionToken(c);
 
   if (token) {
     try {

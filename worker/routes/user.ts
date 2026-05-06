@@ -8,6 +8,7 @@ import {
   randomBase64url,
 } from "../lib/crypto";
 import { requireAuth } from "../middleware/auth";
+import { readSessionCookie, setSessionCookie } from "../lib/cookies";
 import {
   proxyImageUrl,
   registerMarkdownImageMappings,
@@ -60,6 +61,30 @@ app.get("/me", async (c) => {
     .bind(user.id)
     .first<{ n: number }>();
   const config = await getConfig(c.env.DB);
+
+  // Silent cookie upgrade: if this request authenticated via Bearer/X-Session-Token
+  // (existing pre-cookie clients) and there's no session cookie yet, mirror the
+  // token into a cookie so the next navigation hits SSR with a usable session.
+  // The token hash is in the sessions table; we just need to reissue the cookie
+  // header with the same token the client already presented.
+  if (!readSessionCookie(c)) {
+    const authHeader = c.req.header("Authorization");
+    const token = authHeader?.startsWith("Bearer ")
+      ? authHeader.slice(7)
+      : c.req.header("X-Session-Token");
+    if (token && !token.startsWith("prism_pat_")) {
+      const sessionId = c.get("sessionId");
+      const exp = await c.env.DB.prepare(
+        "SELECT expires_at FROM sessions WHERE id = ?",
+      )
+        .bind(sessionId)
+        .first<{ expires_at: number }>();
+      if (exp) {
+        const ttl = Math.max(0, exp.expires_at - Math.floor(Date.now() / 1000));
+        if (ttl > 0) setSessionCookie(c, token, ttl);
+      }
+    }
+  }
 
   return c.json({
     user: await safeUser(c.env.APP_URL, c.env.DB, row),

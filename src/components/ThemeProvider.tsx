@@ -95,9 +95,13 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
   });
   const styleRef = useRef<HTMLStyleElement | null>(null);
 
-  const [prefersDark, setPrefersDark] = useState(
-    () => window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false,
-  );
+  // SSR has no `window`. Default to light on the server; the dark-mode FOUC
+  // shim in index.html sets the `data-theme` attribute before hydration so
+  // the visible flash is brief.
+  const [prefersDark, setPrefersDark] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false;
+  });
 
   useEffect(() => {
     const mediaQuery = window.matchMedia?.("(prefers-color-scheme: dark)");

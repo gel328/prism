@@ -1459,5 +1459,11 @@
     "httpsRequired": "图片 URL 必须使用 HTTPS",
     "preview": "预览",
     "loadFailed": "无法从该 URL 加载图片"
+  },
+  "notFound": {
+    "title": "页面未找到",
+    "description": "找不到您要查看的页面，它可能已经移动或从未存在。",
+    "goBack": "返回",
+    "goHome": "回到首页"
   }
 }

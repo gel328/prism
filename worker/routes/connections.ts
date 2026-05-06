@@ -1,11 +1,13 @@
 // Social platform connections (GitHub, Google, Microsoft, Discord, Telegram, generic OIDC/OAuth2)
 
 import { Hono } from "hono";
+import type { Context } from "hono";
 import { randomId, randomBase64url, sha256Hex } from "../lib/crypto";
 import { getConfig, getJwtSecret } from "../lib/config";
 import { decryptSecret } from "../lib/secretCrypto";
 import { requireAuth, optionalAuth } from "../middleware/auth";
 import { signJWT } from "../lib/jwt";
+import { setSessionCookie } from "../lib/cookies";
 import {
   deliverUserEmailNotifications,
   notificationActorMetaFromHeaders,
@@ -467,7 +469,7 @@ app.post("/:provider/tg-verify", async (c) => {
     );
     return c.json({
       type: "login",
-      token: await issueJWT(user, c.env.DB, c.env.KV_SESSIONS, c.env.APP_URL),
+      token: await issueJWT(c, user),
     });
   }
 
@@ -786,7 +788,7 @@ app.get("/:provider/callback", async (c) => {
       ).catch(() => {}),
     );
     return c.redirect(
-      `${c.env.APP_URL}/auth/callback?token=${encodeURIComponent(await issueJWT(user, c.env.DB, c.env.KV_SESSIONS, c.env.APP_URL))}`,
+      `${c.env.APP_URL}/auth/callback?token=${encodeURIComponent(await issueJWT(c, user))}`,
     );
   }
 
@@ -948,7 +950,7 @@ app.post("/complete", async (c) => {
     );
 
     return c.json({
-      token: await issueJWT(user, c.env.DB, c.env.KV_SESSIONS, c.env.APP_URL),
+      token: await issueJWT(c, user),
       user: await userToProfile(c.env.APP_URL, c.env.DB, user),
     });
   }
@@ -1027,7 +1029,7 @@ app.post("/complete", async (c) => {
     if (!user) return c.json({ error: "Failed to create user" }, 500);
 
     return c.json({
-      token: await issueJWT(user, c.env.DB, c.env.KV_SESSIONS, c.env.APP_URL),
+      token: await issueJWT(c, user),
       user: await userToProfile(c.env.APP_URL, c.env.DB, user),
     });
   }
@@ -1477,12 +1479,11 @@ function extractProviderAvatar(
 }
 
 async function issueJWT(
+  c: Context<AppEnv>,
   user: UserRow,
-  db: D1Database,
-  kv: KVNamespace,
-  appUrl: string,
   ttlSeconds = 30 * 24 * 60 * 60,
 ): Promise<string> {
+  const db = c.env.DB;
   const sessionId = randomId(32);
   const now = Math.floor(Date.now() / 1000);
   const token = await signJWT(
@@ -1492,12 +1493,12 @@ async function issueJWT(
       email: user.email,
       username: user.username,
       display_name: user.display_name,
-      avatar_url: await proxyImageUrl(appUrl, db, user.avatar_url),
+      avatar_url: await proxyImageUrl(c.env.APP_URL, db, user.avatar_url),
       unproxied_avatar_url: user.avatar_url,
       email_verified: user.email_verified === 1,
       sessionId,
     },
-    await getJwtSecret(kv),
+    await getJwtSecret(c.env.KV_SESSIONS),
     ttlSeconds,
   );
   const hash = await sha256Hex(token);
@@ -1507,6 +1508,10 @@ async function issueJWT(
     )
     .bind(sessionId, user.id, hash, now + ttlSeconds, now)
     .run();
+  // Set the session cookie on this response. For redirect responses (social
+  // OAuth callback flow) the cookie travels with the redirect and the
+  // /auth/callback page reads it on the follow-up request.
+  setSessionCookie(c, token, ttlSeconds);
   return token;
 }
 
