@@ -1,144 +1,450 @@
-// Route tree, decoupled from BrowserRouter so the same definition can be fed
-// to createBrowserRouter (client) or createStaticHandler (server).
+// Route tree as a factory: createRoutes(ctx) returns the same RouteObject[]
+// for both client and server, but with closures that hold the request-scoped
+// QueryClient and auth state. This lets loaders prefetch and check auth
+// without a global "current request" singleton.
+//
+// Lazy-loaded route components (`lazy: () => import(...)`) keep the initial
+// JS payload small — the entry bundle only ships the router, providers, and
+// the route-tree skeleton; each page's code arrives on demand (and is fetched
+// alongside the SSR HTML for first paint).
 
-import type { RouteObject } from "react-router-dom";
+import { redirect, type RouteObject } from "react-router-dom";
+import type { QueryClient } from "@tanstack/react-query";
 import { Layout } from "./components/Layout";
+import { useAuthStore } from "./store/auth";
+import { api, type UserProfile } from "./lib/api";
+
+// Eager imports for the auth-callback handler (tiny, used post-login redirect)
+// and NotFound (needed to know its route id at static-handler time).
+import { AuthCallback } from "./components/Guards";
 import { NotFound } from "./pages/NotFound";
-import {
-  AuthCallback,
-  InitGuard,
-  RequireAdmin,
-  RequireAuth,
-} from "./components/Guards";
 
-import { Init } from "./pages/Init";
-import { Login } from "./pages/Login";
-import { Register } from "./pages/Register";
-import { Dashboard } from "./pages/Dashboard";
-import { Profile } from "./pages/Profile";
-import { Security } from "./pages/Security";
-import { AppList } from "./pages/apps/AppList";
-import { AppDetail } from "./pages/apps/AppDetail";
-import { Domains } from "./pages/Domains";
-import { Connections } from "./pages/Connections";
-import { ConnectedApps } from "./pages/ConnectedApps";
-import { Authorize } from "./pages/oauth/Authorize";
-import { Verify2FA } from "./pages/oauth/Verify2FA";
-import { SocialConfirm } from "./pages/SocialConfirm";
-import { SocialSelect } from "./pages/SocialSelect";
-import { AdminLayout } from "./pages/admin/AdminLayout";
-import { AdminDashboard } from "./pages/admin/AdminDashboard";
-import { AdminUsers } from "./pages/admin/AdminUsers";
-import { AdminApps } from "./pages/admin/AdminApps";
-import { AdminTeams } from "./pages/admin/AdminTeams";
-import { AdminSettings } from "./pages/admin/AdminSettings";
-import { AdminAudit } from "./pages/admin/AdminAudit";
-import { AdminInvites } from "./pages/admin/AdminInvites";
-import { AdminConnections } from "./pages/admin/AdminConnections";
-import { AdminWebhooks } from "./pages/admin/AdminWebhooks";
-import { AdminLoginErrors } from "./pages/admin/AdminLoginErrors";
-import { AdminLogs } from "./pages/admin/AdminLogs";
-import { AdminImageProxy } from "./pages/admin/AdminImageProxy";
-import { TeamList } from "./pages/teams/TeamList";
-import { TeamDetail } from "./pages/teams/TeamDetail";
-import { TeamJoin } from "./pages/teams/TeamJoin";
-import { Tokens } from "./pages/Tokens";
-import { UserWebhooks } from "./pages/UserWebhooks";
-import { Notifications } from "./pages/Notifications";
-import { VerifyEmail } from "./pages/VerifyEmail";
-import { VerifyChoose } from "./pages/VerifyChoose";
-import { TgAuthCallback } from "./pages/TgAuthCallback";
-import { PublicProfile } from "./pages/PublicProfile";
-import { PublicTeam } from "./pages/PublicTeam";
+export interface RouteContext {
+  qc: QueryClient;
+  /** Server: cookie-derived auth payload. Client: null (read from store). */
+  auth: { token: string | null; user: UserProfile | null } | null;
+  /** Distinguishes the server build of these routes from the client one. */
+  isClient: boolean;
+}
 
-export const routes: RouteObject[] = [
-  // Public
-  { path: "/init", element: <Init /> },
-  {
-    path: "/login",
-    element: (
-      <InitGuard>
-        <Login />
-      </InitGuard>
-    ),
-  },
-  {
-    path: "/register",
-    element: (
-      <InitGuard>
-        <Register />
-      </InitGuard>
-    ),
-  },
-  { path: "/auth/callback", element: <AuthCallback /> },
-  { path: "/auth/tg-callback", element: <TgAuthCallback /> },
-  { path: "/social-confirm", element: <SocialConfirm /> },
-  { path: "/social-select", element: <SocialSelect /> },
+// ─── Helpers ─────────────────────────────────────────────────────────────────
 
-  // Email verification result
-  { path: "/verify-email", element: <VerifyEmail /> },
-  { path: "/verify-choose", element: <VerifyChoose /> },
+function getAuth(ctx: RouteContext): {
+  token: string | null;
+  user: UserProfile | null;
+} {
+  // On the client, always read live state — login/logout/refresh updates it.
+  // On the server, the closure holds this request's auth (no shared state).
+  if (ctx.isClient) {
+    const s = useAuthStore.getState();
+    return { token: s.token, user: s.user };
+  }
+  return ctx.auth ?? { token: null, user: null };
+}
 
-  // Team invite
-  { path: "/teams/join/:token", element: <TeamJoin /> },
+function loginRedirect(request: Request): Response {
+  const url = new URL(request.url);
+  const next = url.pathname + url.search;
+  return redirect(`/login?redirect=${encodeURIComponent(next)}`);
+}
 
-  // OAuth consent
-  { path: "/oauth/authorize", element: <Authorize /> },
-  { path: "/oauth/2fa", element: <Verify2FA /> },
+/** Prefetch a query if not already cached. Errors are swallowed so a flaky
+ * upstream doesn't hard-fail the SSR pass; the client useQuery will retry. */
+async function prefetch(
+  qc: QueryClient,
+  queryKey: unknown[],
+  queryFn: () => Promise<unknown>,
+): Promise<void> {
+  if (qc.getQueryData(queryKey) !== undefined) return;
+  try {
+    await qc.prefetchQuery({ queryKey, queryFn });
+  } catch {
+    /* swallow — client will refetch */
+  }
+}
 
-  // Public user/team profiles — accessible without login
-  { path: "/u/:username", element: <PublicProfile /> },
-  { path: "/t/:id", element: <PublicTeam /> },
+// ─── Route factory ───────────────────────────────────────────────────────────
 
-  // Protected app shell
-  {
-    element: (
-      <RequireAuth>
-        <InitGuard>
-          <Layout />
-        </InitGuard>
-      </RequireAuth>
-    ),
-    children: [
-      { index: true, element: <Dashboard /> },
-      { path: "profile", element: <Profile /> },
-      { path: "security", element: <Security /> },
-      { path: "apps", element: <AppList /> },
-      { path: "apps/:id", element: <AppDetail /> },
-      { path: "teams", element: <TeamList /> },
-      { path: "teams/:id", element: <TeamDetail /> },
-      { path: "domains", element: <Domains /> },
-      { path: "connections", element: <Connections /> },
-      { path: "connected-apps", element: <ConnectedApps /> },
-      { path: "tokens", element: <Tokens /> },
-      { path: "webhooks", element: <UserWebhooks /> },
-      { path: "notifications", element: <Notifications /> },
-      {
-        path: "admin",
-        element: (
-          <RequireAdmin>
-            <AdminLayout />
-          </RequireAdmin>
-        ),
-        children: [
-          { index: true, element: <AdminDashboard /> },
-          { path: "users", element: <AdminUsers /> },
-          { path: "apps", element: <AdminApps /> },
-          { path: "teams", element: <AdminTeams /> },
-          { path: "settings", element: <AdminSettings /> },
-          { path: "invites", element: <AdminInvites /> },
-          { path: "connections", element: <AdminConnections /> },
-          { path: "audit", element: <AdminAudit /> },
-          { path: "webhooks", element: <AdminWebhooks /> },
-          { path: "login-errors", element: <AdminLoginErrors /> },
-          { path: "logs", element: <AdminLogs /> },
-          { path: "image-proxy", element: <AdminImageProxy /> },
-        ],
+export function createRoutes(ctx: RouteContext): RouteObject[] {
+  const requireAuthLoader = (request: Request) => {
+    const auth = getAuth(ctx);
+    if (!auth.token) throw loginRedirect(request);
+    return auth;
+  };
+
+  const requireAdminLoader = (request: Request) => {
+    const auth = requireAuthLoader(request);
+    if (auth.user?.role !== "admin") throw redirect("/");
+    return auth;
+  };
+
+  // The /login (and /register) route should bounce already-logged-in users
+  // home, and bounce the platform to /init when not yet set up.
+  const publicAuthLoader = async () => {
+    await prefetch(ctx.qc, ["site"], api.site);
+    const site = ctx.qc.getQueryData<{ initialized?: boolean }>(["site"]);
+    if (site && site.initialized === false) throw redirect("/init");
+    if (getAuth(ctx).token) throw redirect("/");
+    return null;
+  };
+
+  return [
+    // ── Public ──────────────────────────────────────────────────────────────
+    {
+      path: "/init",
+      lazy: () => import("./pages/Init").then((m) => ({ Component: m.Init })),
+    },
+    {
+      path: "/login",
+      loader: publicAuthLoader,
+      lazy: () => import("./pages/Login").then((m) => ({ Component: m.Login })),
+    },
+    {
+      path: "/register",
+      loader: publicAuthLoader,
+      lazy: () =>
+        import("./pages/Register").then((m) => ({ Component: m.Register })),
+    },
+    { path: "/auth/callback", element: <AuthCallback /> },
+    {
+      path: "/auth/tg-callback",
+      lazy: () =>
+        import("./pages/TgAuthCallback").then((m) => ({
+          Component: m.TgAuthCallback,
+        })),
+    },
+    {
+      path: "/social-confirm",
+      lazy: () =>
+        import("./pages/SocialConfirm").then((m) => ({
+          Component: m.SocialConfirm,
+        })),
+    },
+    {
+      path: "/social-select",
+      lazy: () =>
+        import("./pages/SocialSelect").then((m) => ({
+          Component: m.SocialSelect,
+        })),
+    },
+
+    // ── Email verification ──────────────────────────────────────────────────
+    {
+      path: "/verify-email",
+      lazy: () =>
+        import("./pages/VerifyEmail").then((m) => ({
+          Component: m.VerifyEmail,
+        })),
+    },
+    {
+      path: "/verify-choose",
+      lazy: () =>
+        import("./pages/VerifyChoose").then((m) => ({
+          Component: m.VerifyChoose,
+        })),
+    },
+
+    // ── Team invite ─────────────────────────────────────────────────────────
+    {
+      path: "/teams/join/:token",
+      lazy: () =>
+        import("./pages/teams/TeamJoin").then((m) => ({
+          Component: m.TeamJoin,
+        })),
+    },
+
+    // ── OAuth consent ───────────────────────────────────────────────────────
+    {
+      path: "/oauth/authorize",
+      lazy: () =>
+        import("./pages/oauth/Authorize").then((m) => ({
+          Component: m.Authorize,
+        })),
+    },
+    {
+      path: "/oauth/2fa",
+      lazy: () =>
+        import("./pages/oauth/Verify2FA").then((m) => ({
+          Component: m.Verify2FA,
+        })),
+    },
+
+    // ── Public user/team profiles ───────────────────────────────────────────
+    {
+      path: "/u/:username",
+      lazy: () =>
+        import("./pages/PublicProfile").then((m) => ({
+          Component: m.PublicProfile,
+        })),
+    },
+    {
+      path: "/t/:id",
+      lazy: () =>
+        import("./pages/PublicTeam").then((m) => ({
+          Component: m.PublicTeam,
+        })),
+    },
+
+    // ── Protected app shell ─────────────────────────────────────────────────
+    {
+      // Element is eager (Layout is on every authenticated page).
+      Component: Layout,
+      loader: async ({ request }) => {
+        requireAuthLoader(request);
+        // Prefetch global state used by Layout's nav.
+        await prefetch(ctx.qc, ["site"], api.site);
+        return null;
       },
-    ],
-  },
+      children: [
+        {
+          index: true,
+          loader: async ({ request }) => {
+            requireAuthLoader(request);
+            // Dashboard pulls the user's apps + site overview.
+            await Promise.all([
+              prefetch(ctx.qc, ["apps"], api.listApps),
+              prefetch(ctx.qc, ["domains"], api.listDomains),
+            ]);
+            return null;
+          },
+          lazy: () =>
+            import("./pages/Dashboard").then((m) => ({
+              Component: m.Dashboard,
+            })),
+        },
+        {
+          path: "profile",
+          loader: async ({ request }) => {
+            requireAuthLoader(request);
+            await prefetch(ctx.qc, ["me"], api.me);
+            return null;
+          },
+          lazy: () =>
+            import("./pages/Profile").then((m) => ({ Component: m.Profile })),
+        },
+        {
+          path: "security",
+          loader: ({ request }) => {
+            requireAuthLoader(request);
+            return null;
+          },
+          lazy: () =>
+            import("./pages/Security").then((m) => ({
+              Component: m.Security,
+            })),
+        },
+        {
+          path: "apps",
+          loader: async ({ request }) => {
+            requireAuthLoader(request);
+            await prefetch(ctx.qc, ["apps"], api.listApps);
+            return null;
+          },
+          lazy: () =>
+            import("./pages/apps/AppList").then((m) => ({
+              Component: m.AppList,
+            })),
+        },
+        {
+          path: "apps/:id",
+          loader: ({ request }) => {
+            requireAuthLoader(request);
+            return null;
+          },
+          lazy: () =>
+            import("./pages/apps/AppDetail").then((m) => ({
+              Component: m.AppDetail,
+            })),
+        },
+        {
+          path: "teams",
+          loader: async ({ request }) => {
+            requireAuthLoader(request);
+            await prefetch(ctx.qc, ["teams"], api.listTeams);
+            return null;
+          },
+          lazy: () =>
+            import("./pages/teams/TeamList").then((m) => ({
+              Component: m.TeamList,
+            })),
+        },
+        {
+          path: "teams/:id",
+          loader: ({ request }) => {
+            requireAuthLoader(request);
+            return null;
+          },
+          lazy: () =>
+            import("./pages/teams/TeamDetail").then((m) => ({
+              Component: m.TeamDetail,
+            })),
+        },
+        {
+          path: "domains",
+          loader: async ({ request }) => {
+            requireAuthLoader(request);
+            await prefetch(ctx.qc, ["domains"], api.listDomains);
+            return null;
+          },
+          lazy: () =>
+            import("./pages/Domains").then((m) => ({ Component: m.Domains })),
+        },
+        {
+          path: "connections",
+          loader: ({ request }) => {
+            requireAuthLoader(request);
+            return null;
+          },
+          lazy: () =>
+            import("./pages/Connections").then((m) => ({
+              Component: m.Connections,
+            })),
+        },
+        {
+          path: "connected-apps",
+          loader: ({ request }) => {
+            requireAuthLoader(request);
+            return null;
+          },
+          lazy: () =>
+            import("./pages/ConnectedApps").then((m) => ({
+              Component: m.ConnectedApps,
+            })),
+        },
+        {
+          path: "tokens",
+          loader: ({ request }) => {
+            requireAuthLoader(request);
+            return null;
+          },
+          lazy: () =>
+            import("./pages/Tokens").then((m) => ({ Component: m.Tokens })),
+        },
+        {
+          path: "webhooks",
+          loader: ({ request }) => {
+            requireAuthLoader(request);
+            return null;
+          },
+          lazy: () =>
+            import("./pages/UserWebhooks").then((m) => ({
+              Component: m.UserWebhooks,
+            })),
+        },
+        {
+          path: "notifications",
+          loader: ({ request }) => {
+            requireAuthLoader(request);
+            return null;
+          },
+          lazy: () =>
+            import("./pages/Notifications").then((m) => ({
+              Component: m.Notifications,
+            })),
+        },
 
-  // Catch-all — render the 404 page. The SSR handler inspects the matched
-  // route id ("not-found") to set a 404 status on the HTTP response.
-  { id: "not-found", path: "*", element: <NotFound /> },
-];
+        // ── Admin ─────────────────────────────────────────────────────────
+        {
+          path: "admin",
+          loader: ({ request }) => {
+            requireAdminLoader(request);
+            return null;
+          },
+          lazy: () =>
+            import("./pages/admin/AdminLayout").then((m) => ({
+              Component: m.AdminLayout,
+            })),
+          children: [
+            {
+              index: true,
+              lazy: () =>
+                import("./pages/admin/AdminDashboard").then((m) => ({
+                  Component: m.AdminDashboard,
+                })),
+            },
+            {
+              path: "users",
+              lazy: () =>
+                import("./pages/admin/AdminUsers").then((m) => ({
+                  Component: m.AdminUsers,
+                })),
+            },
+            {
+              path: "apps",
+              lazy: () =>
+                import("./pages/admin/AdminApps").then((m) => ({
+                  Component: m.AdminApps,
+                })),
+            },
+            {
+              path: "teams",
+              lazy: () =>
+                import("./pages/admin/AdminTeams").then((m) => ({
+                  Component: m.AdminTeams,
+                })),
+            },
+            {
+              path: "settings",
+              lazy: () =>
+                import("./pages/admin/AdminSettings").then((m) => ({
+                  Component: m.AdminSettings,
+                })),
+            },
+            {
+              path: "invites",
+              lazy: () =>
+                import("./pages/admin/AdminInvites").then((m) => ({
+                  Component: m.AdminInvites,
+                })),
+            },
+            {
+              path: "connections",
+              lazy: () =>
+                import("./pages/admin/AdminConnections").then((m) => ({
+                  Component: m.AdminConnections,
+                })),
+            },
+            {
+              path: "audit",
+              lazy: () =>
+                import("./pages/admin/AdminAudit").then((m) => ({
+                  Component: m.AdminAudit,
+                })),
+            },
+            {
+              path: "webhooks",
+              lazy: () =>
+                import("./pages/admin/AdminWebhooks").then((m) => ({
+                  Component: m.AdminWebhooks,
+                })),
+            },
+            {
+              path: "login-errors",
+              lazy: () =>
+                import("./pages/admin/AdminLoginErrors").then((m) => ({
+                  Component: m.AdminLoginErrors,
+                })),
+            },
+            {
+              path: "logs",
+              lazy: () =>
+                import("./pages/admin/AdminLogs").then((m) => ({
+                  Component: m.AdminLogs,
+                })),
+            },
+            {
+              path: "image-proxy",
+              lazy: () =>
+                import("./pages/admin/AdminImageProxy").then((m) => ({
+                  Component: m.AdminImageProxy,
+                })),
+            },
+          ],
+        },
+      ],
+    },
+
+    // ── 404 ─────────────────────────────────────────────────────────────────
+    { id: "not-found", path: "*", element: <NotFound /> },
+  ];
+}

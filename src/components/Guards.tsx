@@ -1,48 +1,17 @@
-// Route guards used in src/routes.tsx. Pulled out into their own module so
-// the routes file only exports the routes array (keeps Vite Fast Refresh
-// from complaining about mixed-export files).
+// Auth callback handler used by /auth/callback. Auth-gating for protected
+// routes lives in src/routes.tsx as loaders that throw redirect() — that
+// gives proper 302s server-side instead of an empty hydrated page.
 
-import {
-  Navigate,
-  useLocation,
-  useNavigate,
-  useSearchParams,
-} from "react-router-dom";
-import { useEffect, type ReactNode } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { useEffect } from "react";
 import { useAuthStore } from "../store/auth";
 import { api } from "../lib/api";
 
-export function RequireAuth({ children }: { children: ReactNode }) {
-  const { token } = useAuthStore();
-  const location = useLocation();
-  if (!token) {
-    return (
-      <Navigate
-        to={`/login?redirect=${encodeURIComponent(location.pathname + location.search)}`}
-        replace
-      />
-    );
-  }
-  return <>{children}</>;
-}
-
-export function RequireAdmin({ children }: { children: ReactNode }) {
-  const { user } = useAuthStore();
-  if (user?.role !== "admin") return <Navigate to="/" replace />;
-  return <>{children}</>;
-}
-
-export function InitGuard({ children }: { children: ReactNode }) {
-  const navigate = useNavigate();
-  useEffect(() => {
-    api.initStatus().then(({ initialized }) => {
-      if (!initialized) navigate("/init", { replace: true });
-    });
-  }, [navigate]);
-  return <>{children}</>;
-}
-
 // Social auth callback handler: /auth/callback?token=...
+//
+// On a successful social OAuth round-trip the worker has already set a
+// session cookie on the redirect, so api.me() authenticates without the
+// URL token. We still accept ?token= for back-compat with older flows.
 export function AuthCallback() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
@@ -50,22 +19,22 @@ export function AuthCallback() {
 
   useEffect(() => {
     const token = params.get("token");
-    if (!token) {
-      navigate("/login?error=no_token");
-      return;
-    }
 
-    // Set token in localStorage first so api.me() can authenticate with it
-    localStorage.setItem("token", token);
+    // Mirror the URL token into localStorage so the legacy Bearer-header
+    // path keeps working. The cookie is the source of truth going forward.
+    if (token) localStorage.setItem("token", token);
+
     api
       .me()
       .then(({ user }) => {
-        setAuth(token, user);
+        if (token) setAuth(token, user);
         navigate("/");
       })
       .catch(() => {
-        localStorage.removeItem("token");
-        navigate("/login?error=invalid_token");
+        if (token) localStorage.removeItem("token");
+        navigate(
+          token ? "/login?error=invalid_token" : "/login?error=no_token",
+        );
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- run once on mount with the current params
   }, []);

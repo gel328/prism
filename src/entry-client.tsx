@@ -17,7 +17,7 @@ import {
 import { RouterProvider, createBrowserRouter } from "react-router-dom";
 import "./index.css";
 import { ThemeProvider } from "./components/ThemeProvider";
-import { routes } from "./routes";
+import { createRoutes } from "./routes";
 import { useAuthStore } from "./store/auth";
 import type { UserProfile } from "./lib/api";
 
@@ -57,7 +57,9 @@ const qc = new QueryClient({
   },
 });
 
-const router = createBrowserRouter(routes);
+const router = createBrowserRouter(
+  createRoutes({ qc, auth: null, isClient: true }),
+);
 
 hydrateRoot(
   document.getElementById("root")!,

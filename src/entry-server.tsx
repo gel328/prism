@@ -27,8 +27,10 @@ import {
 } from "@fluentui/react-components";
 import { I18nextProvider } from "react-i18next";
 import { ThemeProvider } from "./components/ThemeProvider";
-import { routes } from "./routes";
+import { createRoutes } from "./routes";
 import { createServerI18n } from "./i18n/init";
+import { useAuthStore } from "./store/auth";
+import type { UserProfile } from "./lib/api";
 
 export interface RenderOptions {
   /** The prebuilt index.html template. */
@@ -60,20 +62,6 @@ export async function render(
   request: Request,
   opts: RenderOptions,
 ): Promise<RenderResult> {
-  const handler = createStaticHandler(routes);
-  const context = await handler.query(request);
-
-  // The handler returns a Response for redirects (loaders/actions throwing).
-  // Surface those directly so the worker can issue a 30x.
-  if (context instanceof Response) {
-    const location = context.headers.get("Location") ?? "/";
-    return {
-      status: context.status,
-      headers: { Location: location },
-      body: "",
-    };
-  }
-
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: {
@@ -85,11 +73,37 @@ export async function render(
       },
     },
   });
-  // Seed query cache with worker-supplied prefetches so components render
-  // with real data on the server instead of a loading state.
+  // Seed query cache with worker-supplied prefetches (e.g. ["site"]) so
+  // route loaders see them as already-cached and don't refetch.
   for (const { queryKey, data } of opts.prefetched ?? []) {
     queryClient.setQueryData(queryKey, data);
   }
+
+  // Build a per-request route tree whose loaders close over this request's
+  // QueryClient and auth payload. No global state — concurrent requests on
+  // the same isolate get isolated routers.
+  const routes = createRoutes({
+    qc: queryClient,
+    auth:
+      (opts.auth as
+        | { token: string | null; user: UserProfile | null }
+        | undefined) ?? null,
+    isClient: false,
+  });
+  const handler = createStaticHandler(routes);
+  const context = await handler.query(request);
+
+  // Loaders throwing redirect() bubble out as a Response; pass through as a
+  // real 30x so the browser navigates without rendering an empty shell.
+  if (context instanceof Response) {
+    const location = context.headers.get("Location") ?? "/";
+    return {
+      status: context.status,
+      headers: { Location: location },
+      body: "",
+    };
+  }
+
   const renderer = createDOMRenderer();
   const router = createStaticRouter(handler.dataRoutes, context);
   const i18n = createServerI18n(opts.locale ?? "en");
@@ -101,17 +115,38 @@ export async function render(
     (m) => m.route.id === "not-found",
   );
 
-  const appHtml = renderToString(
-    <RendererProvider renderer={renderer}>
-      <I18nextProvider i18n={i18n}>
-        <QueryClientProvider client={queryClient}>
-          <ThemeProvider>
-            <StaticRouterProvider router={router} context={context} />
-          </ThemeProvider>
-        </QueryClientProvider>
-      </I18nextProvider>
-    </RendererProvider>,
-  );
+  // Seed the global Zustand auth store from the cookie-derived auth payload
+  // so RequireAuth and RequireAdmin guards see the right state during SSR.
+  // The store is a module-level singleton, so we MUST reset it after the
+  // synchronous renderToString call to keep concurrent requests isolated.
+  // (renderToString runs to completion within a single JS turn, so no other
+  // request can observe the store between setState and reset.)
+  if (opts.auth?.token && opts.auth.user) {
+    useAuthStore.setState({
+      token: opts.auth.token,
+      user: opts.auth.user as UserProfile,
+      isLoading: false,
+    });
+  }
+
+  let appHtml: string;
+  try {
+    appHtml = renderToString(
+      <RendererProvider renderer={renderer}>
+        <I18nextProvider i18n={i18n}>
+          <QueryClientProvider client={queryClient}>
+            <ThemeProvider>
+              <StaticRouterProvider router={router} context={context} />
+            </ThemeProvider>
+          </QueryClientProvider>
+        </I18nextProvider>
+      </RendererProvider>,
+    );
+  } finally {
+    // Always clear, even on render error — otherwise the next request in the
+    // same isolate inherits this user's session.
+    useAuthStore.setState({ token: null, user: null, isLoading: false });
+  }
 
   // Griffel emits an array of <style> elements; we serialise them to a
   // markup string so the worker can splice them into <head>.

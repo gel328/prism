@@ -25,7 +25,15 @@ import {
   KeyMultipleRegular,
   LockClosedRegular,
 } from "@fluentui/react-icons";
-import * as openpgp from "openpgp";
+// openpgp is the single largest dependency in the public bundle (~250KB
+// minified). Defer it until the user actually triggers in-browser GPG
+// signing — most logins are password / passkey / social and never load it.
+type OpenPGP = typeof import("openpgp");
+let openpgpPromise: Promise<OpenPGP> | null = null;
+function loadOpenPGP(): Promise<OpenPGP> {
+  if (!openpgpPromise) openpgpPromise = import("openpgp");
+  return openpgpPromise;
+}
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
@@ -220,6 +228,7 @@ export function Login() {
     setError("");
     setGpgAutoSigning(true);
     try {
+      const openpgp = await loadOpenPGP();
       let privateKeyObj = await openpgp.readPrivateKey({
         armoredKey: gpgPrivateKey,
       });
