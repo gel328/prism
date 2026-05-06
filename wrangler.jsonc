@@ -13,7 +13,13 @@
   "compatibility_flags": ["nodejs_compat"],
   "assets": {
     "directory": "./dist/client",
-    "binding": "ASSETS"
+    "binding": "ASSETS",
+    // Default is "auto-trailing-slash", which auto-resolves "/" to
+    // "/index.html" and serves the prebuilt template before the worker
+    // even runs — defeating SSR. "none" disables that implicit HTML
+    // routing; explicitly-requested files (e.g. /index.html, /favicon.svg,
+    // /assets/index-XXX.js) are still served from the bundle as static.
+    "html_handling": "none"
   },
   "observability": {
     "enabled": true
