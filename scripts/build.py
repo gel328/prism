@@ -313,6 +313,26 @@ def build_frontend(pm: str) -> None:
         step("Building frontend")
         run("bunx", "vite", "build")
 
+    # Deploy config — see scripts/build.sh for the full rationale. Vite emits
+    # a deploy-ready dist/prism/wrangler.json with paths relative to that
+    # directory; we copy it to wrangler.json at the project root with the
+    # paths rewritten so `wrangler deploy` (which prefers .json over .jsonc)
+    # ships the Vite-built bundle instead of re-bundling worker/index.ts.
+    import json as _json
+    step("Generating deploy-ready wrangler.json")
+    dist_cfg = ROOT / "dist" / "prism" / "wrangler.json"
+    if dist_cfg.exists():
+        with dist_cfg.open(encoding="utf-8") as f:
+            cfg = _json.load(f)
+        cfg["main"] = "dist/prism/index.js"
+        if "assets" in cfg and isinstance(cfg["assets"], dict):
+            cfg["assets"]["directory"] = "./dist/client"
+        with (ROOT / "wrangler.json").open("w", encoding="utf-8") as f:
+            _json.dump(cfg, f, indent=2)
+        ok("wrangler.json (root) updated for deploy")
+    else:
+        warn("dist/prism/wrangler.json not found — deploy will fall back to source bundling")
+
     print("\nBuild complete. Output in dist/")
 
 

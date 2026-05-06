@@ -213,6 +213,24 @@ if (-not $SkipFrontend) {
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     }
 
+    # ── Deploy config ─────────────────────────────────────────────────────────
+    # See scripts/build.sh for the rationale: vite emits a deploy-ready
+    # config at dist/prism/wrangler.json, but with paths relative to that
+    # directory. Rewrite those two paths and drop the result as
+    # wrangler.json at the project root, where wrangler will pick it up
+    # in preference to the source-pointing wrangler.jsonc.
+    Step 'Generating deploy-ready wrangler.json'
+    $distConfig = Join-Path $Root 'dist\prism\wrangler.json'
+    if (Test-Path $distConfig) {
+        $cfg = Get-Content $distConfig -Raw | ConvertFrom-Json
+        $cfg.main = 'dist/prism/index.js'
+        if ($cfg.assets) { $cfg.assets.directory = './dist/client' }
+        $cfg | ConvertTo-Json -Depth 100 -Compress | Set-Content (Join-Path $Root 'wrangler.json') -NoNewline
+        Ok 'wrangler.json (root) updated for deploy'
+    } else {
+        Warn 'dist/prism/wrangler.json not found — deploy will fall back to source bundling'
+    }
+
     Write-Host "`nBuild complete. Output in dist/" -ForegroundColor Green
 }
 

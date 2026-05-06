@@ -199,6 +199,28 @@ if [ "$SKIP_FRONTEND" = false ]; then
     bunx vite build
   fi
 
+  # ── Deploy config ─────────────────────────────────────────────────────────
+  # `vite build` emits dist/prism/wrangler.json with the built-bundle config
+  # (`main: index.js`, `no_bundle: true`, `assets.directory: ../client`).
+  # Wrangler's automatic deploy step (Cloudflare Workers Builds, or a manual
+  # `wrangler deploy` from the project root) reads wrangler.{toml,json,jsonc}.
+  # If we left only the source-based wrangler.jsonc, wrangler would re-bundle
+  # worker/index.ts and skip Vite's SSR work entirely.
+  #
+  # Solution: copy that emitted config into wrangler.json at the project
+  # root (wrangler picks .json over .jsonc when both exist) and rewrite the
+  # two paths that were relative to dist/prism/ to be relative to the root.
+  step "Generating deploy-ready wrangler.json"
+  if [ -f dist/prism/wrangler.json ]; then
+    sed \
+      -e 's|"main":"index\.js"|"main":"dist/prism/index.js"|' \
+      -e 's|"directory":"\.\./client"|"directory":"./dist/client"|' \
+      dist/prism/wrangler.json > wrangler.json
+    ok "wrangler.json (root) updated for deploy"
+  else
+    warn "dist/prism/wrangler.json not found — deploy will fall back to source bundling"
+  fi
+
   echo
   echo "Build complete. Output in dist/"
 fi
