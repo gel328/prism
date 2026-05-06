@@ -1,6 +1,18 @@
 {
   "name": "prism",
-  "main": "worker/index.ts",
+  // Vite (with @cloudflare/vite-plugin) builds the worker into
+  // dist/prism/index.js. We point wrangler at that built bundle and disable
+  // re-bundling — wrangler's own esbuild step can't pick up the SSR JSX
+  // imports without extra config, and there's no need: vite has already
+  // produced a workerd-compatible bundle.
+  "main": "dist/prism/index.js",
+  "no_bundle": true,
+  // Run the vite build automatically before `wrangler deploy`. Cloudflare
+  // Workers Builds (the auto-deploy from GitHub) and a manual
+  // `wrangler deploy` both honour this hook.
+  "build": {
+    "command": "npm run build"
+  },
   "compatibility_date": "2024-11-01",
   "compatibility_flags": ["nodejs_compat"],
   "assets": {
