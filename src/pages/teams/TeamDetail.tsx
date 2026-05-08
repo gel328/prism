@@ -313,6 +313,28 @@ export function TeamDetail() {
     }
   };
 
+  const [savingRequirement, setSavingRequirement] = useState<string | null>(
+    null,
+  );
+  const handleRequirementChange = async (
+    field: "require_2fa" | "require_verified_email",
+    value: boolean,
+  ) => {
+    if (!id) return;
+    setSavingRequirement(field);
+    try {
+      await api.updateTeam(id, { [field]: value });
+      await qc.invalidateQueries({ queryKey: ["team", id] });
+    } catch (err) {
+      showMsg(
+        "error",
+        err instanceof ApiError ? err.message : t("teams.failedUpdateTeam"),
+      );
+    } finally {
+      setSavingRequirement(null);
+    }
+  };
+
   const handleDeleteTeam = async () => {
     if (!id) return;
     try {
@@ -661,6 +683,76 @@ export function TeamDetail() {
               </Button>
             </div>
           </div>
+
+          {isOwner &&
+            (() => {
+              const siteForces2fa = !!site?.default_team_require_2fa;
+              const siteForcesEmail =
+                !!site?.default_team_require_verified_email;
+              const effective2fa = team.require_2fa || siteForces2fa;
+              const effectiveEmail =
+                team.require_verified_email || siteForcesEmail;
+              return (
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 12,
+                    padding: 16,
+                    border: `1px solid ${tokens.colorNeutralStroke1}`,
+                    borderRadius: 8,
+                  }}
+                >
+                  <div>
+                    <Text weight="semibold" size={400} block>
+                      {t("teams.joinRequirementsTitle")}
+                    </Text>
+                    <Text
+                      size={200}
+                      block
+                      style={{
+                        color: tokens.colorNeutralForeground3,
+                        marginTop: 4,
+                      }}
+                    >
+                      {t("teams.joinRequirementsDesc")}
+                    </Text>
+                  </div>
+                  <Switch
+                    label={
+                      siteForcesEmail
+                        ? `${t("teams.requireVerifiedEmail")} (${t("teams.requirementForcedBySite")})`
+                        : t("teams.requireVerifiedEmail")
+                    }
+                    checked={effectiveEmail}
+                    disabled={
+                      siteForcesEmail ||
+                      savingRequirement === "require_verified_email"
+                    }
+                    onChange={(_, d) =>
+                      handleRequirementChange(
+                        "require_verified_email",
+                        d.checked,
+                      )
+                    }
+                  />
+                  <Switch
+                    label={
+                      siteForces2fa
+                        ? `${t("teams.require2FA")} (${t("teams.requirementForcedBySite")})`
+                        : t("teams.require2FA")
+                    }
+                    checked={effective2fa}
+                    disabled={
+                      siteForces2fa || savingRequirement === "require_2fa"
+                    }
+                    onChange={(_, d) =>
+                      handleRequirementChange("require_2fa", d.checked)
+                    }
+                  />
+                </div>
+              );
+            })()}
 
           {(site?.enable_public_profiles ?? true) && (
             <div

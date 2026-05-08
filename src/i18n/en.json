@@ -659,7 +659,17 @@
     "inviteUsesHeader": "Uses",
     "inviteExpiresHeader": "Expires",
     "inviteCreatedByHeader": "Created by",
-    "revokeInvite": "Revoke invite"
+    "revokeInvite": "Revoke invite",
+    "joinRequirementsTitle": "Join requirements",
+    "joinRequirementsDesc": "Security gates new and existing members must satisfy. Members are also blocked from removing their last 2FA factor while a requiring team membership is active.",
+    "requirementForcedBySite": "site-required",
+    "requireVerifiedEmail": "Require a verified primary email",
+    "require2FA": "Require 2FA (passkey or authenticator app)",
+    "cannotJoinRequirements": "You don't yet meet this team's requirements:",
+    "requirement2FAUnmet": "Two-factor authentication is required.",
+    "requirementVerifiedEmailUnmet": "A verified primary email is required.",
+    "goToSecurity": "Set up 2FA",
+    "goToProfile": "Verify email"
   },
   "connections": {
     "title": "Linked Accounts",
@@ -981,6 +991,9 @@
     "allowAltEmailLogin": "Allow login with alternate emails (site default)",
     "disableUserCreateTeam": "Disable users from creating teams (admins can bypass)",
     "disableUserCreateApp": "Disable users from creating OAuth apps (admins can bypass)",
+    "teamJoinRequirementsHint": "Site-wide floor for team join requirements. When on, every team is forced to require the corresponding factor — team owners can opt their teams in further but cannot opt out below the floor.",
+    "defaultTeamRequireVerifiedEmail": "All teams require a verified primary email",
+    "defaultTeamRequire2FA": "All teams require 2FA",
     "authTitle": "Auth & Token Settings",
     "sessionTtl": "Session TTL (days)",
     "accessTokenTtl": "Access Token TTL (minutes)",

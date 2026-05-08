@@ -1217,6 +1217,8 @@ export const api = {
       profile_show_apps?: boolean | null;
       profile_show_domains?: boolean | null;
       profile_show_members?: boolean | null;
+      require_2fa?: boolean;
+      require_verified_email?: boolean;
     },
   ) => request<{ team: Team }>("PATCH", `/teams/${id}`, body, getToken()),
   setTeamShowOnProfile: (id: string, value: boolean | null) =>
@@ -1596,6 +1598,10 @@ export interface SitePublicConfig {
   default_team_profile_show_apps: boolean;
   default_team_profile_show_domains: boolean;
   default_team_profile_show_members: boolean;
+  /** Site-wide floor for team join requirements. When true, every team
+   *  effectively requires the factor regardless of the per-team flag. */
+  default_team_require_2fa: boolean;
+  default_team_require_verified_email: boolean;
   enabled_providers: {
     slug: string;
     name: string;
@@ -1796,6 +1802,10 @@ export interface Team {
   /** Per-team override of the user's profile_show_joined_teams toggle —
    *  surfaced from the user's own membership row (`team_members` join). */
   show_on_profile?: boolean | null;
+  /** Owner-set join requirements — also re-checked when a member tries
+   *  to remove their last 2FA factor or unverify their email. */
+  require_2fa: boolean;
+  require_verified_email: boolean;
   created_at: number;
   updated_at: number;
 }
@@ -1861,12 +1871,26 @@ export interface TeamInviteInfo {
     name: string;
     description: string;
     avatar_url: string | null;
+    unproxied_avatar_url: string | null;
   };
   role: string;
   email: string | null;
   expires_at: number;
   user: { id: string; username: string } | null;
   already_member: boolean;
+  requirements: {
+    require_2fa: boolean;
+    require_verified_email: boolean;
+    /** Subset forced by the site floor — present so the UI can show
+     *  which requirements a team owner could not have disabled. */
+    forced_by_site: {
+      require_2fa: boolean;
+      require_verified_email: boolean;
+    };
+  };
+  /** Subset of the team's requirements the current session user does not
+   *  satisfy. Empty array (or any when unauthenticated) = nothing blocking. */
+  unmet_requirements: Array<"verified_email" | "2fa">;
 }
 
 export interface AdminTeam {

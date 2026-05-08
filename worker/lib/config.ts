@@ -84,6 +84,11 @@ const DEFAULT_CONFIG: SiteConfig = {
   // don't want to publish every name. Still subject to each member's own
   // profile_show_joined_teams flag.
   default_team_profile_show_members: false,
+  // Off by default — turning these on retroactively forces every existing
+  // team to require the factor, which can lock out current members who
+  // haven't enrolled yet, so operators should opt in deliberately.
+  default_team_require_2fa: false,
+  default_team_require_verified_email: false,
   initialized: false,
 };
 

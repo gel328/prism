@@ -488,6 +488,21 @@ export function AdminSettings() {
               checked={!!get("disable_user_create_app")}
               onChange={(_, d) => set("disable_user_create_app", d.checked)}
             />
+            <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
+              {t("admin.teamJoinRequirementsHint")}
+            </Text>
+            <Switch
+              label={t("admin.defaultTeamRequireVerifiedEmail")}
+              checked={!!get("default_team_require_verified_email")}
+              onChange={(_, d) =>
+                set("default_team_require_verified_email", d.checked)
+              }
+            />
+            <Switch
+              label={t("admin.defaultTeamRequire2FA")}
+              checked={!!get("default_team_require_2fa")}
+              onChange={(_, d) => set("default_team_require_2fa", d.checked)}
+            />
             <Field
               label={t("admin.ipv6RateLimitPrefix")}
               hint={t("admin.ipv6RateLimitPrefixHint")}

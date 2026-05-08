@@ -99,7 +99,9 @@ export function TeamJoin() {
     );
   }
 
-  const { team, role, email, expires_at, already_member } = data;
+  const { team, role, email, expires_at, already_member, unmet_requirements } =
+    data;
+  const hasUnmet = !!user && !already_member && unmet_requirements.length > 0;
 
   return (
     <div
@@ -165,6 +167,43 @@ export function TeamJoin() {
         </MessageBar>
       )}
 
+      {hasUnmet && (
+        <MessageBar
+          intent="warning"
+          style={{ width: "100%", textAlign: "left" }}
+        >
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <Text weight="semibold">{t("teams.cannotJoinRequirements")}</Text>
+            <ul style={{ margin: 0, paddingLeft: 20 }}>
+              {unmet_requirements.includes("2fa") && (
+                <li>
+                  <Text>{t("teams.requirement2FAUnmet")}</Text>{" "}
+                  <Button
+                    appearance="transparent"
+                    size="small"
+                    onClick={() => navigate("/security")}
+                  >
+                    {t("teams.goToSecurity")}
+                  </Button>
+                </li>
+              )}
+              {unmet_requirements.includes("verified_email") && (
+                <li>
+                  <Text>{t("teams.requirementVerifiedEmailUnmet")}</Text>{" "}
+                  <Button
+                    appearance="transparent"
+                    size="small"
+                    onClick={() => navigate("/profile")}
+                  >
+                    {t("teams.goToProfile")}
+                  </Button>
+                </li>
+              )}
+            </ul>
+          </div>
+        </MessageBar>
+      )}
+
       {already_member ? (
         <div
           style={{
@@ -189,7 +228,7 @@ export function TeamJoin() {
           appearance="primary"
           size="large"
           onClick={handleAccept}
-          disabled={accepting}
+          disabled={accepting || hasUnmet}
         >
           {accepting ? <Spinner size="small" /> : t("teams.acceptInvite")}
         </Button>

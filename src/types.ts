@@ -64,5 +64,7 @@ export interface SiteConfig {
   default_team_profile_show_apps: boolean;
   default_team_profile_show_domains: boolean;
   default_team_profile_show_members: boolean;
+  default_team_require_2fa: boolean;
+  default_team_require_verified_email: boolean;
   initialized: boolean;
 }

@@ -63,6 +63,9 @@ app.get("/site", async (c) => {
     default_team_profile_show_apps: config.default_team_profile_show_apps,
     default_team_profile_show_domains: config.default_team_profile_show_domains,
     default_team_profile_show_members: config.default_team_profile_show_members,
+    default_team_require_2fa: config.default_team_require_2fa,
+    default_team_require_verified_email:
+      config.default_team_require_verified_email,
     enabled_providers,
   });
 });

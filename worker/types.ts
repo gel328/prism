@@ -135,6 +135,12 @@ export interface TeamRow {
   profile_show_apps: number | null;
   profile_show_domains: number | null;
   profile_show_members: number | null;
+  /** 1 = members must have at least one TOTP authenticator or passkey
+   *  enrolled. Enforced at join time and again whenever a member tries
+   *  to remove their last factor. */
+  require_2fa: number;
+  /** 1 = members must have a verified primary email. */
+  require_verified_email: number;
   created_at: number;
   updated_at: number;
 }
@@ -491,6 +497,13 @@ export interface SiteConfig {
    *  even teams that show their member count usually don't want to expose
    *  every individual member by default. */
   default_team_profile_show_members: boolean;
+  /** Site-wide floor for team join requirements. When true, EVERY team
+   *  effectively requires the corresponding factor regardless of the
+   *  team-level flag — owners can opt teams in further but cannot opt out
+   *  below the site floor. Defaults off, so existing deployments behave
+   *  the same until an admin enables them. */
+  default_team_require_2fa: boolean;
+  default_team_require_verified_email: boolean;
   initialized: boolean;
 }
 

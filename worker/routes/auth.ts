@@ -44,6 +44,7 @@ import {
   deliverUserEmailNotifications,
   notificationActorMetaFromHeaders,
 } from "../lib/notifications";
+import { teamsBlockingDowngrade } from "../lib/teamRequirements";
 import type {
   AuthUser,
   PasskeyRow,
@@ -857,6 +858,37 @@ app.delete("/totp/:id", requireAuth, async (c) => {
   const ok = await verifyAnyTotp(c.env, user.id, body.code);
   if (!ok) return c.json({ error: "Invalid TOTP code" }, 400);
 
+  // Would removing this authenticator leave the user with no 2FA?
+  // Compute hypothetical post-delete state and reject the change if a team
+  // membership still requires 2FA.
+  const otherTotp = await c.env.DB.prepare(
+    "SELECT 1 AS x FROM totp_authenticators WHERE user_id = ? AND enabled = 1 AND id != ? LIMIT 1",
+  )
+    .bind(user.id, id)
+    .first<{ x: number }>();
+  const passkey = await c.env.DB.prepare(
+    "SELECT 1 AS x FROM passkeys WHERE user_id = ? LIMIT 1",
+  )
+    .bind(user.id)
+    .first<{ x: number }>();
+  const has2faAfter = !!otherTotp || !!passkey;
+  if (!has2faAfter) {
+    const blockers = await teamsBlockingDowngrade(c.env.DB, user.id, {
+      email_verified: user.email_verified,
+      has_2fa: false,
+    });
+    if (blockers.length) {
+      return c.json(
+        {
+          error:
+            "Cannot remove your last 2FA factor while you're a member of a team that requires 2FA",
+          teams: blockers,
+        },
+        409,
+      );
+    }
+  }
+
   await c.env.DB.prepare(
     "DELETE FROM totp_authenticators WHERE id = ? AND user_id = ?",
   )
@@ -1257,23 +1289,51 @@ app.delete("/passkeys/:id", requireAuth, async (c) => {
   )
     .bind(id, user.id)
     .first<{ name: string }>();
+  if (!row) return c.json({ error: "Passkey not found" }, 404);
+
+  const otherPasskey = await c.env.DB.prepare(
+    "SELECT 1 AS x FROM passkeys WHERE user_id = ? AND id != ? LIMIT 1",
+  )
+    .bind(user.id, id)
+    .first<{ x: number }>();
+  const totp = await c.env.DB.prepare(
+    "SELECT 1 AS x FROM totp_authenticators WHERE user_id = ? AND enabled = 1 LIMIT 1",
+  )
+    .bind(user.id)
+    .first<{ x: number }>();
+  const has2faAfter = !!otherPasskey || !!totp;
+  if (!has2faAfter) {
+    const blockers = await teamsBlockingDowngrade(c.env.DB, user.id, {
+      email_verified: user.email_verified,
+      has_2fa: false,
+    });
+    if (blockers.length) {
+      return c.json(
+        {
+          error:
+            "Cannot remove your last 2FA factor while you're a member of a team that requires 2FA",
+          teams: blockers,
+        },
+        409,
+      );
+    }
+  }
+
   await c.env.DB.prepare("DELETE FROM passkeys WHERE id = ? AND user_id = ?")
     .bind(id, user.id)
     .run();
-  if (row) {
-    c.executionCtx.waitUntil(
-      deliverUserEmailNotifications(
-        c.env,
-        user.id,
-        "security.passkey_removed",
-        {
-          name: row.name,
-          ...notificationActorMetaFromHeaders(c.req.raw.headers),
-        },
-        c.env.APP_URL,
-      ).catch(() => {}),
-    );
-  }
+  c.executionCtx.waitUntil(
+    deliverUserEmailNotifications(
+      c.env,
+      user.id,
+      "security.passkey_removed",
+      {
+        name: row.name,
+        ...notificationActorMetaFromHeaders(c.req.raw.headers),
+      },
+      c.env.APP_URL,
+    ).catch(() => {}),
+  );
   return c.json({ message: "Passkey deleted" });
 });
 

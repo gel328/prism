@@ -27,6 +27,13 @@ import {
   notificationActorMetaFromHeaders,
 } from "../lib/notifications";
 import type { OAuthAppRow, TeamMemberRow, TeamRow, Variables } from "../types";
+import {
+  getEffectiveTeamRequirements,
+  getSiteRequirementFloor,
+  getUserSecurityState,
+  mergeWithSiteFloor,
+  unmetRequirements,
+} from "../lib/teamRequirements";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
 const app = new Hono<AppEnv>();
@@ -144,20 +151,53 @@ app.get("/join/:token", optionalAuth, async (c) => {
     return c.json({ error: "Invite link has reached its usage limit" }, 410);
 
   const team = await c.env.DB.prepare(
-    "SELECT id, name, avatar_url FROM teams WHERE id = ?",
+    "SELECT id, name, description, avatar_url, require_2fa, require_verified_email FROM teams WHERE id = ?",
   )
     .bind(invite.team_id)
-    .first<{ id: string; name: string; avatar_url: string | null }>();
+    .first<{
+      id: string;
+      name: string;
+      description: string;
+      avatar_url: string | null;
+      require_2fa: number;
+      require_verified_email: number;
+    }>();
   if (!team) return c.json({ error: "Team not found" }, 404);
+
+  const floor = await getSiteRequirementFloor(c.env.DB);
+  const effective = mergeWithSiteFloor(team, floor);
+
+  const sessionUser = c.get("user") ?? null;
+  let alreadyMember = false;
+  let unmet: ReturnType<typeof unmetRequirements> = [];
+  if (sessionUser) {
+    const existing = await getMember(c.env.DB, team.id, sessionUser.id);
+    alreadyMember = !!existing;
+    if (!alreadyMember) {
+      const state = await getUserSecurityState(c.env.DB, sessionUser.id);
+      unmet = unmetRequirements(effective, state);
+    }
+  }
 
   return c.json({
     team: {
-      ...team,
+      id: team.id,
+      name: team.name,
+      description: team.description,
       avatar_url: await proxyImageUrl(c.env.APP_URL, c.env.DB, team.avatar_url),
       unproxied_avatar_url: team.avatar_url,
     },
-    invite: { role: invite.role, expires_at: invite.expires_at },
-    user: c.get("user") ?? null,
+    role: invite.role,
+    email: invite.email,
+    expires_at: invite.expires_at,
+    already_member: alreadyMember,
+    requirements: {
+      require_2fa: effective.require_2fa,
+      require_verified_email: effective.require_verified_email,
+      forced_by_site: effective.forced_by_site,
+    },
+    unmet_requirements: unmet,
+    user: sessionUser,
   });
 });
 
@@ -188,6 +228,21 @@ app.post("/join/:token", requireAuth, async (c) => {
 
   const existing = await getMember(c.env.DB, invite.team_id, user.id);
   if (existing) return c.json({ error: "Already a member of this team" }, 409);
+
+  const teamReq = await getEffectiveTeamRequirements(c.env.DB, invite.team_id);
+  if (teamReq) {
+    const state = await getUserSecurityState(c.env.DB, user.id);
+    const unmet = unmetRequirements(teamReq, state);
+    if (unmet.length) {
+      return c.json(
+        {
+          error: "You don't meet this team's join requirements",
+          unmet_requirements: unmet,
+        },
+        403,
+      );
+    }
+  }
 
   await c.env.DB.batch([
     c.env.DB.prepare(
@@ -391,6 +446,8 @@ app.patch("/:id", async (c) => {
     profile_show_apps?: boolean | null;
     profile_show_domains?: boolean | null;
     profile_show_members?: boolean | null;
+    require_2fa?: boolean;
+    require_verified_email?: boolean;
   }>();
 
   if (body.avatar_url) {
@@ -419,6 +476,24 @@ app.patch("/:id", async (c) => {
   if (body.profile_is_public !== undefined) {
     updates.push("profile_is_public = ?");
     values.push(body.profile_is_public ? 1 : 0);
+  }
+  if (body.require_2fa !== undefined) {
+    if (!hasRole(member.role, "owner"))
+      return c.json(
+        { error: "Only the owner can change join requirements" },
+        403,
+      );
+    updates.push("require_2fa = ?");
+    values.push(body.require_2fa ? 1 : 0);
+  }
+  if (body.require_verified_email !== undefined) {
+    if (!hasRole(member.role, "owner"))
+      return c.json(
+        { error: "Only the owner can change join requirements" },
+        403,
+      );
+    updates.push("require_verified_email = ?");
+    values.push(body.require_verified_email ? 1 : 0);
   }
   for (const field of [
     "profile_show_description",
@@ -508,6 +583,22 @@ app.post("/:id/members", async (c) => {
 
   const existing = await getMember(c.env.DB, id, target.id);
   if (existing) return c.json({ error: "Already a member" }, 409);
+
+  const teamReq = await getEffectiveTeamRequirements(c.env.DB, id);
+  if (teamReq) {
+    const state = await getUserSecurityState(c.env.DB, target.id);
+    const unmet = unmetRequirements(teamReq, state);
+    if (unmet.length) {
+      return c.json(
+        {
+          error:
+            "User doesn't meet this team's join requirements (e.g. 2FA, verified email)",
+          unmet_requirements: unmet,
+        },
+        403,
+      );
+    }
+  }
 
   await c.env.DB.prepare(
     "INSERT INTO team_members (team_id, user_id, role, joined_at) VALUES (?, ?, ?, ?)",
