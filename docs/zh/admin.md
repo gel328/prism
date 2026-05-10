@@ -15,8 +15,10 @@ description: 在 Prism 管理面板中管理用户、应用、OAuth 来源、设
 |--------------|-------------------------|
 | 总用户数     | 所有已注册账号          |
 | OAuth 应用数 | 所有已注册应用          |
-| 已验证域名数 | 通过 DNS 验证的域名     |
+| 已验证域名数 | 通过验证的域名          |
 | 活跃令牌数   | 未过期的 OAuth 访问令牌 |
+
+统计下方还会显示运维警告 — 最重要的是：当 [`SECRETS_KEY`](configuration.md#secrets_key-配置) 已绑定但 D1 数据尚未迁移时会提示。点进 **设置 → Danger Zone** 即可一次性完成加密。
 
 ## 设置
 
@@ -40,6 +42,9 @@ description: 在 Prism 管理面板中管理用户、应用、OAuth 来源、设
 - **Session TTL（天）** — 登录会话的有效期
 - **Access token TTL（分钟）** — OAuth 访问令牌有效期
 - **Refresh token TTL（天）** — OAuth 刷新令牌有效期
+- **Sudo 模式 TTL（分钟）** — 用户成功完成一次 2FA 步骤提升后，同一 `(用户, 会话, 应用)` 在该时长内的后续挑战可跳过 TOTP/Passkey 重新提示。`0` 表示完全禁用 sudo 模式。每次确认时仍要求用户勾选行动确认复选框。详见 [OAuth → 步骤提升 2FA](oauth.md#step-up-2fa)。
+- **Require captcha for 2FA** — 站点全局：每次步骤提升确认都必须通过当前启用的验证码。应用也可针对单个挑战开启。`captcha_provider = none` 时无效。
+- **IPv6 限流前缀长度** — 限流时 IPv6 地址按多少位前缀聚合（默认 `/64`）。避免一个 `/64` 拥有无限重试次数。
 
 ### 机器人防护
 
@@ -81,7 +86,42 @@ description: 在 Prism 管理面板中管理用户、应用、OAuth 来源、设
 
 ### 域名重新验证
 
-- **Domain reverify interval（天）** — Prism 重新检查已验证域名 DNS TXT 记录的频率，默认 30 天。
+- **Domain reverify interval（天）** — Prism 按该频率对每个已验证域名重新核验所记录的证明（DNS TXT、HTML meta 标签或 `.well-known` 文件 — 由用户在添加时选择），默认 30 天。
+
+### 公开资料
+
+- **Enable public profiles** — 主开关。关闭后 `/u/<username>` 与 `/t/<team-id>` 一律返回 404，无视任何用户/团队的个人开关。详见 [公开资料](public-profile.md)。
+- **用户资料 / 团队资料默认值** — 用户（或团队）尚未自定义某字段时使用的默认值。修改默认值会立即对继承用户生效；不会覆盖已显式设置的值。
+
+### 团队加入门槛
+
+站点级硬性最低要求，每个团队都必须满足。所有者只能在此基础上加严，不能放松。
+
+- **默认要求 2FA** — 任何团队都要求成员至少有一个 TOTP 认证器或 Passkey。
+- **默认要求验证邮箱** — 任何团队都要求成员的主邮箱已验证。
+
+::: warning
+开启这些底线会立即对所有现有成员生效 — 没有满足条件的成员将无法继续团队操作，直至自行补齐。请先通知成员后再切换。
+:::
+
+### 通知与 Telegram
+
+- **Telegram 通知源** — 用于推送 Telegram 通知的已启用 Telegram OAuth 源 slug，复用其 bot token。留空即关闭 Telegram 投递（邮件和 Webhook 投递不受影响）。详见 [通知](notifications.md)。
+
+### 诊断
+
+- **Login error 保留天数** — `login_errors` 表中失败登录记录的保留期，超过后由 cron 清理。
+
+### Danger Zone
+
+会改变数据库形态的工具，每个都是一次幂等的批量迁移，重复执行安全。
+
+- **Migrate secrets to Secrets Store** — 加密 site_config 中的密钥（验证码 secret、社交源 `client_secret`、SMTP/IMAP 密码、GitHub README PAT、OAuth 应用 `client_secret`）。需先绑定 [`SECRETS_KEY`](configuration.md#secrets_key-配置)。
+- **Migrate D1 secrets** — 把 bearer 类机密（PAT、OAuth token/code、邀请 token、邮箱验证码、二次验证码、单条备用码）替换为 HMAC-SHA256 哈希。明文不再存储；候选值在查询时同样哈希后用 `WHERE col = ?` 比较。
+- **迁移团队为 team-as-user 行** — 为每个团队补建一个 `kind = 'team'` 的合成 `users` 行，使 `oauth_apps.owner_id` 能统一连接。
+- **迁移图片代理映射** — 为关闭式图片代理上线之前已经存在的头像 / 图标 URL 注册映射。
+- **迁移恢复码** — 重新哈希历史明文备用码。
+- **站点重置** — 清空并重新初始化。目标管理员需先签署一封邮件确认；管理面板再要求输入确认词触发清空。具有破坏性，且需要已配置邮件提供商。
 
 ## OAuth 来源
 
@@ -167,92 +207,74 @@ https://<your-prism-domain>/api/connections/<slug>/callback
 
 已验证的应用在授权页面上显示对勾标记，表示已由管理员审核。
 
+## 团队
+
+**Admin → Teams** 列出全实例所有团队，包含所有者、成员数和加入门槛标记。
+
+| 操作  | 效果                                                                                       |
+|-------|--------------------------------------------------------------------------------------------|
+| 查看  | 浏览成员、所属应用、已验证域名                                                             |
+| 解散  | 删除团队。团队拥有的应用会先被重新分配给团队所有者，避免被级联删除                         |
+
+`disable_user_create_team` 会对非管理员隐藏「新建团队」按钮 — 启用后只有管理员能创建团队（已存在的团队继续工作）。
+
+## 请求日志
+
+**Admin → Request Logs** 是 Worker 每条请求的分页可筛选表 — 方法、路径、状态、耗时、IP、UA、用户 ID（如有登录）以及对应的审计日志条目（如有）。
+
+- **筛选**：按方法、状态范围、路径前缀或用户。
+- **Spectate**：打开类似 `tail -f` 的实时视图，自动刷新。
+- **导出 CSV**：把当前筛选导出为 CSV。
+- **详情**：单条请求的完整 timing 和审计联动。
+- **清空**：删除整张表（或仅清空 spectate 缓冲）。
+
+请求日志独立于审计日志：一次请求可能未引发任何审计动作，cron 触发的审计也没有对应的请求行。
+
+## 登录错误
+
+**Admin → Login Errors** 列出所有失败的认证尝试（密码错误、TOTP 错误、挑战过期等），含 error_code、identifier、IP、metadata。`login_error_retention_days` 控制保留时长，超时由 cron 清理。
+
 ## 审计日志
 
 审计日志是一个分页的追加型重要事件列表：
 
-| 事件                  | 触发条件              |
-|-----------------------|-----------------------|
-| `user.register`       | 成功注册              |
-| `user.login`          | 成功登录              |
-| `user.login.failed`   | 登录失败              |
-| `user.logout`         | 退出登录              |
-| `user.delete`         | 账号删除              |
-| `totp.enabled`        | TOTP 设置完成         |
-| `totp.disabled`       | TOTP 已禁用           |
-| `passkey.registered`  | 新 Passkey 已添加     |
-| `passkey.deleted`     | Passkey 已删除        |
-| `oauth.authorize`     | 用户批准了 OAuth 应用 |
-| `oauth.token`         | 令牌已颁发            |
-| `admin.config.update` | 站点配置已更改        |
-| `admin.user.update`   | 管理员修改了用户      |
-| `admin.user.delete`   | 管理员删除了用户      |
+| 事件                                       | 触发条件                                            |
+|--------------------------------------------|-----------------------------------------------------|
+| `user.register`                            | 成功注册                                            |
+| `user.login`                               | 成功登录                                            |
+| `user.login.failed`                        | 登录失败                                            |
+| `user.logout`                              | 退出登录                                            |
+| `user.delete`                              | 账号删除                                            |
+| `user.password_changed`                    | 通过 资料 → 安全 改密                              |
+| `totp.enabled`                             | TOTP 认证器启用                                    |
+| `totp.disabled`                            | TOTP 认证器移除                                    |
+| `passkey.registered`                       | 新 Passkey 已添加                                  |
+| `passkey.deleted`                          | Passkey 已删除                                      |
+| `gpg.key_added`                            | 注册了 GPG 公钥                                    |
+| `gpg.key_deleted`                          | 删除了 GPG 公钥                                    |
+| `gpg.login`                                | 通过 GPG 签名挑战登录                              |
+| `oauth.authorize`                          | 用户批准了 OAuth 应用                              |
+| `oauth.token`                              | 令牌已颁发                                          |
+| `oauth.consent_revoked`                    | 用户撤销了应用授权                                  |
+| `oauth.2fa.verify`                         | 步骤提升 2FA 完成                                  |
+| `oauth.2fa.sudo_revoked`                   | 用户主动结束了 sudo 宽限期                          |
+| `team.created`                             | 团队创建                                            |
+| `team.member_added`                        | 成员加入（邀请或管理员添加）                        |
+| `team.member_removed`                      | 成员退出或被移除                                    |
+| `team.transferred`                         | 团队所有权转移                                      |
+| `domain.added` / `verified` / `deleted`    | 域名生命周期                                        |
+| `connection.added` / `removed`             | 社交账号绑定生命周期                                |
+| `webhook.create` / `update` / `delete`     | Webhook 生命周期                                    |
+| `oauth_source.create` / `update` / `delete`| OAuth 源生命周期                                    |
+| `invite.create` / `revoke`                 | 站点邀请生命周期                                    |
+| `admin.config.update`                      | 站点配置已更改                                      |
+| `admin.user.update`                        | 管理员修改了用户                                    |
+| `admin.user.delete`                        | 管理员删除了用户                                    |
+| `admin.app.update`                         | 管理员验证或停用了应用                              |
+| `admin.team.delete`                        | 管理员解散了团队                                    |
+| `admin.secrets.migrate`                    | 触发了 site_config 或 D1 secrets 的迁移            |
+| `admin.reset.*`                            | 站点重置请求 / 取消 / 确认                         |
 
-每条记录包含操作的 `user_id`、`action`、可选的 `resource_type` / `resource_id`、`metadata` JSON 对象以及 `ip_address`。
+每条记录包含操作的 `user_id`（系统操作为 `null`）、`action`、可选的 `resource_type` / `resource_id`、`metadata` JSON 以及 `ip_address`。
 
-## OAuth 权限范围参考
-
-Prism 注册的 OAuth 应用和个人访问令牌可申请的所有权限范围：
-
-### 标准范围
-
-| 范围             | 说明                                     |
-|------------------|------------------------------------------|
-| `openid`         | OIDC 身份——启用 `id_token` 和 `sub` 声明 |
-| `profile`        | 读取显示名称、用户名、头像                 |
-| `profile:write`  | 更新显示名称和头像                       |
-| `email`          | 读取邮箱地址及验证状态                   |
-| `offline_access` | 颁发刷新令牌                             |
-
-### 应用范围
-
-| 范围         | 说明                                   |
-|--------------|----------------------------------------|
-| `apps:read`  | 列出令牌所有者的 OAuth 应用            |
-| `apps:write` | 创建、更新和删除令牌所有者的 OAuth 应用 |
-
-### 团队范围
-
-| 范围           | 说明                        |
-|----------------|-----------------------------|
-| `teams:read`   | 查看团队成员身份和角色      |
-| `teams:create` | 创建新团队                  |
-| `teams:write`  | 更新团队设置；添加和移除成员 |
-| `teams:delete` | 删除团队（仅限所有者）        |
-
-### 域名范围
-
-| 范围            | 说明                            |
-|-----------------|---------------------------------|
-| `domains:read`  | 列出已验证域名                  |
-| `domains:write` | 添加域名、触发 DNS 验证、移除域名 |
-
-### GPG 密钥
-
-| 范围        | 说明                          |
-|-------------|-------------------------------|
-| `gpg:read`  | 列出令牌所有者注册的 GPG 公钥 |
-| `gpg:write` | 添加或删除 GPG 公钥           |
-
-### 社交连接
-
-| 范围           | 说明                           |
-|----------------|--------------------------------|
-| `social:read`  | 列出令牌所有者已关联的社交账号 |
-| `social:write` | 断开令牌所有者的社交提供商账号 |
-
-### 管理员范围（要求令牌所有者 `role = admin`）
-
-| 范围                    | 说明                              |
-|-------------------------|-----------------------------------|
-| `admin:users:read`      | 列出并查看所有用户账号            |
-| `admin:users:write`     | 更新用户角色、状态、显示名称和头像  |
-| `admin:users:delete`    | 永久删除用户账号                  |
-| `admin:config:read`     | 读取全站配置（凭据字段已脱敏）      |
-| `admin:config:write`    | 更新站点设置（注册策略、外观等）     |
-| `admin:invites:read`    | 列出所有站点邀请链接              |
-| `admin:invites:create`  | 生成新的站点邀请链接              |
-| `admin:invites:delete`  | 撤销站点邀请链接                  |
-| `admin:webhooks:read`   | 列出 Webhook 并查看投递历史       |
-| `admin:webhooks:write`  | 创建、更新并发送测试请求至 Webhook |
-| `admin:webhooks:delete` | 永久删除 Webhook                  |
+OAuth scope 的完整参考见 [OAuth → Scopes](oauth.md#scopes) 与 [团队 → OAuth scope](teams.md#oauth-scope)。

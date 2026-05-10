@@ -97,6 +97,77 @@ code_challenge = BASE64URL(SHA-256(ASCII(code_verifier)))
 | `admin:webhooks:delete` | 删除实例级别的 Webhook（仅限管理员） |
 | `offline_access` | 启用刷新令牌颁发 |
 
+#### 团队相关 scope —— 三个层级
+
+涉及团队的 scope 分三类，作用范围差异巨大。请按需选最窄的那一类。
+
+| 层级       | 示例              | 访问范围                                         | 授予方式                                                         |
+|------------|-------------------|--------------------------------------------------|------------------------------------------------------------------|
+| 聚合（复数）| `teams:read`      | 用户加入的所有团队                                | 普通用户同意                                                     |
+| 单团队（单数）| `team:read`     | 同意时选定的某一个团队                            | 普通用户同意 + 团队选择器（用户须是该团队 admin 及以上）          |
+| 跨实例     | `site:team:read`  | 实例上所有团队                                    | 仅管理员，且需通过 2FA + 输入确认短语                            |
+
+##### 聚合 `teams:*`
+
+```
+teams:read   teams:write   teams:create   teams:delete
+```
+
+作用于用户的全部团队图谱。一次同意覆盖所有团队。适合需要反映或同步用户成员关系的场景 — 例如把 [`teams` claim](#id-token) 注入到 ID Token 给 Cloudflare Access 用，或者展示一个「我所在的团队」切换器。
+
+端点位于 `/api/oauth/me/teams[/...]`。
+
+##### 单团队 `team:*`
+
+```
+team:read                       team:member:read
+team:write                      team:member:write
+team:delete                     team:member:profile:read
+```
+
+应用*请求*时使用上面这些字符串。同意时用户挑出**一个具体团队**，Prism 通过 `bindTeamScopes()` 把它们就地改写成 `team:<team-id>:read` 等 — 颁发的 token 里只剩绑定后的形式，从而只能作用于那一个团队。
+
+同意时还有两条额外限制（`worker/routes/oauth.ts:830-859`）：
+
+- 用户必须是所选团队的 `owner`、`co-owner` 或 `admin`。
+- `team:delete` 还要求 `owner` 或 `co-owner`（admin 能授予读写，但只有真正能解散团队的人才能授予删除权）。
+
+`team:member:write` 同样不能越权：admin 用户授权后，应用提升成员的角色受到与该 admin 相同的上限保护，不会因 token 而获得超越授权人本身的能力 — 这条上限会在每次成员变更时校验。
+
+每次授予都会在 `team_scope_grants` 表中独立审计（含团队 ID 与权限列表），与 OAuth 同意记录分开。
+
+端点位于 `/api/oauth/me/team/:teamId/...`，通过 `resolveTeamToken(c, teamId, "read"|"write"|"member:read"|...)` 校验绑定关系；用绑定到 A 团队的 token 去访问 B 团队的端点会得到 `403 insufficient_scope`。
+
+##### 跨实例 `site:team:*`
+
+```
+site:team:read   site:team:write   site:team:delete
+```
+
+无需逐团队同意的跨团队管理员权限。授予时同意者必须是站点管理员，并通过 [站点 scope 确认流程](#site-scopes-admin-only) — 2FA + 完整输入 `grant site access` 这一确认短语。仅适合真的需要看 / 改全部团队的站点管理工具。
+
+##### 选哪一种 — 速记
+
+- 「这个用户在哪些团队？」用 **`teams:*`**。绑定到单个团队的集成（如某 workspace 的部署机器人）用 **`team:*`**。
+- 不要同时请求 `teams:*` 和 `team:*` — 你会拿到两者的并集，但同意页里同时出现「团队选择器」和「全部团队提示」会让用户困惑。
+- **`site:team:*`** 是给站点管理工具用的，不要给产品集成用。这层的授予会绕过团队所有者的同意。
+
+#### 站点 scope（仅管理员）
+
+完整的跨实例 scope 列表；与 `site:team:*` 共用 admin-only / 2FA / 确认短语 的同一道关卡：
+
+| Scope                  | 权限                                  |
+|------------------------|---------------------------------------|
+| `site:user:read`       | 读取任意用户                          |
+| `site:user:write`      | 修改任意用户                          |
+| `site:user:delete`     | 删除任意用户                          |
+| `site:team:read`       | 读取任意团队                          |
+| `site:team:write`      | 修改任意团队                          |
+| `site:team:delete`     | 解散任意团队                          |
+| `site:config:read`     | 读取站点配置                          |
+| `site:config:write`    | 修改站点配置                          |
+| `site:token:revoke`    | 撤销任意用户的 OAuth token            |
+
 ### 第二步 — 用户授权
 
 Prism 显示授权页面，列出你的应用名称和请求的权限范围。如果用户已经对相同的权限范围授权过，则自动跳过授权页面。

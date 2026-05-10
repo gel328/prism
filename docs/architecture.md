@@ -10,134 +10,269 @@ description: System design, request flow, worker file structure, data model, and
 Prism is a monorepo with two main parts:
 
 - **Backend** (`worker/`) — a Cloudflare Worker written in TypeScript with [Hono](https://hono.dev)
-- **Frontend** (`src/`) — a React SPA built with Vite and served from Cloudflare Assets
+- **Frontend** (`src/`) — a React 19 SPA built with Vite, served from Cloudflare Assets, and **server-side rendered by the same Worker** for the initial HTML response
 
 ```mermaid
 graph LR
   Browser["Browser"] -->|"HTTP request"| CF["Cloudflare Edge Network"]
   subgraph CF["Cloudflare Edge Network"]
-    Assets["CF Assets (SPA)"] -->|"API calls"| Worker["Worker (Hono)"]
-    Worker --> Storage["D1 / KV / R2"]
+    Worker["Worker (Hono)"] --> Assets["CF Assets (hashed JS/CSS, /index.html template)"]
+    Worker --> Storage["D1 / KV / R2 / Secrets Store"]
+    Worker -->|"SSR"| HTML["Server-rendered HTML"]
   end
 ```
 
 A single `wrangler deploy` publishes both the Worker and the built frontend assets.
-Cloudflare's asset serving handles SPA fallback (all unknown paths serve `index.html`).
+The build script generates a deploy-ready `wrangler.json` next to the Vite-bundled
+worker output so Vite's SSR pass is preserved.
 
 ## Request flow
+
+`html_handling: "none"` is set on the assets binding — Cloudflare's auto
+fallback to `index.html` is disabled so the Worker can render every HTML route
+itself. Hashed JS/CSS bundles in `/assets/` and explicitly-named static files
+(`/favicon.svg`, `/pow.wasm`, etc.) are still served from Cloudflare Assets
+directly without invoking the Worker.
 
 ```mermaid
 flowchart LR
   B["Browser"]
-  B -->|"/api/*"| W["Worker (Hono routes)"]
-  B -->|"/"| A["CF Assets → index.html"]
-  B -->|"/some/route"| A2["CF Assets → index.html (SPA fallback)"]
+  B -->|"/api/*"| W["Worker — Hono routes"]
   B -->|"/.well-known/*"| W
+  B -->|"/assets/*"| A["CF Assets (static)"]
+  B -->|"/"| W2["Worker — SSR"]
+  B -->|"/some/route"| W2
+  W2 -->|"prefetch session"| Storage["D1 / KV"]
+  W2 -->|"render"| H["entry-server.tsx → HTML"]
 ```
 
-The [Cloudflare Vite plugin](https://developers.cloudflare.com/workers/vite-plugin/) runs the Worker in-process alongside Vite during development (`bun dev`), so API requests hit the real Worker runtime without a separate `wrangler dev` process.
+The Worker reads the session cookie up front, prefetches the authenticated user
+when present, and hands both the locale and prefetched data to the React render
+pass — so logged-in pages don't flash an unauthenticated state before hydration.
+
+The [Cloudflare Vite plugin](https://developers.cloudflare.com/workers/vite-plugin/)
+runs the Worker in-process alongside Vite during development (`bun dev`), so API
+requests hit the real Worker runtime without a separate `wrangler dev` process,
+and `entry-server.tsx` is hot-reloaded just like client code.
 
 ## Worker structure
 
 ```text
 worker/
-├── index.ts              # App entry; CORS, secureHeaders, route mounting
-├── types.ts              # D1 row types, Variables, SiteConfig
+├── index.ts                # App entry; CORS, secureHeaders, route mounting, scheduled(), email()
+├── ssr.ts                  # SSR glue → src/entry-server.tsx
+├── types.ts                # D1 row types, Variables, SiteConfig
 │
 ├── db/migrations/
-│   └── 0001_init.sql     # Full schema + default site_config rows
+│   └── 0001_init.sql … 0045_team_join_requirements.sql
 │
 ├── lib/
-│   ├── config.ts         # getConfig(), setConfigValues() — D1-backed key/value store
-│   ├── crypto.ts         # randomId, hashPassword/verifyPassword (PBKDF2)
-│   ├── pow.ts            # signed challenge issue + verify (HMAC + expiry + single-use)
-│   ├── email.ts          # sendEmail() — Resend / Mailchannels adapters
-│   ├── jwt.ts            # signJWT / verifyJWT — HS256 via Web Crypto
-│   ├── totp.ts           # TOTP / HOTP (RFC 6238), backup codes
-│   └── webauthn.ts       # Passkey registration/authentication via @simplewebauthn/server
+│   ├── config.ts           # getConfig(), setConfigValues(), JWT secret, RSA keypair (KV)
+│   ├── secretCrypto.ts     # AES-GCM envelope + keyed HMAC for D1 fields (SECRETS_KEY)
+│   ├── crypto.ts           # randomId, hashPassword/verifyPassword (PBKDF2)
+│   ├── pow.ts              # Signed challenge issue/verify (HMAC + expiry + single-use)
+│   ├── jwt.ts              # signJWT / verifyJWT (HS256), RS256 ID-token signing
+│   ├── totp.ts             # TOTP / HOTP (RFC 6238), backup codes
+│   ├── webauthn.ts         # Passkey registration/authentication via @simplewebauthn/server
+│   ├── gpg.ts              # GPG clearsign verification (mldsa.ts for ML-DSA support)
+│   ├── mldsa.ts            # ML-DSA (post-quantum) signature verification
+│   ├── email.ts / imap.ts  # Send (Resend / Mailchannels / SMTP) + receive (Email Workers / IMAP poll)
+│   ├── notifications.ts    # User-facing email & Telegram notifications
+│   ├── notificationRules.ts# Ruleset engine — globs, accounts, send/drop, stop
+│   ├── webhooks.ts         # Outgoing webhook delivery + signature
+│   ├── proxyImage.ts       # Closed image-proxy mappings (registerImageProxyMapping)
+│   ├── safeFetch.ts        # SSRF guard (blocks RFC1918 / link-local / etc.)
+│   ├── imageValidation.ts  # Reject suspicious image URLs / SVG payloads
+│   ├── teamRequirements.ts # Site-floor + team-level join requirement merge
+│   ├── domainOwnership.ts  # DNS TXT, HTML meta, .well-known verification methods
+│   ├── domainVerify.ts     # Cron re-verify (lib/cron/reverify.ts entrypoint)
+│   ├── githubReadme.ts     # Pull + cache GitHub user-repo README, ETag-aware
+│   ├── sudo.ts             # Step-up grace window storage in KV
+│   ├── scopes.ts           # Scope ↔ claim mapping + cross-app scope parsing
+│   ├── redirectUri.ts      # OAuth redirect URI validation, registered-domain check
+│   ├── cookies.ts          # Session cookie helpers
+│   └── logger.ts           # Request logger middleware
 │
 ├── middleware/
-│   ├── auth.ts           # requireAuth, requireAdmin, optionalAuth
-│   ├── captcha.ts        # verifyCaptchaToken() — dispatches to provider
-│   └── rateLimit.ts      # KV sliding-window rate limiter
+│   ├── auth.ts             # requireAuth / requireAdmin / optionalAuth
+│   ├── captcha.ts          # verifyCaptchaToken() — dispatches to provider
+│   └── rateLimit.ts        # KV sliding-window rate limiter (IPv6-aware)
+│
+├── cron/
+│   ├── reverify.ts         # Domain re-verification sweep
+│   └── imap-poll.ts        # Pull verification emails from an IMAP mailbox
+│
+├── handlers/
+│   └── email.ts            # Cloudflare Email Workers handler (verify-<code>@<host>)
 │
 └── routes/
-    ├── init.ts           # First-run setup
-    ├── auth.ts           # Register, login, TOTP, passkeys, sessions
-    ├── oauth.ts          # Authorization server, token endpoint, OIDC
-    ├── apps.ts           # OAuth app CRUD
-    ├── domains.ts        # Domain verification
-    ├── connections.ts    # Social OAuth flows
-    ├── user.ts           # Profile, avatar, password, delete account
-    └── admin.ts          # Admin: config, users, apps, audit log
+    ├── init.ts             # First-run setup
+    ├── auth.ts             # Register, login, TOTP, passkeys, GPG, sessions, PoW
+    ├── oauth.ts            # Authorization server, token endpoint, OIDC, step-up 2FA, /me/* APIs
+    ├── apps.ts             # OAuth app CRUD + scope definitions/access rules
+    ├── teams.ts            # Teams, members, invites, transfers, team domains/apps
+    ├── domains.ts          # Domain verification (TXT/meta/well-known)
+    ├── connections.ts      # Social OAuth flows (incl. Telegram)
+    ├── user.ts             # Profile, avatar, password, emails, notifications, PATs, webhooks
+    ├── users.ts            # GET /api/users/:username (public profile JSON)
+    ├── public-teams.ts     # GET /api/public/teams/:id (public team JSON)
+    ├── gpg.ts              # GPG key management (session-auth)
+    ├── public.ts           # /users/:username.gpg, /favicon, etc.
+    ├── proxy.ts            # GET /api/proxy/image/:id (closed image-proxy mappings)
+    ├── site.ts             # GET /api/site (public site config)
+    ├── assets.ts           # /api/assets/* — uploaded avatars, app icons (R2 fallback to inline)
+    ├── wellknown.ts        # /.well-known/openid-configuration, /.well-known/jwks.json
+    └── admin.ts            # Admin: config, users, apps, teams, audit log, request logs, secrets migration
 ```
 
 ## Data model
 
+The schema lives in `worker/db/migrations/`. New deployments run all migrations
+in order; existing deployments only run new ones. Highlights:
+
 ### `users`
 
-Core identity record. `password_hash` is nullable (accounts created via social login
-have no password). `role` is `user` or `admin`.
+Core identity record. `password_hash` is nullable (accounts created via social
+login have no password). `role` is `user` or `admin`.
+
+`kind` distinguishes real humans (`user`) from synthetic team-as-user rows
+(`kind = 'team'`, id matches `teams.id`). Team-kind rows exist only so
+`oauth_apps.owner_id` can join to a single `users` table for both personal and
+team-owned apps; they have no password, no sessions, no social connections, and
+cannot log in.
+
+The `users` row also carries the public-profile flags (`profile_is_public`,
+`profile_show_*`), the optional self-written README (`profile_readme`,
+`profile_readme_source`), and per-user TTL overrides for OAuth tokens.
 
 ### `sessions`
 
-Stores a SHA-256 hash of the JWT's `sessionId` claim. On logout or admin revocation,
-the row is deleted — the JWT becomes invalid even though it hasn't expired, because
-the middleware checks session existence in KV/D1.
+Stores a SHA-256 hash of the JWT's `sessionId` claim. On logout or admin
+revocation, the row is deleted — the JWT becomes invalid even though it hasn't
+expired, because the middleware checks session existence on every request.
 
-> Currently sessions are validated by KV lookup on each request. Session rows are
-> also in D1 for admin visibility.
+### `totp_authenticators` / `totp_recovery`
 
-### `totp_secrets`
-
-One row per user. `enabled = 0` while setup is in progress (not yet verified).
-`backup_codes` is a JSON array of bcrypt-hashed codes.
+`totp_authenticators` is one row **per device** (renamed from `totp_secrets` in
+migration 0004 to support multiple authenticators per user). `totp_recovery`
+holds the user's keyed-HMAC-hashed backup codes.
 
 ### `passkeys`
 
-WebAuthn credentials. `credential_id` is base64url-encoded. The `counter` field
-is updated on every successful authentication for clone detection.
+WebAuthn credentials. `credential_id` is base64url-encoded. `counter` is updated
+on every successful authentication for clone detection.
+
+### `gpg_keys`
+
+Registered GPG public keys for `gpg-login` and the federated `/users/:u.gpg`
+lookup. Includes ML-DSA (post-quantum) keys via `lib/mldsa.ts`. The
+`gpg_challenge_prefix` site config injects extra lines into the clearsign
+payload so users can verify the challenge they're signing.
 
 ### `oauth_apps`
 
-Apps registered by users. `client_secret` is stored in plaintext (required for
-`client_secret_basic`/`client_secret_post` auth). `is_verified` is set by admins.
+Apps registered by users. `client_secret` is encrypted at rest (AES-GCM via
+`SECRETS_KEY`) and verified through the timing-safe helpers in
+`secretCrypto.ts`. `is_verified` is set by admins. `team_id` is non-null when
+the app is owned by a team. `oidc_fields` controls which scope-gated claims are
+embedded in the ID token. `use_jwt_tokens` toggles whether issued access tokens
+are JWTs (RS256-signed, locally verifiable) or opaque (introspection-only).
+`allow_self_manage_exported_permissions` lets the app manage its own scope
+definitions via HTTP Basic auth.
 
-### `oauth_codes`
+### `oauth_codes` / `oauth_2fa_challenges` / `oauth_2fa_codes`
 
-Short-lived (10 min) authorization codes. Deleted after exchange.
+Short-lived (10 min) authorization codes. Step-up 2FA has its own challenge and
+code rows so the action text and redirect URI are pinned at server-to-server
+challenge creation rather than the redirect URL.
 
 ### `oauth_tokens`
 
-Access and refresh tokens. `access_token` is a random opaque string. The actual
-JWT issued to clients embeds the `access_token` as the payload for direct validation
-without DB lookup.
+Access and refresh tokens. Token strings are HMAC-hashed at rest (legacy plaintext
+rows continue working until migrated). Per-user TTL overrides on `users` win
+over the site default.
 
 ### `oauth_consents`
 
-Records which scopes a user has already approved for a given client. Used to skip
-the consent screen on repeat authorizations.
+Records which scopes a user has already approved for a given client. Used to
+skip the consent screen on repeat authorizations.
+
+### `personal_access_tokens`
+
+Long-lived API tokens prefixed `prism_pat_`. Stored as keyed-HMAC hashes;
+plaintext is shown only once at creation.
+
+### `oauth_sources`
+
+OAuth providers configured in **Admin → OAuth Sources**: built-in (GitHub,
+Google, Microsoft, Discord, Telegram) plus Generic OIDC and Generic OAuth 2.
+Each source has its own slug, enabled flag, and (for OIDC/OAuth2) issuer / auth
+/ token / userinfo URLs. The same provider type can have multiple sources.
+`client_secret` is encrypted at rest.
 
 ### `domains`
 
-Domains added by users for OAuth redirect URI validation. Verified via DNS TXT
-record at `_prism-verify.<domain>`. `next_reverify_at` is set based on the
-`domain_reverify_days` config.
+Domains added by users / teams for OAuth redirect URI validation.
+`verification_method` is one of `dns-txt`, `html-meta`, `well-known`. Re-verify
+runs on the cron schedule using whichever method was originally used.
 
 ### `social_connections`
 
-Linked social provider accounts. `(user_id, provider)` is unique — one account per
-provider per user. `(provider, provider_user_id)` is also unique, preventing the
-same social account from being linked to multiple Prism accounts.
+Linked social provider accounts. `(user_id, slug)` is unique — one account per
+source slug per user. `(slug, provider_user_id)` is also unique, preventing the
+same external account from being linked to multiple Prism accounts.
+
+### `user_emails`
+
+Secondary emails per user. Each row carries `verified`, `verify_token`, and
+`verify_code` (the latter for the user-sends-an-email verification path). The
+primary email lives on `users.email` for back-compat.
+
+### `webhooks` / `webhook_deliveries`
+
+User and admin webhooks share the same table (distinguished by `user_id IS
+NULL`). Deliveries are best-effort, signed with HMAC-SHA256, and retained for
+audit.
+
+### `app_event_queue` / `app_webhooks`
+
+Outbound app-notification fan-out (`user.token_granted`, `user.token_revoked`,
+`user.updated`). Queue rows feed both the per-app webhook senders and the SSE /
+WebSocket streams.
+
+### `notification_rules` (legacy) / `notification_rulesets`
+
+`user_notification_prefs` carries the legacy per-event preference map plus the
+canonical `notification_rules` JSON. `notification_rulesets` is the named
+ruleset table — an ordered array of `match` / `action` / `stop` rules walked
+top-to-bottom for each event. See [Notifications](notifications.md).
+
+### `image_proxy_mappings`
+
+The image proxy is no longer an open relay. Outgoing image references register
+a server-side mapping (`registerImageProxyMapping`) that maps an opaque ID to
+the source URL. `/api/proxy/image/:id` 404s on anything not in the table. The
+cron sweeps mappings whose source row has been deleted.
 
 ### `site_config`
 
-Flat key/value store for all runtime configuration. Values are JSON-encoded strings
-so booleans and numbers round-trip correctly.
+Flat key/value store. Values are JSON-encoded strings so booleans and numbers
+round-trip correctly. Sensitive keys (listed in `SENSITIVE_CONFIG_KEYS` in
+`secretCrypto.ts`) are AES-GCM encrypted on write and transparently decrypted
+on read via `getDecryptedConfig()`.
 
-### `audit_log`
+### `audit_log` / `request_logs` / `login_errors`
 
-Append-only log of significant actions (login, registration, config changes, etc.).
+Three independent diagnostic tables. `audit_log` is the high-level "important
+state changed" log. `request_logs` is per-Worker-request operational telemetry
+(method, path, status, duration, IP, UA, optional user/audit linkage).
+`login_errors` records failed authentication attempts with retention controlled
+by `login_error_retention_days`.
+
+### `pow_used`
+
+Single-use PoW nonces. Atomic `INSERT OR IGNORE` claim prevents replay; the
+cron purges expired rows.
 
 ## Authentication flow
 
@@ -146,13 +281,15 @@ sequenceDiagram
   participant Client
   participant Worker
   participant D1
+  participant KV
 
   Client->>Worker: POST /api/auth/login
   Worker->>Worker: verify password (PBKDF2)
-  Worker->>Worker: check TOTP (if enabled)
+  Worker->>Worker: check TOTP / passkey if enrolled
   Worker->>Worker: signJWT({ sub, role, sessionId })
-  Worker->>D1: store session row
-  Worker-->>Client: { token }
+  Worker->>D1: store session row (token_hash)
+  Worker->>KV: cache session metadata
+  Worker-->>Client: { token, user }
 ```
 
 On each authenticated request:
@@ -161,13 +298,19 @@ On each authenticated request:
 sequenceDiagram
   participant Client
   participant requireAuth
+  participant KV
   participant D1
 
   Client->>requireAuth: Bearer token
   requireAuth->>requireAuth: verifyJWT (signature + expiry)
-  requireAuth->>D1: look up session (revocation check)
-  D1-->>requireAuth: session row
-  requireAuth->>requireAuth: set c.var.user
+  requireAuth->>KV: lookup session by hash
+  alt KV hit
+    KV-->>requireAuth: session metadata
+  else KV miss
+    requireAuth->>D1: SELECT session WHERE token_hash = ?
+    D1-->>requireAuth: row (or 401 if revoked)
+  end
+  requireAuth->>requireAuth: set c.var.user / c.var.sessionId
 ```
 
 ## PoW (Proof of Work)
@@ -177,14 +320,40 @@ The PoW system is an alternative to third-party captcha services.
 1. `GET /api/auth/pow-challenge` — server returns `{ challenge, difficulty, expires_at }`. The `challenge` is `base64url(payload || HMAC-SHA256(secret, payload))` where `payload = version(1) || expiry_be64(8) || random(16)`. The HMAC key is derived from the JWT secret with a `\0pow-v1` suffix. No server-side state is written at issue time.
 2. Client calls `solvePoW(challenge, difficulty)`. The solver spawns one Web Worker per logical core (`navigator.hardwareConcurrency`, capped at 8); worker `k` of `N` searches nonces `k, k+N, k+2N, …`. Each worker prefers WASM (`pow/src/lib.rs`, sha2 crate, `Sha256::clone()` for midstate caching) and falls back to a synchronous JS SHA-256 with the same midstate trick. First worker to find a hit wins; the rest are terminated.
 3. Client submits `{ pow_challenge, pow_nonce }` with the registration/login request.
-4. Server calls `verifyPowChallenge()` (in `worker/lib/pow.ts`): decode → recompute HMAC and constant-time compare → check expiry → atomically claim the 16-byte payload nonce in `pow_used` via `INSERT OR IGNORE` (replay protection) → finally check `SHA-256(challenge_string || nonce_be32)` has `difficulty` leading zero bits. The cron sweep prunes expired `pow_used` rows.
+4. Server calls `verifyPowChallenge()`: decode → recompute HMAC and constant-time compare → check expiry → atomically claim the 16-byte payload nonce in `pow_used` via `INSERT OR IGNORE` (replay protection) → finally check `SHA-256(challenge_string || nonce_be32)` has `difficulty` leading zero bits. The cron sweep prunes expired `pow_used` rows.
+
+## Secrets at rest
+
+Sensitive values fall into two categories with different storage strategies,
+both rooted in the `SECRETS_KEY` Cloudflare Secrets Store binding:
+
+- **Reversible (AES-GCM envelope)** — values the worker needs to *read back*:
+  OAuth/source `client_secret`s, captcha secret keys, SMTP/IMAP passwords, the
+  GitHub README site PAT. Ciphertext rows start with `__ENC_v1__`.
+- **Verify-only (keyed HMAC-SHA256)** — bearer-style values the worker only
+  ever needs to *compare* against a candidate: PATs, OAuth access/refresh
+  tokens, OAuth codes, invite tokens, email-verify tokens, 2FA codes,
+  individual backup codes. Hash rows start with `__HASH_v1__`. The HMAC subkey
+  is HKDF-derived from `SECRETS_KEY` (info `prism:hash-subkey:v1`) for domain
+  separation.
+
+When `SECRETS_KEY` is unbound the helpers degrade to no-ops and legacy plaintext
+rows continue to match — so existing deployments can opt into encryption with a
+single binding addition and a migration click.
 
 ## Security notes
 
 - All cryptography uses the **Web Crypto API** — no Node.js `crypto` module
 - Passwords are hashed with **PBKDF2** (100,000 iterations, SHA-256, 16-byte random salt)
-- JWTs are signed with **HMAC-SHA256**
+- Session JWTs are signed with **HMAC-SHA256**; OAuth ID tokens with **RS256** (JWKS at `/.well-known/jwks.json`)
 - TOTP uses **HMAC-SHA1** per RFC 6238, with a ±1 step window
 - PKCE uses **S256** (plain is also accepted for backward compatibility)
-- Rate limiting uses a KV-backed sliding window
-- The session `sessionId` is stored as a hash — a compromised DB cannot derive valid tokens
+- Rate limiting uses a KV-backed sliding window with IPv6 prefix bucketing
+  (`ipv6_rate_limit_prefix`, default `/64`)
+- Session `sessionId` is stored as a hash — a compromised DB cannot derive valid tokens
+- All redirect URIs are checked against the app's registered list and the
+  domain's verified-ownership state before issuing a code
+- Image proxy is closed: only registered URL → opaque-id mappings are served,
+  preventing the worker from being used as an open SSRF relay
+- SVGs proxied through the image endpoint are sanitized (script blocks, event
+  handlers, `javascript:` pseudo-URLs, foreignObject, external `<use>`)

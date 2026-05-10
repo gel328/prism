@@ -6,15 +6,20 @@ A self-hosted OAuth 2.0 / OpenID Connect identity platform built on Cloudflare W
 
 ## Features
 
-- **OAuth 2.0 authorization server** — authorization code + PKCE, OpenID Connect, token introspection/revocation
-- **Social login** — GitHub, Google, Microsoft, Discord
-- **Multi-factor auth** — TOTP (RFC 6238), passkeys (WebAuthn)
-- **App registry** — users register and manage their own OAuth apps
-- **Domain verification** — DNS TXT-based with auto re-verification
-- **Bot protection** — Cloudflare Turnstile, hCaptcha, reCAPTCHA v3, or proof-of-work (WASM)
-- **Admin panel** — user management, app moderation, audit log, full site config
-- **Customizable** — site name, icon, accent color, custom CSS, email provider
-- **Edge-native** — Cloudflare Workers + D1 + KV + R2, no servers
+- **OAuth 2.0 + OpenID Connect** — authorization code + PKCE, RS256 ID tokens, introspection / revocation, UserInfo, Discovery, JWKS
+- **Step-up 2FA** — server-initiated, action-pinned re-confirmation with sudo grace windows for sensitive operations
+- **Social & federated login** — GitHub, Google, Microsoft, Discord, Telegram, Generic OIDC, Generic OAuth 2 — multiple sources of the same type
+- **Multi-factor auth** — multiple TOTP authenticators per account, passkeys (WebAuthn), GPG keys (incl. ML-DSA), backup codes
+- **Teams** — shared ownership of OAuth apps and domains, roles, invites, transfer-ownership, site-floor join requirements
+- **App registry** — users register and manage their own OAuth apps; admins can verify; cross-app permission scopes
+- **Domain verification** — DNS TXT, HTML meta, or `.well-known` — pick per domain, auto re-verify
+- **Bot protection** — Cloudflare Turnstile, hCaptcha, reCAPTCHA v3, or proof-of-work (Rust→WASM); also gates 2FA confirmations
+- **Webhooks & notifications** — user + admin webhooks, app event streams (webhook / SSE / WebSocket), email + Telegram notifications with a rule engine
+- **Public profiles** — opt-in `/u/<username>` and `/t/<team-id>` pages with per-field visibility, GPG keys, GitHub README sync
+- **Encrypted at rest** — AES-GCM envelope + keyed HMAC, rooted in a Cloudflare Secrets Store binding
+- **Admin panel** — user/app/team moderation, audit log, request log, login errors, full site config
+- **Customizable** — site name, icon, accent color, custom CSS, email provider, captcha provider
+- **Edge-native + SSR** — Cloudflare Workers + D1 + KV + R2, server-side rendered React 19, no servers
 
 ## Stack
 
@@ -81,11 +86,16 @@ pnpm deploy   # type-checks + builds frontend + wrangler deploy
 ## Documentation
 
 - [Getting Started](https://prism.wss.moe/getting-started) — full setup walkthrough
-- [Configuration](https://prism.wss.moe/configuration) — all site config keys
+- [Configuration](https://prism.wss.moe/configuration) — all site config keys + Wrangler bindings
+- [Architecture](https://prism.wss.moe/architecture) — system design, data model, secret-storage strategy
+- [Admin Guide](https://prism.wss.moe/admin) — managing users, apps, teams, and settings
 - [API Reference](https://prism.wss.moe/api) — REST API documentation
 - [OAuth / OIDC Guide](https://prism.wss.moe/oauth) — integrating Prism as an identity provider
-- [Architecture](https://prism.wss.moe/architecture) — system design and data model
-- [Admin Guide](https://prism.wss.moe/admin) — managing users, apps, and settings
+- [Teams](https://prism.wss.moe/teams) — shared ownership of apps and domains
+- [Notifications](https://prism.wss.moe/notifications) — email and Telegram notification rules
+- [Webhooks](https://prism.wss.moe/webhooks) and [App Notifications](https://prism.wss.moe/app-notifications)
+- [Cross-App Permissions](https://prism.wss.moe/app-permissions) — exposing scopes to other apps
+- [Personal Access Tokens](https://prism.wss.moe/personal-access-tokens) and [Public Profiles](https://prism.wss.moe/public-profile)
 
 ## Project Structure
 

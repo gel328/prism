@@ -9,119 +9,202 @@ description: Prism 的系统设计、请求流程、Worker 文件结构、数据
 
 Prism 是一个 monorepo，包含两个主要部分：
 
-- **后端**（`worker/`）——使用 [Hono](https://hono.dev) 编写的 Cloudflare Worker（TypeScript）
-- **前端**（`src/`）——由 Vite 构建、通过 Cloudflare Assets 提供服务的 React SPA
+- **后端**（`worker/`）— 使用 [Hono](https://hono.dev) 编写的 Cloudflare Worker（TypeScript）
+- **前端**（`src/`）— 基于 Vite 构建的 React 19 SPA，由 Cloudflare Assets 提供静态资源；**首屏 HTML 由同一个 Worker 服务端渲染**
 
 ```mermaid
 graph LR
   Browser["浏览器"] -->|"HTTP 请求"| CF["Cloudflare 边缘网络"]
   subgraph CF["Cloudflare 边缘网络"]
-    Assets["CF Assets (SPA)"] -->|"API 调用"| Worker["Worker (Hono)"]
-    Worker --> Storage["D1 / KV / R2"]
+    Worker["Worker (Hono)"] --> Assets["CF Assets（哈希命名的 JS/CSS、/index.html 模板）"]
+    Worker --> Storage["D1 / KV / R2 / Secrets Store"]
+    Worker -->|"SSR"| HTML["服务端渲染 HTML"]
   end
 ```
 
-一次 `wrangler deploy` 即可同时发布 Worker 和构建后的前端资产。Cloudflare 的资产服务会处理 SPA 回退（所有未知路径均返回 `index.html`）。
+一次 `wrangler deploy` 即可同时发布 Worker 与构建产物。构建脚本会在 Vite 打包后的 worker 输出旁生成一份可直接部署的 `wrangler.json`，从而保留 Vite 的 SSR 处理。
 
 ## 请求流程
+
+assets 绑定上设了 `html_handling: "none"` — Cloudflare 默认的「自动回退到 `index.html`」被关掉了，所以每个 HTML 路由都由 Worker 自行渲染。`/assets/` 下的哈希文件以及显式命名的静态文件（`/favicon.svg`、`/pow.wasm` 等）依然由 Cloudflare Assets 直接服务，不会进入 Worker。
 
 ```mermaid
 flowchart LR
   B["浏览器"]
-  B -->|"/api/*"| W["Worker（Hono 路由）"]
-  B -->|"/"| A["CF Assets → index.html"]
-  B -->|"/some/route"| A2["CF Assets → index.html（SPA 回退）"]
+  B -->|"/api/*"| W["Worker — Hono 路由"]
   B -->|"/.well-known/*"| W
+  B -->|"/assets/*"| A["CF Assets（静态）"]
+  B -->|"/"| W2["Worker — SSR"]
+  B -->|"/some/route"| W2
+  W2 -->|"预拉会话"| Storage["D1 / KV"]
+  W2 -->|"渲染"| H["entry-server.tsx → HTML"]
 ```
 
-开发时（`bun dev`），[Cloudflare Vite 插件](https://developers.cloudflare.com/workers/vite-plugin/)在 Vite 进程内直接运行 Worker，API 请求命中真实的 Worker 运行时，无需单独启动 `wrangler dev`。
+Worker 在渲染前会读取 session cookie，若已登录则预拉用户信息，再连同 locale 与预取数据一并交给 React 渲染 — 已登录用户不会再看到「未登录闪烁」。
+
+[Cloudflare Vite 插件](https://developers.cloudflare.com/workers/vite-plugin/) 在 `bun dev` 时把 Worker 与 Vite 进程内部一起跑，无需另起 `wrangler dev`，且 `entry-server.tsx` 享有热更新。
 
 ## Worker 结构
 
 ```text
 worker/
-├── index.ts              # 应用入口；CORS、secureHeaders、路由挂载
-├── types.ts              # D1 行类型、Variables、SiteConfig
+├── index.ts                # 入口；CORS、secureHeaders、路由挂载、scheduled()、email()
+├── ssr.ts                  # SSR 胶水 → src/entry-server.tsx
+├── types.ts                # D1 行类型、Variables、SiteConfig
 │
 ├── db/migrations/
-│   └── 0001_init.sql     # 完整 schema + 默认 site_config 行
+│   └── 0001_init.sql … 0045_team_join_requirements.sql
 │
 ├── lib/
-│   ├── config.ts         # getConfig()、setConfigValues() — 基于 D1 的键值存储
-│   ├── crypto.ts         # randomId、hashPassword/verifyPassword（PBKDF2）
-│   ├── pow.ts            # 已签名挑战的颁发与校验（HMAC + 过期 + 单次使用）
-│   ├── email.ts          # sendEmail() — Resend / Mailchannels 适配器
-│   ├── jwt.ts            # signJWT / verifyJWT — 基于 Web Crypto 的 HS256
-│   ├── totp.ts           # TOTP / HOTP（RFC 6238）、备用码
-│   └── webauthn.ts       # 通过 @simplewebauthn/server 实现 Passkey 注册/认证
+│   ├── config.ts           # getConfig()、setConfigValues()、JWT 密钥、RSA 密钥对（KV）
+│   ├── secretCrypto.ts     # AES-GCM 信封 + keyed HMAC（SECRETS_KEY）
+│   ├── crypto.ts           # randomId、PBKDF2 哈希
+│   ├── pow.ts              # 签名挑战签发/校验（HMAC + 过期 + 单次）
+│   ├── jwt.ts              # signJWT / verifyJWT（HS256），ID Token RS256
+│   ├── totp.ts             # TOTP / HOTP（RFC 6238），备用码
+│   ├── webauthn.ts         # 通过 @simplewebauthn/server 处理 Passkey
+│   ├── gpg.ts              # GPG clearsign 校验（mldsa.ts 提供 ML-DSA 支持）
+│   ├── mldsa.ts            # ML-DSA（后量子）签名校验
+│   ├── email.ts / imap.ts  # 发送（Resend/Mailchannels/SMTP）+ 接收（Email Workers / IMAP 轮询）
+│   ├── notifications.ts    # 用户邮件 + Telegram 通知
+│   ├── notificationRules.ts# 规则集引擎 — 通配符、账号、send/drop、stop
+│   ├── webhooks.ts         # 出站 webhook 投递与签名
+│   ├── proxyImage.ts       # 关闭式图片代理映射
+│   ├── safeFetch.ts        # SSRF 防护（屏蔽 RFC1918 / link-local 等）
+│   ├── imageValidation.ts  # 拒绝可疑图片 URL / SVG 负载
+│   ├── teamRequirements.ts # 站点底线 + 团队级加入门槛合并
+│   ├── domainOwnership.ts  # DNS TXT、HTML meta、.well-known 三种验证方式
+│   ├── domainVerify.ts     # cron 重新核验（cron/reverify.ts 入口）
+│   ├── githubReadme.ts     # 拉取并缓存 GitHub 用户仓库 README，遵守 ETag
+│   ├── sudo.ts             # 步骤提升宽限期存储于 KV
+│   ├── scopes.ts           # scope ↔ claim 映射 + 跨应用 scope 解析
+│   ├── redirectUri.ts      # OAuth redirect URI 校验，已注册域名检查
+│   ├── cookies.ts          # Session cookie 工具
+│   └── logger.ts           # 请求日志中间件
 │
 ├── middleware/
-│   ├── auth.ts           # requireAuth、requireAdmin、optionalAuth
-│   ├── captcha.ts        # verifyCaptchaToken() — 分发到各提供商
-│   └── rateLimit.ts      # 基于 KV 的滑动窗口限流
+│   ├── auth.ts             # requireAuth / requireAdmin / optionalAuth
+│   ├── captcha.ts          # verifyCaptchaToken() — 分发到对应 provider
+│   └── rateLimit.ts        # KV 滑动窗口限流（IPv6 感知）
+│
+├── cron/
+│   ├── reverify.ts         # 域名重新核验
+│   └── imap-poll.ts        # 从 IMAP 拉取验证邮件
+│
+├── handlers/
+│   └── email.ts            # Cloudflare Email Workers 处理器（verify-<code>@<host>）
 │
 └── routes/
-    ├── init.ts           # 首次初始化
-    ├── auth.ts           # 注册、登录、TOTP、Passkeys、会话
-    ├── oauth.ts          # 授权服务器、令牌端点、OIDC
-    ├── apps.ts           # OAuth 应用 CRUD
-    ├── domains.ts        # 域名验证
-    ├── connections.ts    # 社交 OAuth 流程
-    ├── user.ts           # 个人资料、头像、密码、注销账号
-    └── admin.ts          # 管理员：配置、用户、应用、审计日志
+    ├── init.ts             # 首次初始化
+    ├── auth.ts             # 注册、登录、TOTP、Passkey、GPG、会话、PoW
+    ├── oauth.ts            # 授权服务器、token、OIDC、步骤提升 2FA、/me/* API
+    ├── apps.ts             # OAuth 应用 CRUD + scope 定义/访问规则
+    ├── teams.ts            # 团队、成员、邀请、转让、团队的域名/应用
+    ├── domains.ts          # 域名验证（TXT/meta/well-known）
+    ├── connections.ts      # 社交 OAuth 流（含 Telegram）
+    ├── user.ts             # 资料、头像、改密、邮箱、通知、PAT、webhook
+    ├── users.ts            # GET /api/users/:username（公开资料 JSON）
+    ├── public-teams.ts     # GET /api/public/teams/:id（公开团队 JSON）
+    ├── gpg.ts              # GPG 公钥管理（session-auth）
+    ├── public.ts           # /users/:username.gpg、/favicon 等
+    ├── proxy.ts            # GET /api/proxy/image/:id（关闭式图片代理）
+    ├── site.ts             # GET /api/site（公开站点配置）
+    ├── assets.ts           # /api/assets/* — 头像/应用图标
+    ├── wellknown.ts        # /.well-known/openid-configuration、jwks.json
+    └── admin.ts            # 配置、用户、应用、团队、审计、请求日志、密钥迁移
 ```
 
 ## 数据模型
 
+Schema 位于 `worker/db/migrations/`。新部署按顺序执行所有迁移；既有部署只跑新增的迁移。要点：
+
 ### `users`
 
-核心身份记录。`password_hash` 可为空（通过社交登录创建的账号无密码）。`role` 为 `user` 或 `admin`。
+身份主表。`password_hash` 可空（社交登录创建的账号没有密码）。`role` 取 `user` 或 `admin`。
+
+`kind` 区分真实用户（`user`）与 team-as-user 合成行（`kind = 'team'`，id 等于 `teams.id`）。`kind = 'team'` 行的存在仅是为了让 `oauth_apps.owner_id` 在个人/团队应用上能用同一张表 join；它们没有密码、没有会话、没有社交连接、不能登录。
+
+`users` 行还携带公开资料的开关（`profile_is_public`、`profile_show_*`）、自写 README（`profile_readme`、`profile_readme_source`）以及按用户的 OAuth token TTL 覆写。
 
 ### `sessions`
 
-存储 JWT `sessionId` 声明的 SHA-256 哈希。登出或管理员撤销时，该行被删除——即使 JWT 尚未过期也会失效，因为中间件会在 KV/D1 中检查会话是否存在。
+存储 JWT 中 `sessionId` 声明的 SHA-256 哈希。退出登录或被管理员撤销时该行被删除 — 即使 JWT 还没过期，中间件每次请求都会校验会话仍然存在。
 
-> 目前会话在每次请求时通过 KV 查找进行验证。D1 中也保留了会话行，供管理员查看。
+### `totp_authenticators` / `totp_recovery`
 
-### `totp_secrets`
-
-每个用户一行。`enabled = 0` 表示设置流程尚未完成（未经验证）。`backup_codes` 是一个存储 bcrypt 哈希码的 JSON 数组。
+`totp_authenticators` 一行对应一台设备（迁移 0004 中由 `totp_secrets` 重命名而来，用以支持每用户多个认证器）。`totp_recovery` 存放 keyed-HMAC 哈希过的备用码。
 
 ### `passkeys`
 
-WebAuthn 凭据。`credential_id` 为 base64url 编码。`counter` 字段在每次成功认证时更新，用于克隆检测。
+WebAuthn 凭据。`credential_id` 用 base64url。每次成功认证后更新 `counter` 用于克隆检测。
+
+### `gpg_keys`
+
+注册的 GPG 公钥，用于 `gpg-login` 与联邦化的 `/users/:u.gpg` 查询。借助 `lib/mldsa.ts` 同时支持 ML-DSA（后量子）公钥。`gpg_challenge_prefix` 可在 clearsign 文本中插入额外行，让用户能验证自己签的挑战来自你的站点。
 
 ### `oauth_apps`
 
-用户注册的应用。`client_secret` 明文存储（`client_secret_basic`/`client_secret_post` 认证所必需）。`is_verified` 由管理员设置。
+用户注册的应用。`client_secret` 在数据库中用 AES-GCM（`SECRETS_KEY`）加密，比对走 `secretCrypto.ts` 中的恒定时间封装。`is_verified` 由管理员设置。`team_id` 非空表示团队应用。`oidc_fields` 控制 ID Token 中嵌入哪些 scope-gated claim。`use_jwt_tokens` 切换签发的是 JWT（RS256）还是 opaque（仅 introspect）。`allow_self_manage_exported_permissions` 允许应用以 HTTP Basic 自管 scope 定义。
 
-### `oauth_codes`
+### `oauth_codes` / `oauth_2fa_challenges` / `oauth_2fa_codes`
 
-短期授权码（有效期 10 分钟），交换后删除。
+短时（10 分钟）授权码。步骤提升 2FA 有独立的挑战与 code 表，行动文本和 redirect URI 在服务端创建挑战时即被钉死，而非由跳转链接决定。
 
 ### `oauth_tokens`
 
-访问令牌和刷新令牌。`access_token` 是一个随机不透明字符串。实际颁发给客户端的 JWT 将 `access_token` 嵌入作为 payload，以便无需 DB 查找即可直接验证。
+访问令牌与刷新令牌。Token 字符串在数据库中以 HMAC 哈希存储（未迁移的明文行继续工作）。`users` 上的按用户 TTL 覆写优先于站点默认值。
 
 ### `oauth_consents`
 
-记录用户已为某客户端批准的权限范围，用于跳过重复授权的确认页面。
+记录用户已为某客户端批准过哪些 scope；用于跳过重复的同意页。
+
+### `personal_access_tokens`
+
+长期 API token，前缀 `prism_pat_`。以 keyed-HMAC 哈希存储；明文仅在创建时一次性显示。
+
+### `oauth_sources`
+
+**Admin → OAuth Sources** 中配置的 OAuth 提供方：内置（GitHub、Google、Microsoft、Discord、Telegram）以及 Generic OIDC、Generic OAuth 2。每个源拥有自己的 slug、启用状态，OIDC/OAuth2 还含 issuer / auth / token / userinfo URL。同一类型可以有多个源。`client_secret` 加密存储。
 
 ### `domains`
 
-用户添加的域名，用于 OAuth 重定向 URI 验证。通过 DNS TXT 记录 `_prism-verify.<domain>` 进行验证。`next_reverify_at` 根据 `domain_reverify_days` 配置项设置。
+用户/团队添加的域名，用于 OAuth redirect URI 校验。`verification_method` 是 `dns-txt`、`html-meta`、`well-known` 之一。重新核验时使用最初采用的方法。
 
 ### `social_connections`
 
-已关联的社交提供商账号。`(user_id, provider)` 唯一——每个用户每个提供商只能关联一个账号。`(provider, provider_user_id)` 也唯一，防止同一社交账号关联到多个 Prism 账号。
+绑定的第三方账号。`(user_id, slug)` 唯一 — 同一用户对同一源 slug 仅能绑定一次。`(slug, provider_user_id)` 也唯一，避免同一外部账号绑到多个 Prism 用户。
+
+### `user_emails`
+
+按用户的次要邮箱，每行带 `verified`、`verify_token`、`verify_code`（后者用于「用户主动发邮件」验证路径）。主邮箱仍保留在 `users.email` 上以兼容历史。
+
+### `webhooks` / `webhook_deliveries`
+
+用户与管理员 webhook 共享同一表（通过 `user_id IS NULL` 区分）。投递为 best-effort，HMAC-SHA256 签名，留存供审计。
+
+### `app_event_queue` / `app_webhooks`
+
+应用通知（`user.token_granted`、`user.token_revoked`、`user.updated`）的出站扇出。队列同时驱动 per-app webhook 与 SSE / WebSocket 流。
+
+### `notification_rules`（旧）/ `notification_rulesets`
+
+`user_notification_prefs` 同时承载历史的事件 → 等级映射，以及当前规范的 `notification_rules` JSON。`notification_rulesets` 是命名规则集表 — 一组按顺序遍历的 `match` / `action` / `stop` 规则。详见 [通知](notifications.md)。
+
+### `image_proxy_mappings`
+
+图片代理不再是开放中继。所有外引头像 / 图标都先在服务端注册一条映射（`registerImageProxyMapping`），把原始 URL 映射成不透明 ID。`/api/proxy/image/:id` 对未在表中的请求返回 404。Cron 会清理源行已被删除的孤儿映射。
 
 ### `site_config`
 
-所有运行时配置的扁平键值存储。值以 JSON 编码字符串存储，布尔值和数字可正确往返。
+扁平 KV 表。值为 JSON 字符串，确保 boolean / number 能正确往返。`secretCrypto.ts` 中 `SENSITIVE_CONFIG_KEYS` 列出的键写入时 AES-GCM 加密，读取时由 `getDecryptedConfig()` 透明解密。
 
-### `audit_log`
+### `audit_log` / `request_logs` / `login_errors`
 
-重要操作的追加型日志（登录、注册、配置变更等）。
+三张相互独立的诊断表。`audit_log` 是高层「重要状态变化」记录。`request_logs` 是 Worker 每次请求的运维遥测（method、path、status、耗时、IP、UA、可选的用户/审计关联）。`login_errors` 记录失败认证尝试，保留时长由 `login_error_retention_days` 控制。
+
+### `pow_used`
+
+单次使用的 PoW nonce。原子 `INSERT OR IGNORE` 防重放；过期行由 cron 清理。
 
 ## 认证流程
 
@@ -130,45 +213,65 @@ sequenceDiagram
   participant Client as 客户端
   participant Worker
   participant D1
+  participant KV
 
   Client->>Worker: POST /api/auth/login
-  Worker->>Worker: 验证密码（PBKDF2）
-  Worker->>Worker: 检查 TOTP（如已启用）
+  Worker->>Worker: 校验密码（PBKDF2）
+  Worker->>Worker: 若启用了 TOTP / Passkey 一并校验
   Worker->>Worker: signJWT({ sub, role, sessionId })
-  Worker->>D1: 存储会话行
-  Worker-->>Client: { token }
+  Worker->>D1: 写入 session 行（token_hash）
+  Worker->>KV: 缓存 session 元数据
+  Worker-->>Client: { token, user }
 ```
 
-每次已认证请求：
+每次需要鉴权的请求：
 
 ```mermaid
 sequenceDiagram
   participant Client as 客户端
-  participant requireAuth as requireAuth 中间件
+  participant requireAuth
+  participant KV
   participant D1
 
   Client->>requireAuth: Bearer token
-  requireAuth->>requireAuth: verifyJWT（签名 + 过期时间）
-  requireAuth->>D1: 查找会话（撤销检查）
-  D1-->>requireAuth: 会话行
-  requireAuth->>requireAuth: 设置 c.var.user
+  requireAuth->>requireAuth: verifyJWT（签名 + 过期）
+  requireAuth->>KV: 按哈希查 session
+  alt KV 命中
+    KV-->>requireAuth: session 元数据
+  else KV 未命中
+    requireAuth->>D1: SELECT session WHERE token_hash = ?
+    D1-->>requireAuth: 行（被撤销则 401）
+  end
+  requireAuth->>requireAuth: 设置 c.var.user / c.var.sessionId
 ```
 
 ## PoW（工作量证明）
 
-PoW 系统是第三方验证码服务的替代方案。
+PoW 是第三方验证码服务的替代方案。
 
-1. `GET /api/auth/pow-challenge` — 服务端返回 `{ challenge, difficulty, expires_at }`。`challenge` 为 `base64url(payload || HMAC-SHA256(secret, payload))`，其中 `payload = version(1) || expiry_be64(8) || random(16)`。HMAC 密钥由 JWT 密钥派生（追加 `\0pow-v1` 域分隔串）。颁发时不写入任何服务端状态。
-2. 客户端调用 `solvePoW(challenge, difficulty)`。求解器会按逻辑核数（`navigator.hardwareConcurrency`，上限 8）启动 Web Worker；第 `k` 个 worker 在 `N` 个 worker 中尝试 nonce `k, k+N, k+2N, …`。每个 worker 优先使用 WASM（`pow/src/lib.rs`，sha2 crate，`Sha256::clone()` 实现 midstate 复用），不可用时回退到内联同步 JS SHA-256（同样复用 midstate）。第一个找到解的 worker 胜出，其余被立即终止。
-3. 客户端将 `{ pow_challenge, pow_nonce }` 与注册/登录请求一并提交。
-4. 服务端调用 `verifyPowChallenge()`（位于 `worker/lib/pow.ts`）：解码 → 重算 HMAC 并恒定时间比较 → 校验过期 → 通过 `INSERT OR IGNORE` 在 `pow_used` 表中原子认领 16 字节 payload nonce（防重放）→ 最终校验 `SHA-256(challenge_string || nonce_be32)` 是否具有 `difficulty` 个前导零位。计划任务会清理过期的 `pow_used` 行。
+1. `GET /api/auth/pow-challenge` — 服务器返回 `{ challenge, difficulty, expires_at }`。`challenge = base64url(payload || HMAC-SHA256(secret, payload))`，其中 `payload = version(1) || expiry_be64(8) || random(16)`。HMAC 密钥由 JWT secret 拼上 `\0pow-v1` 派生而来。签发时不写任何服务端状态。
+2. 客户端调用 `solvePoW(challenge, difficulty)`：按 `navigator.hardwareConcurrency`（最多 8）开启对应数量的 Web Worker；第 `k` 个 Worker 搜索 `k, k+N, k+2N, …` 编号的 nonce。每个 Worker 优先用 WASM（`pow/src/lib.rs`，sha2 crate，`Sha256::clone()` 缓存中间状态），失败时回退到等价 trick 的同步 JS SHA-256。最先命中者胜出，其余被终止。
+3. 客户端把 `{ pow_challenge, pow_nonce }` 与注册/登录请求一并提交。
+4. 服务端 `verifyPowChallenge()`：解码 → 重算 HMAC 并恒定时间比较 → 校验过期 → 用 `INSERT OR IGNORE` 在 `pow_used` 中原子声明 16 字节 payload nonce（防重放）→ 检查 `SHA-256(challenge_string || nonce_be32)` 是否有 `difficulty` 个前导零比特。Cron 清理已过期的 `pow_used` 行。
+
+## 数据库中的密钥
+
+敏感字段分为两类，根都在 `SECRETS_KEY` 这一 Cloudflare Secrets Store 绑定：
+
+- **可还原（AES-GCM 信封）** — Worker 需要*读出明文*：OAuth/源 `client_secret`、验证码私钥、SMTP/IMAP 密码、GitHub README PAT。密文以 `__ENC_v1__` 开头。
+- **仅校验（keyed HMAC-SHA256）** — Worker 只需对一个候选值做*比较*：PAT、OAuth 访问/刷新 token、OAuth code、邀请 token、邮箱验证 token、二次验证码、单条备用码。哈希以 `__HASH_v1__` 开头。HMAC 子密钥通过 HKDF 从 `SECRETS_KEY` 派生（info 串 `prism:hash-subkey:v1`）以做域分隔。
+
+未绑定 `SECRETS_KEY` 时这些工具退化为 no-op，历史明文行依然可比对 — 已存在的部署只需新增绑定 + 在管理面板点一次迁移即可启用加密。
 
 ## 安全说明
 
-- 所有密码学操作均使用 **Web Crypto API**——不依赖 Node.js `crypto` 模块
-- 密码使用 **PBKDF2** 哈希（100,000 次迭代，SHA-256，16 字节随机盐）
-- JWT 使用 **HMAC-SHA256** 签名
-- TOTP 按 RFC 6238 使用 **HMAC-SHA1**，允许 ±1 步长窗口
-- PKCE 使用 **S256**（向后兼容也接受 plain）
-- 限流使用基于 KV 的滑动窗口
-- 会话 `sessionId` 以哈希形式存储——即使数据库被入侵也无法推导出有效令牌
+- 全部密码学走 **Web Crypto API**，不依赖 Node.js `crypto`
+- 密码用 **PBKDF2** 哈希（100,000 轮，SHA-256，16 字节随机盐）
+- 会话 JWT 用 **HMAC-SHA256** 签名；OAuth ID Token 用 **RS256**（JWKS：`/.well-known/jwks.json`）
+- TOTP 按 RFC 6238 用 **HMAC-SHA1**，±1 步窗口
+- PKCE 优先 **S256**（同时兼容 plain）
+- 限流是 KV 滑动窗口，IPv6 按 `ipv6_rate_limit_prefix`（默认 `/64`）聚合
+- `sessionId` 以哈希存储 — 数据库泄露不能推出有效 token
+- 所有 redirect URI 在签发 code 前都会与应用注册列表 + 域名归属验证状态进行匹配
+- 图片代理是关闭式的：仅服务已注册映射，杜绝 SSRF 中继
+- 经图片代理转出的 SVG 会被消毒（移除 `<script>`、事件处理器、`javascript:` 伪 URL、`<foreignObject>`、外链 `<use>`）

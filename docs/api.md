@@ -1,8 +1,21 @@
+---
+title: API Reference
+description: REST API for Prism — auth, OAuth, apps, teams, domains, GPG, public profiles, and admin endpoints.
+---
+
 # API Reference
 
 Base path: `/api`
 
-All endpoints return JSON. Authenticated endpoints require an `Authorization: Bearer <token>` header. Tokens are JWTs issued on login or social callback.
+All endpoints return JSON. Authenticated endpoints accept either a session JWT
+(`Authorization: Bearer <token>`) issued at login, an OAuth access token from
+the standard authorization code flow, or a personal access token prefixed
+`prism_pat_`. Endpoints that take an OAuth token are usually exposed under
+`/api/oauth/me/*`.
+
+CORS is locked to `APP_URL` for `/api/*`. The `/api/proxy/image/*`,
+`/.well-known/*`, and `/api/users/:username` (public profile) endpoints are
+served without `Access-Control-Allow-Credentials` so they're safely embeddable.
 
 ## Init
 
@@ -10,17 +23,11 @@ All endpoints return JSON. Authenticated endpoints require an `Authorization: Be
 
 Returns whether the instance has been set up.
 
-**Response**
-
-```json
-{ "initialized": false }
-```
+**Response** — `{ "initialized": false }`
 
 ### `POST /api/init`
 
 Creates the first admin account. Only works when `initialized = false`.
-
-**Body**
 
 ```json
 {
@@ -38,9 +45,8 @@ Creates the first admin account. Only works when `initialized = false`.
 
 ### `GET /api/site`
 
-Public site configuration for the frontend. No authentication required.
-
-**Response**
+Public site configuration for the frontend. No authentication required. The
+endpoint reads only fields safe to expose; secrets are never included.
 
 ```json
 {
@@ -48,6 +54,7 @@ Public site configuration for the frontend. No authentication required.
   "site_description": "...",
   "site_icon_url": null,
   "allow_registration": true,
+  "invite_only": false,
   "captcha_provider": "none",
   "captcha_site_key": "",
   "pow_difficulty": 20,
@@ -56,15 +63,19 @@ Public site configuration for the frontend. No authentication required.
   "initialized": true,
   "require_email_verification": false,
   "email_verify_methods": "both",
-  "enabled_providers": ["github", "google"]
+  "enable_public_profiles": true,
+  "disable_user_create_team": false,
+  "disable_user_create_app": false,
+  "enabled_sources": [
+    { "slug": "github", "provider": "github", "name": "GitHub" },
+    { "slug": "google", "provider": "google", "name": "Google" }
+  ]
 }
 ```
 
 ## Auth
 
 ### `POST /api/auth/register`
-
-**Body**
 
 ```json
 {
@@ -74,17 +85,17 @@ Public site configuration for the frontend. No authentication required.
   "display_name": "Alice",
   "captcha_token": "...",
   "pow_challenge": "...",
-  "pow_nonce": 12345
+  "pow_nonce": 12345,
+  "invite_token": "..."
 }
 ```
 
 Include whichever bot-protection fields match the active captcha provider.
+`invite_token` is required when the site is in invite-only mode.
 
 **Response** — `{ "token": "...", "user": { ... } }`
 
 ### `POST /api/auth/login`
-
-**Body**
 
 ```json
 {
@@ -95,18 +106,16 @@ Include whichever bot-protection fields match the active captcha provider.
 }
 ```
 
-`identifier` accepts username or email. `totp_code` is required only if TOTP is enabled.
+`identifier` accepts username, primary email, or any verified secondary email
+(when `allow_alt_email_login` is true). `totp_code` is required only if TOTP
+is enrolled — for passkey authenticators, use the dedicated passkey endpoints.
 
-**Response**
+**Response** — `{ "token": "...", "user": { ... } }`
 
-```json
-{ "token": "...", "user": { ... } }
-```
-
-If TOTP is enabled but no code was provided:
+If TOTP is enrolled but no code was provided:
 
 ```json
-{ "totp_required": true }
+{ "totp_required": true, "available_methods": ["totp", "passkey", "backup"] }
 ```
 
 ### `POST /api/auth/logout`
@@ -115,84 +124,82 @@ Revokes the current session. Requires auth.
 
 ### `GET /api/auth/verify-email?token=<token>`
 
-Verifies an email address using the token sent by email.
-
-### `POST /api/auth/resend-verify-email`
-
-Resends the email verification link. Requires auth. Accepts optional captcha fields.
-
-**Body** — `{ "captcha_token": "...", "pow_challenge": "...", "pow_nonce": 12345 }`
-
-**Response** — `{ "message": "Verification email sent" }`
+Verifies an email using the token sent by email.
 
 ### `POST /api/auth/email-verify-code`
 
-Returns a verification address the user can send an email to in order to verify their email. Format: `verify-<code>@<domain>`. Requires auth. Accepts optional captcha fields.
+Returns a verification address the user can send an email to. Format:
+`verify-<code>@<domain>` (Cloudflare Email Workers) or the configured IMAP
+mailbox with the code as the subject. Requires auth.
 
-**Body** — `{ "captcha_token": "...", "pow_challenge": "...", "pow_nonce": 12345 }`
+```json
+{ "address": "verify-abc123@example.com", "code": "abc123" }
+```
 
-**Response** — `{ "address": "verify-abc123@example.com", "code": "abc123" }`
+### `POST /api/auth/check-email-verification`
+
+Long-poll-friendly: returns `{ "verified": boolean }` for the user's primary
+email. Useful while the user is sending the verify-by-email message.
+
+### `POST /api/auth/resend-verify-email`
+
+Re-sends the verification link. Requires auth. Accepts optional captcha fields.
 
 ### `GET /api/auth/pow-challenge`
 
-Returns a PoW challenge for the proof-of-work captcha provider.
+Returns a PoW challenge for the proof-of-work provider.
 
-**Response** — `{ "challenge": "...", "difficulty": 20 }`
+```json
+{ "challenge": "...", "difficulty": 20, "expires_at": 1741568400 }
+```
 
-## TOTP (2FA)
+## TOTP (multiple authenticators)
 
 All endpoints require authentication.
 
+### `GET /api/auth/totp/list`
+
+Lists the user's enrolled TOTP authenticators.
+
 ### `POST /api/auth/totp/setup`
 
-Generates a new TOTP secret. Returns the secret and `otpauth://` URI for QR codes.
+Generates a new TOTP secret. Returns the secret and `otpauth://` URI for QR
+codes. Pass `name` to label the new authenticator (e.g. `"Pixel 9"`).
 
-**Response** — `{ "secret": "...", "uri": "otpauth://totp/..." }`
+```json
+{ "name": "Pixel 9", "secret": "...", "uri": "otpauth://totp/..." }
+```
 
 ### `POST /api/auth/totp/verify`
 
-Confirms TOTP setup by verifying the first code. Returns backup codes.
+Confirms TOTP setup by verifying the first code. Returns backup codes the first
+time any authenticator is enrolled.
 
-**Body** — `{ "code": "123456" }`
+### `DELETE /api/auth/totp/:id`
 
-**Response** — `{ "message": "TOTP enabled", "backup_codes": ["XXXX-YYYY", ...] }`
-
-### `DELETE /api/auth/totp`
-
-Disables TOTP. Requires a valid current TOTP code or backup code.
-
-**Body** — `{ "code": "123456" }`
+Removes a single authenticator by ID. Requires either a current TOTP code, a
+backup code, or a passkey verification — the dialog in **Profile → Security**
+walks the user through whichever the account has enrolled.
 
 ### `POST /api/auth/totp/backup-codes`
 
 Regenerates backup codes. Requires a valid TOTP code.
 
-**Body** — `{ "code": "123456" }`
-
-**Response** — `{ "backup_codes": ["XXXX-YYYY", ...] }`
-
 ## Passkeys (WebAuthn)
 
-### `POST /api/auth/passkey/register/begin`
+### `POST /api/auth/passkey/register/begin` / `/finish`
 
-Starts passkey registration for the authenticated user. Returns WebAuthn
-`PublicKeyCredentialCreationOptions`.
+Adds a passkey for the authenticated user.
 
-### `POST /api/auth/passkey/register/finish`
+### `POST /api/auth/passkey/auth/begin` / `/finish`
 
-**Body** — `{ "response": <AuthenticatorAttestationResponse>, "name": "My YubiKey" }`
+Sign-in with a passkey. Pass `username` to begin to scope the allowed
+credentials, or omit it for discoverable credentials.
 
-### `POST /api/auth/passkey/auth/begin`
+### `POST /api/auth/passkey/verify/begin` / `/finish`
 
-Starts passkey authentication (unauthenticated).
-
-**Body** — `{ "username": "alice" }` (optional — omit for discoverable credentials)
-
-### `POST /api/auth/passkey/auth/finish`
-
-**Body** — `{ "challenge": "...", "response": <AuthenticatorAssertionResponse> }`
-
-**Response** — `{ "token": "...", "user": { ... } }`
+Authenticated re-verification with a passkey — used by step-up confirmation
+flows (e.g. removing the last TOTP authenticator).
 
 ### `GET /api/auth/passkeys`
 
@@ -200,99 +207,47 @@ Lists the authenticated user's registered passkeys.
 
 ### `DELETE /api/auth/passkeys/:id`
 
-Deletes a passkey by ID.
+Removes a passkey.
 
-## GPG Keys
+## GPG keys
 
 ### `POST /api/auth/gpg-challenge`
 
-Request a login challenge for GPG-based authentication. Rate-limited to 30 requests per minute per IP.
-
-**Body**
+Request a sign-in challenge. Rate-limited to 30 req/min per IP.
 
 ```json
 { "identifier": "alice" }
 ```
 
-**Response**
+**Response** — `{ "challenge": "...", "text": "Prism login\n..." }`
 
-```json
-{
-  "challenge": "a3f8...",
-  "text": "Prism login\nUser: alice\nChallenge: a3f8...\nTimestamp: 1710000000"
-}
-```
-
-Sign the returned `text` using `gpg --clearsign`, then pass the output to `/api/auth/gpg-login`.
+The `gpg_challenge_prefix` config is inserted between the site header and the
+random challenge so users can verify the text they're signing belongs to your
+site.
 
 ### `POST /api/auth/gpg-login`
 
-Complete GPG login by submitting a signed challenge. Rate-limited to 10 requests per minute per IP.
-
-**Body**
+Submit a `gpg --clearsign`-ed challenge. Rate-limited to 10 req/min per IP. The
+challenge is single-use and expires after 5 minutes.
 
 ```json
-{
-  "identifier": "alice",
-  "signed_message": "-----BEGIN PGP SIGNED MESSAGE-----\n..."
-}
+{ "identifier": "alice", "signed_message": "-----BEGIN PGP SIGNED MESSAGE-----\n..." }
 ```
 
 **Response** — `{ "token": "...", "user": { ... } }`
 
-The challenge is single-use and expires after 5 minutes.
+### `GET /api/user/gpg` / `POST /api/user/gpg` / `DELETE /api/user/gpg/:id`
 
-### `GET /api/user/gpg`
-
-List the authenticated user's registered GPG keys. Requires session auth.
-
-**Response**
-
-```json
-{
-  "keys": [
-    {
-      "id": "...",
-      "fingerprint": "abc123...",
-      "key_id": "...",
-      "name": "My laptop key",
-      "created_at": 1710000000,
-      "last_used_at": 1710100000
-    }
-  ]
-}
-```
-
-### `POST /api/user/gpg`
-
-Add a GPG public key. Requires session auth.
-
-**Body**
-
-```json
-{
-  "public_key": "-----BEGIN PGP PUBLIC KEY BLOCK-----\n...",
-  "name": "My laptop key"
-}
-```
-
-If `name` is omitted, the first user ID from the key is used as the label.
-
-### `DELETE /api/user/gpg/:id`
-
-Remove a GPG key by ID. Requires session auth.
+Session-auth GPG key management. `POST` accepts ASCII-armored or binary
+`public_key` plus optional `name`; classical RSA/EdDSA and ML-DSA keys are
+both supported.
 
 ### `GET /users/:username.gpg`
 
-Public endpoint — returns all of the user's registered GPG public keys in ASCII armor format, one block per line (separated by blank lines). `Content-Type: application/pgp-keys`. Returns `404` if the user has no keys.
-
-```
-curl https://your-prism-domain/users/alice.gpg
-```
+Public, federated lookup. Returns the user's registered GPG keys as ASCII
+armor blocks separated by blank lines, with `Content-Type: application/pgp-keys`.
 
 ### OAuth-scoped GPG endpoints
-
-These endpoints accept an OAuth access token or PAT with the appropriate scope instead of a session cookie.
 
 | Method   | Path                         | Scope required |
 |----------|------------------------------|----------------|
@@ -300,238 +255,298 @@ These endpoints accept an OAuth access token or PAT with the appropriate scope i
 | `POST`   | `/api/oauth/me/gpg-keys`     | `gpg:write`    |
 | `DELETE` | `/api/oauth/me/gpg-keys/:id` | `gpg:write`    |
 
-Request/response shapes match the session-auth equivalents above.
-
-### OAuth-scoped social connection endpoints
-
-These endpoints accept an OAuth access token or PAT with the appropriate scope instead of a session cookie.
-
-| Method   | Path                                   | Scope required |
-|----------|----------------------------------------|----------------|
-| `GET`    | `/api/oauth/me/social-connections`     | `social:read`  |
-| `DELETE` | `/api/oauth/me/social-connections/:id` | `social:write` |
-
-Request/response shapes match the session-auth equivalents above.
+Request/response shapes match the session-auth equivalents.
 
 ## Sessions
 
-### `GET /api/auth/sessions`
+### `GET /api/auth/sessions` / `DELETE /api/auth/sessions/:id`
 
-Lists active sessions for the authenticated user.
-
-### `DELETE /api/auth/sessions/:id`
-
-Revokes a session by ID.
+List and revoke active sessions for the authenticated user.
 
 ## User
 
 All endpoints require authentication.
 
-### `GET /api/user/me`
+### `GET /api/user/me` / `PATCH /api/user/me`
 
-**Response**
-
-```json
-{
-  "user": {
-    "id": "...",
-    "email": "...",
-    "username": "...",
-    "display_name": "...",
-    "avatar_url": null,
-    "role": "user",
-    "email_verified": true
-  },
-  "totp_enabled": false,
-  "passkey_count": 1
-}
-```
-
-### `PATCH /api/user/me`
-
-**Body** — `{ "display_name": "Alice", "avatar_url": "https://..." }`
+Read and partial-update the current user (display name, avatar, profile
+visibility flags, notification preferences). Some sub-resources have dedicated
+endpoints below.
 
 ### `POST /api/user/me/change-password`
 
-**Body** — `{ "current_password": "...", "new_password": "..." }`
+```json
+{ "current_password": "...", "new_password": "..." }
+```
 
 ### `POST /api/user/me/avatar`
 
-`multipart/form-data` with field `avatar`. Max 2 MB. Accepted types: JPEG, PNG, WebP, GIF.
+`multipart/form-data` with field `avatar`. Max 2 MB. Accepted types: JPEG,
+PNG, WebP, GIF. Stored in R2 (when bound) or inline in D1.
 
-**Response** — `{ "avatar_url": "/api/assets/avatars/..." }`
+### `POST /api/user/me/readme` / `POST /api/user/me/readme/sync`
+
+Manually save a markdown README, or sync it from the user's GitHub user-repo
+README (`github.com/<login>/<login>`). The sync endpoint respects the
+`github_readme_cache_ttl_seconds` cache and `github_readme_token` PAT.
+
+### `GET /api/user/me/emails` / `POST` / `DELETE /api/user/me/emails/:id`
+
+Manage secondary emails. `POST /:id/resend` re-sends the verification link;
+`POST /:id/set-primary` swaps the primary email after verification.
+
+### `GET /api/user/me/notifications` / `PUT`
+
+Read or replace the user's notification preferences (events × delivery
+channel × `brief|full` level). See [Notifications](notifications.md).
+
+### `GET /api/user/me/notification-rulesets` / `POST` / `PUT /:id` / `DELETE /:id`
+
+Named rulesets — ordered match/action rules with optional account-key
+filtering and `stop` semantics. Same data shape, more expressive than the
+flat preferences map. See [Notifications](notifications.md).
+
+### `GET /api/user/tokens` / `POST` / `DELETE /:id`
+
+Personal access tokens. The full plaintext is shown only in the create
+response. See [Personal Access Tokens](personal-access-tokens.md).
 
 ### `DELETE /api/user/me`
 
-Deletes the account permanently.
-
-**Body** — `{ "password": "...", "confirm": "DELETE" }`
+Deletes the account permanently. `{ "password": "...", "confirm": "DELETE" }`.
 
 ## OAuth Apps
 
-All endpoints require authentication.
+All endpoints require authentication. See [OAuth / OIDC Guide](oauth.md) and
+[Cross-App Permissions](app-permissions.md) for the full integration story.
 
-### `GET /api/apps`
+| Method   | Path                                        | Notes                                                              |
+|----------|---------------------------------------------|--------------------------------------------------------------------|
+| `GET`    | `/api/apps`                                 | List apps owned by the current user                                |
+| `POST`   | `/api/apps`                                 | Create app                                                         |
+| `GET`    | `/api/apps/:id`                             | Read app                                                           |
+| `PATCH`  | `/api/apps/:id`                             | Update fields including `oidc_fields`, `optional_scopes`, `use_jwt_tokens`, `allow_self_manage_exported_permissions` |
+| `POST`   | `/api/apps/:id/rotate-secret`               | Rotate `client_secret`                                             |
+| `DELETE` | `/api/apps/:id`                             | Delete app                                                         |
+| `GET`    | `/api/apps/:id/scope-definitions`           | List exported scopes                                               |
+| `POST` / `PATCH` / `DELETE` | `/api/apps/:id/scope-definitions[/:scope]` | Manage exported scopes (HTTP Basic from the app itself works when `allow_self_manage_exported_permissions` is on) |
+| `GET` / `POST` / `DELETE` | `/api/apps/:id/scope-access-rules[/:ruleId]` | Owner-allow / owner-deny / app-allow / app-deny rules        |
+| `GET` / `POST` / `PATCH` / `DELETE` | `/api/apps/:appId/webhooks[/:id]` | App notification webhooks; see [App Notifications](app-notifications.md) |
 
-Lists apps owned by the current user.
+App-event streaming (SSE / WebSocket) is also under `/api/apps/:appId/events/*`
+— see [App Notifications](app-notifications.md).
 
-### `POST /api/apps`
+## Teams
 
-**Body**
+See [Teams](teams.md) for the full guide. Endpoint summary:
 
-```json
-{
-  "name": "My App",
-  "description": "...",
-  "website_url": "https://myapp.com",
-  "redirect_uris": ["https://myapp.com/callback"],
-  "allowed_scopes": ["openid", "profile", "email"],
-  "is_public": false
-}
-```
-
-### `GET /api/apps/:id`
-
-### `PATCH /api/apps/:id`
-
-Partial update — same fields as create, plus:
-
-- `allow_self_manage_exported_permissions` (boolean) — opt-in: let the app
-  manage its own exported scope definitions using HTTP Basic client
-  credentials (no user token). Has no effect on public clients. See
-  [Cross-App Permissions](./app-permissions.md) for the full flow.
-
-### `POST /api/apps/:id/rotate-secret`
-
-Generates a new `client_secret`. The old one is immediately invalid.
-
-**Response** — `{ "client_secret": "..." }`
-
-### `DELETE /api/apps/:id`
+| Method   | Path                                                       | Notes                                                           |
+|----------|------------------------------------------------------------|-----------------------------------------------------------------|
+| `GET`    | `/api/teams`                                               | List teams the current user is a member of                      |
+| `POST`   | `/api/teams`                                               | Create team                                                     |
+| `GET`    | `/api/teams/:id`                                           | Team details + member's role + effective requirements           |
+| `PATCH`  | `/api/teams/:id`                                           | Update name, description, avatar, public-profile flags, `require_2fa`, `require_verified_email` |
+| `DELETE` | `/api/teams/:id`                                           | Disband (owner only)                                            |
+| `POST`   | `/api/teams/:id/members`                                   | Add member by username/id (admins+)                             |
+| `PATCH`  | `/api/teams/:id/members/:userId`                           | Change role                                                     |
+| `DELETE` | `/api/teams/:id/members/:userId`                           | Remove member (or leave the team if `:userId = self`)           |
+| `PATCH`  | `/api/teams/:id/membership/show-on-profile`                | Per-member opt-in to appear in the team's public member list    |
+| `POST`   | `/api/teams/:id/transfer-ownership`                        | Transfer ownership to another member                            |
+| `GET`    | `/api/teams/:id/invites`                                   | List active invite tokens                                       |
+| `POST`   | `/api/teams/:id/invites`                                   | Mint an invite token (optional email lock + max uses + expiry)  |
+| `DELETE` | `/api/teams/:id/invites/:token`                            | Revoke an invite                                                |
+| `GET`    | `/api/teams/join/:token` (auth optional)                   | Inspect an invite — returns the team, requirements, unmet flags |
+| `POST`   | `/api/teams/join/:token`                                   | Accept an invite                                                |
+| `GET` / `POST` / `DELETE` | `/api/teams/:id/domains[/:domainId]`           | Team-owned domains                                              |
+| `POST`   | `/api/teams/:id/domains/:domainId/verify`                  | Trigger re-verification                                         |
+| `POST`   | `/api/teams/:id/domains/:domainId/to-personal`             | Move a verified domain to the user's personal namespace         |
+| `POST`   | `/api/teams/:id/domains/:domainId/share-to-team`           | Share a personal domain with the team                           |
+| `POST`   | `/api/teams/:id/domains/:domainId/share-to-personal`       | Reverse the above                                               |
+| `GET` / `POST` | `/api/teams/:id/apps`                                | Team-owned OAuth apps                                           |
+| `POST`   | `/api/teams/:id/apps/transfer`                             | Transfer a personal app into the team                           |
+| `DELETE` | `/api/teams/:id/apps/:appId/transfer`                      | Move a team-owned app back to the original owner                |
 
 ## Domains
 
-All endpoints require authentication.
-
-### `GET /api/domains`
-
-Lists verified and unverified domains for the current user.
-
-### `POST /api/domains`
-
-**Body** — `{ "domain": "example.com", "app_id": "optional-app-id" }`
-
-**Response** — includes `txt_record` (hostname) and `txt_value` (the token to add as a DNS TXT record).
-
-### `POST /api/domains/:id/verify`
-
-Triggers a DNS verification check. Queries `_prism-verify.domain` for the TXT record.
-
-**Response** — `{ "verified": true, "next_reverify_at": 1234567890 }`
-
-### `DELETE /api/domains/:id`
+| Method   | Path                  | Notes                                                                |
+|----------|-----------------------|----------------------------------------------------------------------|
+| `GET`    | `/api/domains`        | List the current user's domains                                      |
+| `POST`   | `/api/domains`        | Add domain. Returns `verification_method` options + the per-method instructions (DNS TXT, HTML meta, `.well-known`) |
+| `POST`   | `/api/domains/:id/verify` | Trigger a re-verification check using the chosen method          |
+| `DELETE` | `/api/domains/:id`    | Remove                                                               |
 
 ## Social Connections
 
-### `GET /api/connections`
+| Method   | Path                                | Notes                                                                |
+|----------|-------------------------------------|----------------------------------------------------------------------|
+| `GET`    | `/api/connections`                  | List the user's linked accounts                                      |
+| `GET`    | `/api/connections/:slug/begin`      | Redirect to the source's authorization URL. `?mode=login` (default) or `?mode=connect` |
+| `GET`    | `/api/connections/:slug/callback`   | OAuth callback (auto-handled by the provider redirect)               |
+| `GET`    | `/api/connections/telegram/callback`| Telegram widget callback (no `:slug` because Telegram uses a different flow) |
+| `POST`   | `/api/connections/:id/refresh`      | Refresh display name / avatar from the provider                      |
+| `DELETE` | `/api/connections/:id`              | Disconnect                                                           |
 
-Lists connected social providers for the authenticated user.
+OAuth-scoped equivalents:
 
-### `GET /api/connections/:provider/begin`
-
-Redirects to the OAuth authorization URL for `provider` (`github`, `google`, `microsoft`, `discord`).
-
-Query params:
-
-- `mode=login` (default) — log in or register with this provider
-- `mode=connect` — attach the provider to an existing logged-in account
-
-### `GET /api/connections/:provider/callback`
-
-OAuth callback handled automatically. Redirects to `/auth/callback?token=...` on success or `/connections?error=...` on failure.
-
-### `POST /api/connections/:id/refresh`
-
-Refreshes profile data for a linked account by connection ID. Useful when the provider-side nickname / display name changed.
-
-### `DELETE /api/connections/:id`
-
-Disconnects the provider from the current account. Requires auth.
+| Method   | Path                                       | Scope          |
+|----------|--------------------------------------------|----------------|
+| `GET`    | `/api/oauth/me/social-connections`         | `social:read`  |
+| `DELETE` | `/api/oauth/me/social-connections/:id`     | `social:write` |
 
 ## OAuth 2.0 / OIDC
 
-See the [OAuth / OIDC Guide](oauth.md) for the full integration walkthrough.
+See the [OAuth / OIDC Guide](oauth.md) for the full walkthrough.
 
-### `GET /api/oauth/authorize`
+| Method | Path                                | Notes                                              |
+|--------|-------------------------------------|----------------------------------------------------|
+| `GET`  | `/api/oauth/authorize`              | Returns app info + requested scopes for the consent screen |
+| `POST` | `/api/oauth/authorize`              | Approve / deny                                     |
+| `POST` | `/api/oauth/token`                  | `authorization_code` and `refresh_token` grants    |
+| `GET`  | `/api/oauth/userinfo`               | OIDC UserInfo                                      |
+| `POST` | `/api/oauth/introspect`             | RFC 7662                                           |
+| `POST` | `/api/oauth/revoke`                 | RFC 7009                                           |
+| `GET`  | `/.well-known/openid-configuration` | Discovery                                          |
+| `GET`  | `/.well-known/jwks.json`            | RSA public keys for ID token + JWT access tokens   |
 
-Returns the app info and requested scopes for the consent screen.
+### Step-up 2FA
 
-### `POST /api/oauth/authorize`
+| Method | Path                            | Auth                                  |
+|--------|---------------------------------|---------------------------------------|
+| `POST` | `/api/oauth/2fa/challenges`     | App credentials (HTTP Basic) or PKCE  |
+| `GET`  | `/api/oauth/2fa/info`           | Optional user session — drives the SPA |
+| `POST` | `/api/oauth/2fa/authorize`      | User session — submit TOTP/passkey/backup or sudo bypass |
+| `POST` | `/api/oauth/2fa/sudo/revoke`    | User session — drop a sudo grace window |
+| `POST` | `/api/oauth/2fa/verify`         | App credentials — exchange the redirect code for the verification result |
 
-Approves or denies an authorization request.
+### `/api/oauth/me/*` (token-authenticated user APIs)
 
-**Body**
+These endpoints accept either an OAuth access token from the standard flow or a
+PAT. The required scopes are listed in [OAuth → Scopes](oauth.md#scopes) and
+[Admin → OAuth Scope Reference](admin.md#oauth-scope-reference).
 
-```json
-{
-  "client_id": "...",
-  "redirect_uri": "https://app.example.com/callback",
-  "scope": "openid profile email",
-  "state": "random-state",
-  "code_challenge": "...",
-  "code_challenge_method": "S256",
-  "action": "approve"
-}
-```
+| Path                                                     | Scope                          |
+|----------------------------------------------------------|--------------------------------|
+| `GET /me/profile`                                        | `profile`                      |
+| `PATCH /me/profile`                                      | `profile:write`                |
+| `GET /me/apps` / `POST /me/apps` / `PATCH /me/apps/:id` / `DELETE /me/apps/:id` | `apps:read` / `apps:write` |
+| `GET /me/team-apps`                                      | `apps:read`                    |
+| `GET /me/teams` / `POST` / `PATCH /me/teams/:id` / `DELETE` | `teams:read` / `teams:write` / `teams:create` / `teams:delete` |
+| `POST /me/teams/:id/members` / `DELETE`                  | `teams:write`                  |
+| `GET /me/domains` / `POST` / `POST :domain/verify` / `DELETE` | `domains:read` / `domains:write` |
+| `GET /me/gpg-keys` / `POST` / `DELETE`                   | `gpg:read` / `gpg:write`       |
+| `GET /me/social-connections` / `DELETE`                  | `social:read` / `social:write` |
+| `GET /me/webhooks` / `POST` / `PATCH` / `DELETE` / `GET …/deliveries` | `webhooks:read` / `webhooks:write` |
+| `GET /me/admin/users` / `PATCH` / `DELETE`               | `admin:users:read` / `admin:users:write` / `admin:users:delete` |
+| `GET /me/admin/config` / `PATCH`                         | `admin:config:read` / `admin:config:write` |
+| `POST /me/invites` / `GET` / `DELETE`                    | `admin:invites:create` / `admin:invites:read` / `admin:invites:delete` |
+| `GET /me/admin/webhooks` and friends                     | `admin:webhooks:read` / `admin:webhooks:write` / `admin:webhooks:delete` |
+| `GET /me/site/users[/:id]`                               | `admin:users:read`             |
+| `GET /me/team/:teamId/info` / `PATCH`                    | `teams:read` / `teams:write`   |
+| `GET /me/team/:teamId/members` / `POST` / `DELETE` / `PATCH …/role` | `teams:read` / `teams:write`   |
+| `GET /me/team/:teamId/members/:userId/profile`           | `teams:read`                   |
 
-### `POST /api/oauth/token`
+### `GET /api/oauth/consents` / `DELETE /api/oauth/consents/:client_id`
 
-Token endpoint. Supports `authorization_code` and `refresh_token` grant types.
+Manage which apps the current user has authorized. `DELETE` revokes the consent
+and all outstanding tokens for that app.
 
-### `GET /api/oauth/userinfo`
+## Public profiles
 
-Returns the authenticated user's profile in OpenID Connect format.
+### `GET /api/users/:username`
 
-### `POST /api/oauth/introspect`
+Returns the user profile filtered by visibility flags, or `404` if the username
+is unknown, private, or `enable_public_profiles` is off. The 404 body is
+identical for all three to avoid leaking which usernames exist. Accepts an
+optional Bearer — a token belonging to the profile's owner returns the data
+even when private. See [Public Profiles](public-profile.md).
 
-RFC 7662 token introspection.
+### `GET /api/public/teams/:id`
 
-### `POST /api/oauth/revoke`
+Returns the team profile. Same 404 semantics. A token from any *member* of the
+team returns the data even when private.
 
-RFC 7009 token revocation.
+## Image proxy
 
-### `GET /.well-known/openid-configuration`
+### `GET /api/proxy/image/:id`
 
-OpenID Connect Discovery document.
+Streams an image registered in `image_proxy_mappings`. SVG bodies are
+sanitized. `:id` is the opaque ID returned by `POST /api/proxy/image/register`
+(authenticated) — there is no URL passthrough, so the proxy cannot be used as
+an open SSRF relay. Cross-origin headers are set so the response is safely
+embeddable.
+
+### `POST /api/proxy/image/register`
+
+Register a new mapping for a remote image URL the SPA needs to load (markdown
+preview, ImageUrlInput preview). Requires auth. Returns
+`{ "id": "...", "url": "/api/proxy/image/<id>" }`.
 
 ## Admin
 
-All admin endpoints require authentication with `role = admin`.
+All admin endpoints require auth with `role = admin`.
 
 ### Config
 
-- `GET /api/admin/config` — all config key/value pairs
-- `PATCH /api/admin/config` — update one or more keys
+| Method  | Path                  | Notes                                               |
+|---------|-----------------------|-----------------------------------------------------|
+| `GET`   | `/api/admin/config`   | All config keys (sensitive values redacted)         |
+| `PATCH` | `/api/admin/config`   | Update one or more keys; sensitive keys are auto-encrypted with `SECRETS_KEY` if bound |
 
-### Stats
+### Stats / dashboard
 
-- `GET /api/admin/stats` — `{ users, apps, verified_domains, active_tokens }`
+`GET /api/admin/stats` → `{ users, apps, verified_domains, active_tokens }`.
 
 ### Users
 
-- `GET /api/admin/users?page=1&limit=20&search=alice`
-- `GET /api/admin/users/:id`
-- `PATCH /api/admin/users/:id` — update `role`, `is_active`, `email_verified`
-- `DELETE /api/admin/users/:id`
+| Method   | Path                                | Notes                                  |
+|----------|-------------------------------------|----------------------------------------|
+| `GET`    | `/api/admin/users?page=…&search=…`  | Paginated user list                    |
+| `GET`    | `/api/admin/users/:id`              | Detail (sessions, apps, connections)   |
+| `PATCH`  | `/api/admin/users/:id`              | `role`, `is_active`, `email_verified`, per-user TTL overrides |
+| `DELETE` | `/api/admin/users/:id`              | Permanently delete                     |
+| `DELETE` | `/api/admin/users/:id/sessions`     | Revoke all sessions                    |
 
-### Apps
+### Apps / OAuth Sources / Invites / Webhooks / Teams
 
-- `GET /api/admin/apps?page=1`
-- `PATCH /api/admin/apps/:id` — update `is_verified`, `is_active`
+| Path                                    | Notes                                                |
+|-----------------------------------------|------------------------------------------------------|
+| `GET / PATCH /api/admin/apps[/:id]`     | Verify or deactivate                                 |
+| `GET / POST / PATCH / DELETE /api/admin/oauth-sources[/:id]` | Source CRUD                  |
+| `GET /api/admin/oauth-sources/discover` | Auto-fetch OIDC discovery for a candidate issuer     |
+| `POST /api/admin/oauth-sources/migrate` | One-time: import the legacy site_config social keys  |
+| `GET / POST / DELETE /api/admin/invites[/:id]` | Site-invite tokens                            |
+| `GET /api/admin/teams` / `DELETE /:id`  | List / disband teams                                 |
+| `POST /api/admin/test-email`            | Send a test outbound email                           |
+| `POST /api/admin/test-email-receiving`  | Generate a test verify-by-email code                 |
+| `GET / POST / PATCH / DELETE /api/admin/webhooks[/:id]` | Site-wide audit-event webhooks       |
 
-### Audit log
+### Audit / request logs / login errors
 
-- `GET /api/admin/audit-log?page=1`
+| Method   | Path                                  | Notes                                                |
+|----------|---------------------------------------|------------------------------------------------------|
+| `GET`    | `/api/admin/audit-log?page=…`         | Audit events                                         |
+| `GET`    | `/api/admin/login-errors`             | Failed-login table                                   |
+| `GET`    | `/api/admin/request-logs`             | Filterable per-request log                           |
+| `GET`    | `/api/admin/request-logs/export`      | CSV export of the current filter                     |
+| `GET`    | `/api/admin/request-logs/:id/details` | Single request detail                                |
+| `DELETE` | `/api/admin/request-logs`             | Purge all                                            |
+| `DELETE` | `/api/admin/request-logs/spectate`    | Clear the live spectate buffer                       |
+
+### Secrets migration / Danger Zone
+
+| Method | Path                                       | Notes                                                          |
+|--------|--------------------------------------------|----------------------------------------------------------------|
+| `GET`  | `/api/admin/secrets/status`                | Whether the `SECRETS_KEY` binding is wired and how many config rows are still plaintext |
+| `POST` | `/api/admin/secrets/migrate`               | Encrypt remaining site_config / oauth source / oauth app secrets |
+| `GET`  | `/api/admin/d1-secrets/status`             | Same for bearer-style D1 fields                                |
+| `POST` | `/api/admin/d1-secrets/migrate`            | Hash remaining tokens / codes                                  |
+| `GET / POST` | `/api/admin/teams-as-users-status` & `/migrate-teams-as-users` | Backfill `kind = 'team'` user rows for every team |
+| `GET / POST` | `/api/admin/image-proxy-status` & `/migrate-image-proxy` | Backfill image-proxy mappings for legacy avatars/icons |
+| `POST` | `/api/admin/sweep-image-proxy`             | Drop orphan mappings now (also runs on cron)                   |
+| `GET / DELETE` | `/api/admin/image-proxy[/:id]`     | Browse / clear proxy entries                                   |
+| `POST` | `/api/admin/migrate-recovery-codes`        | Re-hash legacy plaintext backup codes                          |
+| `GET / POST` | `/api/admin/reset/status` & `/request` & `/cancel` & `/confirm` | Site-reset workflow (email-signed) |
+| `GET / POST` | `/api/admin/debug`                   | Internal toggles for diagnosing deploys                        |
 
 ## Health
 

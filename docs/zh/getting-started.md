@@ -1,13 +1,13 @@
 ---
 title: 快速开始
-description: 从零开始在 Cloudflare Workers 上部署 Prism——资源创建、密钥配置、数据库迁移与首次部署。
+description: 从零开始在 Cloudflare Workers 上部署 Prism — 资源创建、密钥配置、数据库迁移与首次部署。
 ---
 
 # 快速开始
 
 ## 前置条件
 
-- [Bun](https://bun.sh) 1.1+
+- [Bun](https://bun.sh) 1.1+（也可用 `pnpm`，两份 lockfile 同步维护）
 - [Wrangler CLI](https://developers.cloudflare.com/workers/wrangler/)（`bun add -g wrangler`）
 - 一个 Cloudflare 账号（免费套餐即可）
 - _（可选）_ Rust + wasm-pack，用于编译 PoW WASM 加速模块
@@ -28,87 +28,70 @@ bun install
 wrangler d1 create prism-db
 ```
 
-将输出的 `database_id` 填入 `wrangler.jsonc`：
+把返回的 `database_id` 复制到 `wrangler.jsonc`：
 
 ```jsonc
 "d1_databases": [
   {
     "binding": "DB",
     "database_name": "prism-db",
-    "database_id": "<粘贴到这里>"
+    "database_id": "<paste here>",
+    "migrations_dir": "worker/db/migrations"
   }
 ]
 ```
 
-### KV 命名空间
+### KV namespace
 
 ```bash
 wrangler kv namespace create KV_SESSIONS
 wrangler kv namespace create KV_CACHE
 ```
 
-将两个 `id` 值填入 `wrangler.jsonc`。本地开发时每个命名空间还需要一个 `preview_id`——可追加 `--preview` 参数重新创建，或直接复用同一个 ID 用于本地测试。
+把两个 `id` 复制到 `wrangler.jsonc`。本地开发也需要 `preview_id` — 可以加 `--preview` 重跑命令，或直接复用相同 ID。
 
-### R2 存储桶
+### R2 桶 _（可选）_
+
+R2 仅用于存放超过 D1 内联限制的头像/应用图标；较小的上传直接写入 D1。默认 `wrangler.jsonc` 中绑定被注释，无 R2 也能直接部署。开启 R2：
 
 ```bash
 wrangler r2 bucket create prism-assets
 ```
 
-存储桶名称已在 `wrangler.jsonc` 中设置为 `prism-assets`。
+…然后取消 `r2_buckets` 块的注释。
 
-## 3. 运行数据库迁移
+### Secrets Store（强烈推荐）
+
+生成一把 32 字节主密钥，保存进 Cloudflare Secrets Store。所有敏感字段会因此在数据库中加密（OAuth `client_secret`、验证码 secret、SMTP/IMAP 密码、GitHub README PAT，以及 [架构 → 数据库中的密钥](architecture.md#数据库中的密钥) 列出的所有 bearer 类机密）。
+
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
+```
+
+在 Cloudflare 控制台创建 Secrets Store，把生成的值以 `prism-secrets-key` 为名存入，然后在 `wrangler.jsonc` 中加入绑定：
+
+```jsonc
+"secrets_store_secrets": [
+  {
+    "binding": "SECRETS_KEY",
+    "store_id": "<your-store-id>",
+    "secret_name": "prism-secrets-key"
+  }
+]
+```
+
+不绑定也没问题：加密/哈希将退化为 no-op，Prism 会以明文存储继续运行。可以日后再启用 — **Admin → Settings → Danger Zone** 中的迁移按钮是幂等的。
+
+## 3. 运行迁移
 
 ```bash
 bun db:migrate          # 本地 D1
-bun db:migrate:prod     # 生产 D1
+bun db:migrate:prod     # 线上 D1
 ```
 
-## 5. 启动开发服务器
+## 4. 设置 `APP_URL`
 
-```bash
-bun dev
-```
-
-Vite 监听 `http://localhost:5173`。[Cloudflare Vite 插件](https://developers.cloudflare.com/workers/vite-plugin/)在 Vite 进程内运行 Worker——无需单独启动 `wrangler dev`。
-
-## 6. 首次初始化
-
-首次访问时，Prism 会重定向到 `/init`。填写以下信息：
-
-- **Email** — 管理员账号邮箱
-- **Username** — 纯字母数字，用于个人主页 URL
-- **Display name** — 显示在界面中的名称
-- **Password** — 密码
-- **Site name** — 显示在浏览器标题和邮件中的站点名称
-
-提交后将创建第一个管理员账号，并将实例标记为已初始化。后续访问将直接跳转到登录页面。
-
-## 7. （可选）编译 PoW WASM
-
-工作量证明机器人防护有一个纯 JS 回退实现，但使用从 `pow/src/lib.rs` 编译的 WASM 模块速度可提升约 10 倍。
-
-```bash
-cd pow
-wasm-pack build --target no-modules --out-dir ../public/pow-wasm
-cp ../public/pow-wasm/prism_pow_bg.wasm ../public/pow.wasm
-```
-
-或使用构建脚本自动完成此步骤：
-
-```bash
-bash scripts/build.sh --skip-frontend
-```
-
-## 8. 部署到生产环境
-
-```bash
-bun deploy
-```
-
-此命令会先执行 `tsc -b && vite build`，再执行 `wrangler deploy`。Cloudflare Assets 集成负责提供构建后的 SPA，并处理单页应用的回退路由，所有路径均解析到 `index.html`。
-
-部署前请确保已将 `wrangler.jsonc` 中的 `APP_URL` 更新为你的生产域名：
+更新 `wrangler.jsonc`，让 Worker 知道自己的对外 origin：
 
 ```jsonc
 "vars": {
@@ -116,21 +99,76 @@ bun deploy
 }
 ```
 
+本地开发可保持默认，开发服务器使用 `http://localhost:5173`。
+
+## 5. 启动开发服务器
+
+```bash
+bun dev
+```
+
+Vite 监听 `http://localhost:5173`。[Cloudflare Vite 插件](https://developers.cloudflare.com/workers/vite-plugin/) 把 Worker 与 Vite 一起跑在同一个进程里 — 无需另起 `wrangler dev`，`entry-server.tsx`（SSR）也会随客户端一起热更新。
+
+## 6. 首次初始化
+
+首次访问时 Prism 会跳到 `/init`，请填写：
+
+- **邮箱** — 管理员账号邮箱
+- **用户名** — 字母数字组合，会出现在公开资料 URL 中
+- **显示名称** — UI 上展示的名字
+- **密码**
+- **站点名称** — 浏览器标题与邮件中使用
+
+提交后会创建首个管理员账号并把站点标记为已初始化；后续访问直接跳到登录页。
+
+## 7. （可选）编译 PoW WASM
+
+PoW 防机器人有纯 JS 兜底，但用 `pow/src/lib.rs` 编译出的 WASM 模块快约 10 倍。
+
+```bash
+cd pow
+wasm-pack build --target no-modules --out-dir ../public/pow-wasm
+cp ../public/pow-wasm/prism_pow_bg.wasm ../public/pow.wasm
+```
+
+或直接用任意一个构建脚本（自动完成上述步骤）：
+
+```bash
+bash scripts/build.sh --skip-frontend
+```
+
+## 8. 部署到生产
+
+```bash
+bun deploy
+```
+
+这一步会跑 `tsc -b && vite build` 并紧跟一次 `wrangler deploy`。构建会生成可直接部署的 `dist/prism/wrangler.json` — 生产部署必须使用它，否则 `wrangler deploy` 会重新打包源码并丢失 Vite 的 SSR 处理。提供的构建脚本会自动把生成的配置拷回原位。
+
+## 9. 部署后：迁移密钥
+
+如果你绑定了 `SECRETS_KEY`，请以管理员身份登录，进入 **Admin → Settings → Danger Zone** 并依次执行：
+
+- **Migrate secrets to Secrets Store** — 加密历史 site_config 字段以及 OAuth 应用/源的 `client_secret`。
+- **Migrate D1 secrets** — 把 bearer 类明文（PAT、OAuth token/code、邀请 token、邮箱验证码、二次验证码、单条备用码）替换为 HMAC-SHA256 哈希。
+
+两者都是幂等的，重复执行安全。
+
 ## 社交登录配置
 
-每个提供商都需要注册一个 OAuth 应用。回调 URL 格式请参阅 [OAuth / OIDC 指南](oauth.md)。
-
-获取客户端 ID 和密钥后，前往 **Admin → Settings → Social Login** 填写即可。无需重新部署——配置存储在 D1 中。
+每个 provider 都需要先到对应平台创建 OAuth 应用。在 **Admin → OAuth Sources** 添加 OAuth 源 — 同一类型可以加多个，每个有独立 slug。详见 [社交登录配置](social-login.md)；回调 URL 的格式见 [OAuth / OIDC 指南](oauth.md)。
 
 ## 邮件配置
 
-Prism 支持三种邮件提供商，在 **Admin → Settings → Email** 中配置。
+Prism 支持三种发送方式与两种接收方式，均在 **Admin → Settings → Email** 中配置。
 
-| 提供商       | `email_provider` 值 | 密钥变量                    |
-|--------------|---------------------|-----------------------------|
-| Resend       | `resend`            | `email_api_key`（管理员界面） |
-| Mailchannels | `mailchannels`      | — （无需密钥）                |
-| SMTP         | `smtp`              | 见 UI                       |
-| 未配置/关闭  | `none`              | —                           |
+| Provider     | `email_provider` 值 | 关键字段                  |
+|--------------|---------------------|---------------------------|
+| Resend       | `resend`            | `email_api_key`（管理面板） |
+| Mailchannels | `mailchannels`      | `email_api_key`（管理面板） |
+| SMTP         | `smtp`              | 见管理面板                 |
+| 关闭         | `none`              | —                         |
 
-邮件用于邮箱验证。此功能为可选——将 `require_email_verification` 设为 `false`（默认值）可跳过邮件验证。
+邮件用于邮箱验证、改密、通知。设置 `require_email_verification = false`（默认）允许用户在未验证邮箱时也登录。
+
+入站邮件（用户主动发邮件验证）走 Cloudflare Email Workers，或把 `email_receive_provider` 设为 `imap` 并填入轮询邮箱。

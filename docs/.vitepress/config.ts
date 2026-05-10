@@ -112,6 +112,8 @@ export default withMermaid(defineConfig({
             items: [
               { text: "API Reference", link: "/api" },
               { text: "OAuth / OIDC Guide", link: "/oauth" },
+              { text: "Teams", link: "/teams" },
+              { text: "Notifications", link: "/notifications" },
               { text: "Webhooks", link: "/webhooks" },
               { text: "App Notifications", link: "/app-notifications" },
               { text: "Cross-App Permissions", link: "/app-permissions" },
@@ -178,6 +180,8 @@ export default withMermaid(defineConfig({
             items: [
               { text: "API 参考", link: "/zh/api" },
               { text: "OAuth / OIDC 指南", link: "/zh/oauth" },
+              { text: "团队", link: "/zh/teams" },
+              { text: "通知", link: "/zh/notifications" },
               { text: "Webhooks", link: "/zh/webhooks" },
               { text: "应用通知", link: "/zh/app-notifications" },
               { text: "跨应用权限", link: "/zh/app-permissions" },

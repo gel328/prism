@@ -98,6 +98,104 @@ code_challenge = BASE64URL(SHA-256(ASCII(code_verifier)))
 | `admin:webhooks:delete` | Delete instance-level webhooks (admin only)            |
 | `offline_access`        | Enables refresh token issuance                         |
 
+#### Team scopes — three tiers
+
+Three scope families touch teams, with very different blast radius. Pick the
+narrowest one that fits.
+
+| Tier                  | Example                  | Scope of access                          | Granted by                                                |
+|-----------------------|--------------------------|------------------------------------------|-----------------------------------------------------------|
+| Aggregate (plural)    | `teams:read`             | Every team the user is a member of       | Normal user consent                                       |
+| Single-team (singular)| `team:read`              | Exactly one team, picked at consent time | Normal user consent + team-id picker (admin+ on that team) |
+| Cross-instance        | `site:team:read`         | Every team on the instance               | Admin-only, requires 2FA + confirmation phrase            |
+
+##### Aggregate `teams:*`
+
+```
+teams:read   teams:write   teams:create   teams:delete
+```
+
+Acts across the user's whole team graph. One consent grants access to all of
+them. Right shape for an app that wants to reflect or sync the user's
+membership list — e.g. an OIDC IdP that needs the
+[`teams` claim](#id-token) for Cloudflare Access policies, or a workspace
+switcher that lists every team the user belongs to.
+
+Endpoints sit under `/api/oauth/me/teams[/...]`.
+
+##### Single-team `team:*`
+
+```
+team:read                       team:member:read
+team:write                      team:member:write
+team:delete                     team:member:profile:read
+```
+
+These are the scope strings the app *requests*. At consent time the user
+picks **one specific team** and Prism rewrites them in place — `team:read`
+becomes `team:<team-id>:read` — and only that bound form lives in the issued
+token. The token can only act on that one team.
+
+Two extra rules at consent time (`worker/routes/oauth.ts:830-859`):
+
+- The user must be `owner`, `co-owner`, or `admin` of the chosen team.
+- `team:delete` additionally requires `owner` or `co-owner`. (Admins can grant
+  reads/writes; only the people who could actually disband the team can grant
+  the deletion.)
+
+`team:member:write` also can't escalate beyond what the granting user could
+do themselves: an admin granting `team:member:write` cannot give the app the
+ability to promote members past `admin` — the cap is checked on every member
+mutation.
+
+Each grant is audited in the `team_scope_grants` table with the team id and
+permission list, separate from the OAuth consent record.
+
+Endpoints sit under `/api/oauth/me/team/:teamId/...`. They check the bound
+token via `resolveTeamToken(c, teamId, "read"|"write"|"member:read"|...)`,
+so passing a token bound to team A while calling the team-B endpoint returns
+`403 insufficient_scope`.
+
+##### Cross-instance `site:team:*`
+
+```
+site:team:read   site:team:write   site:team:delete
+```
+
+Cross-team admin access without a per-team consent. Granting these requires
+the consenting user to be a site admin and goes through the
+[site-scope confirmation flow](#site-scopes-admin-only) — 2FA plus typing the
+exact phrase `grant site access`. Use them only for site-administration tools
+that genuinely need to see or touch every team.
+
+##### Picking a tier — quick rules
+
+- Use **`teams:*`** for "what teams is this user in?" use cases. Use **`team:*`**
+  if your integration scopes to a single team (e.g. a deploy bot for one
+  workspace).
+- Don't request `teams:*` and `team:*` together — you'll get the union, but
+  the consent UX is confusing because users get both a team-id picker and an
+  all-teams notice on the same screen.
+- **`site:team:*`** is for site-administration tooling, not for product
+  integrations. Anything granted there bypasses team owners' consent.
+
+#### Site scopes (admin-only)
+
+The full list of cross-instance scopes; same admin-only / 2FA / confirmation
+phrase gate as `site:team:*`:
+
+| Scope                  | Grants                                          |
+|------------------------|-------------------------------------------------|
+| `site:user:read`       | Read every user account                         |
+| `site:user:write`      | Modify any user                                 |
+| `site:user:delete`     | Delete any user                                 |
+| `site:team:read`       | Read every team                                 |
+| `site:team:write`      | Modify any team                                 |
+| `site:team:delete`     | Disband any team                                |
+| `site:config:read`     | Read site config                                |
+| `site:config:write`    | Modify site config                              |
+| `site:token:revoke`    | Revoke any user's OAuth tokens                  |
+
 ### Step 2 — User consents
 
 Prism shows a consent screen listing your app name and the requested scopes.

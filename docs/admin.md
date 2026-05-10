@@ -17,8 +17,13 @@ Shows four summary stats:
 |------------------|--------------------------------------|
 | Total users      | All registered accounts              |
 | OAuth apps       | All registered applications          |
-| Verified domains | Domains that passed DNS verification |
+| Verified domains | Domains that passed verification     |
 | Active tokens    | Non-expired OAuth access tokens      |
+
+A panel under the stats surfaces operational warnings — most importantly, when
+[`SECRETS_KEY`](configuration.md#secrets_key-setup) is bound but the D1 data
+hasn't been migrated yet. Click through to **Settings → Danger Zone** to run the
+one-time encryption pass.
 
 ## Settings
 
@@ -42,6 +47,17 @@ Settings are grouped into tabs. All changes take effect immediately — no redep
 - **Session TTL (days)** — how long a login session lasts
 - **Access token TTL (minutes)** — OAuth access token lifetime
 - **Refresh token TTL (days)** — OAuth refresh token lifetime
+- **Sudo mode TTL (minutes)** — after a successful 2FA step-up, subsequent
+  challenges from the same `(user, session, app)` skip the TOTP/passkey prompt
+  for this many minutes. `0` disables sudo mode entirely. The action
+  acknowledgement checkbox is still required on every confirmation. See
+  [OAuth → Step-up 2FA](oauth.md#step-up-2fa).
+- **Require captcha for 2FA** — site-wide: every step-up confirmation must
+  solve the active captcha. Apps can also opt in per challenge. No-op when the
+  captcha provider is "None".
+- **IPv6 rate-limit prefix** — how many bits of an IPv6 address are bucketed
+  together for rate limiting (default `/64`). Prevents a single `/64` allocation
+  from getting unlimited login attempts.
 
 ### Bot Protection
 
@@ -83,7 +99,70 @@ The email settings are split into two sub-tabs: **Send** and **Receive**.
 
 ### Domain re-verification
 
-- **Domain reverify interval (days)** — how often Prism re-checks DNS TXT records for verified domains. Default is 30 days.
+- **Domain reverify interval (days)** — how often Prism re-checks the proof
+  for each verified domain (DNS TXT, HTML meta tag, or `.well-known` file —
+  whichever was used at add time). Default is 30 days.
+
+### Public profiles
+
+- **Enable public profiles** — master kill switch. When off, both
+  `/u/<username>` and `/t/<team-id>` always return 404 regardless of any
+  individual user/team opt-in. See [Public Profiles](public-profile.md).
+- **User profile defaults / Team profile defaults** — the per-field defaults
+  applied to users (or teams) who haven't picked a value of their own. Changing
+  a default propagates immediately to inheriting profiles; it never overrides
+  an explicit user/team choice.
+
+### Team join requirements
+
+A site-wide floor that every team is forced to meet, regardless of the
+team-level flag. Owners can opt their team in further, never out below the
+floor.
+
+- **Default require 2FA** — every team requires at least one TOTP authenticator
+  or passkey enrolled.
+- **Default require verified email** — every team requires a verified primary
+  email.
+
+::: warning
+Turning these on retroactively forces every existing member to satisfy the
+factor — anyone not enrolled is locked out of team operations until they do.
+Notify members before flipping.
+:::
+
+### Notifications & Telegram
+
+- **Telegram notification source** — slug of an enabled Telegram OAuth source
+  whose bot token is reused to deliver Telegram notifications. Leave empty to
+  disable Telegram delivery (email and webhook delivery still work). See
+  [Notifications](notifications.md).
+
+### Diagnostics
+
+- **Login-error retention (days)** — how long failed-login rows in
+  `login_errors` are kept before the cron purges them.
+
+### Danger zone
+
+Tools that change the shape of the database. Each runs a single batched
+migration and is idempotent — re-running is safe.
+
+- **Migrate secrets to Secrets Store** — encrypts existing site-config secret
+  values (captcha secret, social-source `client_secret`s, SMTP/IMAP passwords,
+  GitHub README PAT, OAuth app `client_secret`s). Requires the
+  [`SECRETS_KEY`](configuration.md#secrets_key-setup) binding.
+- **Migrate D1 secrets** — replaces bearer-style values (PATs, OAuth tokens
+  and codes, invite tokens, email-verify codes, 2FA codes, individual backup
+  codes) with HMAC-SHA256 keyed hashes. The plaintext is no longer stored;
+  user-supplied candidates are hashed for `WHERE col = ?` lookup.
+- **Migrate teams to team-as-user rows** — backfills synthetic `users` rows
+  (`kind = 'team'`) for every team so `oauth_apps.owner_id` joins uniformly.
+- **Migrate image-proxy mappings** — registers proxy mappings for any avatar /
+  icon URLs that pre-date the closed-mapping image proxy.
+- **Migrate recovery codes** — re-hashes legacy plaintext backup codes.
+- **Site reset** — wipe and reinitialize. The destination admin signs an email
+  acknowledgement first; a typo confirmation in the UI then triggers the wipe.
+  This is destructive and requires a configured email provider.
 
 ## OAuth Sources
 
@@ -171,93 +250,87 @@ The app table lists all OAuth apps across all users, including:
 Verified apps are shown with a checkmark on the consent screen, indicating they
 have been reviewed by an admin.
 
+## Teams
+
+**Admin → Teams** lists every team across the instance with its owner, member
+count, and join-requirement flags.
+
+| Action                | Effect                                                                       |
+|-----------------------|------------------------------------------------------------------------------|
+| Inspect               | View members, owned apps, and verified domains for the team                  |
+| Disband               | Remove the team. Team-owned apps are reassigned to the team's owner so they survive the cascade |
+
+`disable_user_create_team` hides the "New team" button from non-admins. With it
+on, only admins can create teams (existing teams keep working).
+
+## Request Logs
+
+**Admin → Request Logs** is a paginated, filterable table of every Worker
+request — method, path, status, duration, IP, user agent, optional user ID
+(when authenticated), and the matching audit log row if any.
+
+- **Filter** by method, status range, path prefix, or user.
+- **Spectate** opens a tail-style live view that auto-refreshes.
+- **Export CSV** dumps the current filter to CSV.
+- **Details** for a single request shows the full request/response timing and
+  any audit-log linkage.
+- **Purge** drops the entire table (or just the spectate buffer).
+
+Request logs are independent of audit logs: a request hit may or may not result
+in an audit-worthy state change, and audit log entries for cron-driven actions
+have no associated request row.
+
+## Login Errors
+
+**Admin → Login Errors** lists failed authentication attempts (wrong password,
+wrong TOTP, expired challenge, etc.) with their error code, identifier, IP, and
+metadata. The `login_error_retention_days` config controls how long rows are
+kept before the cron sweeps them.
+
 ## Audit Log
 
 The audit log is a paginated, append-only list of significant events:
 
-| Event                 | Triggered by               |
-|-----------------------|----------------------------|
-| `user.register`       | Successful registration    |
-| `user.login`          | Successful login           |
-| `user.login.failed`   | Failed login attempt       |
-| `user.logout`         | Logout                     |
-| `user.delete`         | Account deletion           |
-| `totp.enabled`        | TOTP setup completed       |
-| `totp.disabled`       | TOTP disabled              |
-| `passkey.registered`  | New passkey added          |
-| `passkey.deleted`     | Passkey removed            |
-| `oauth.authorize`     | User approved an OAuth app |
-| `oauth.token`         | Token issued               |
-| `admin.config.update` | Site config changed        |
-| `admin.user.update`   | Admin changed a user       |
-| `admin.user.delete`   | Admin deleted a user       |
+| Event                       | Triggered by                                              |
+|-----------------------------|-----------------------------------------------------------|
+| `user.register`             | Successful registration                                   |
+| `user.login`                | Successful login                                          |
+| `user.login.failed`         | Failed login attempt                                      |
+| `user.logout`               | Logout                                                    |
+| `user.delete`               | Account deletion                                          |
+| `user.password_changed`     | Password changed via Profile → Security                   |
+| `totp.enabled`              | TOTP authenticator setup completed                        |
+| `totp.disabled`             | TOTP authenticator removed                                |
+| `passkey.registered`        | New passkey added                                         |
+| `passkey.deleted`           | Passkey removed                                           |
+| `gpg.key_added`             | GPG public key registered                                 |
+| `gpg.key_deleted`           | GPG public key removed                                    |
+| `gpg.login`                 | Signed-in via GPG challenge                               |
+| `oauth.authorize`           | User approved an OAuth app                                |
+| `oauth.token`               | Token issued                                              |
+| `oauth.consent_revoked`     | User revoked an app's access                              |
+| `oauth.2fa.verify`          | Step-up 2FA confirmed                                     |
+| `oauth.2fa.sudo_revoked`    | User revoked a sudo grace window                          |
+| `team.created`              | Team created                                              |
+| `team.member_added`         | Member joined a team (invite or admin add)                |
+| `team.member_removed`       | Member left or was removed                                |
+| `team.transferred`          | Team ownership transferred                                |
+| `domain.added` / `verified` / `deleted` | Domain lifecycle                              |
+| `connection.added` / `removed` | Social connection lifecycle                            |
+| `webhook.create` / `update` / `delete` | Webhook lifecycle                              |
+| `oauth_source.create` / `update` / `delete` | OAuth source lifecycle                    |
+| `invite.create` / `revoke`  | Site invite lifecycle                                     |
+| `admin.config.update`       | Site config changed                                       |
+| `admin.user.update`         | Admin changed a user                                      |
+| `admin.user.delete`         | Admin deleted a user                                      |
+| `admin.app.update`          | Admin verified or deactivated an app                      |
+| `admin.team.delete`         | Admin disbanded a team                                    |
+| `admin.secrets.migrate`     | Site-config or D1 secrets migration ran                   |
+| `admin.reset.*`             | Site-reset request / cancel / confirm                     |
 
-Each entry records the acting `user_id`, the `action`, optional `resource_type` /
-`resource_id`, a `metadata` JSON object, and the `ip_address`.
+Each entry records the acting `user_id` (or `null` for system actions), the
+`action`, optional `resource_type` / `resource_id`, a `metadata` JSON object,
+and the `ip_address`.
 
-## OAuth Scope Reference
-
-All scopes that Prism-registered OAuth apps and personal access tokens can request:
-
-### Standard scopes
-
-| Scope            | Description                                            |
-|------------------|--------------------------------------------------------|
-| `openid`         | OIDC identity — enables `id_token` and the `sub` claim |
-| `profile`        | Read display name, username, avatar                    |
-| `profile:write`  | Update display name and avatar                         |
-| `email`          | Read email address and verification status             |
-| `offline_access` | Issue a refresh token                                  |
-
-### Apps
-
-| Scope        | Description                                             |
-|--------------|---------------------------------------------------------|
-| `apps:read`  | List the token owner's OAuth apps                       |
-| `apps:write` | Create, update, and delete the token owner's OAuth apps |
-
-### Teams
-
-| Scope          | Description                                  |
-|----------------|----------------------------------------------|
-| `teams:read`   | List team memberships and roles              |
-| `teams:create` | Create a new team                            |
-| `teams:write`  | Update team settings; add and remove members |
-| `teams:delete` | Delete a team (owner only)                   |
-
-### Domains
-
-| Scope           | Description                                           |
-|-----------------|-------------------------------------------------------|
-| `domains:read`  | List verified domains                                 |
-| `domains:write` | Add domains, trigger DNS verification, remove domains |
-
-### GPG keys
-
-| Scope       | Description                                       |
-|-------------|---------------------------------------------------|
-| `gpg:read`  | List the token owner's registered GPG public keys |
-| `gpg:write` | Add and remove the token owner's GPG public keys  |
-
-### Social connections
-
-| Scope          | Description                                              |
-|----------------|----------------------------------------------------------|
-| `social:read`  | List the token owner's linked social provider accounts   |
-| `social:write` | Disconnect social provider accounts from the token owner |
-
-### Admin scopes (require `role = admin` on the token owner)
-
-| Scope                   | Description                                                  |
-|-------------------------|--------------------------------------------------------------|
-| `admin:users:read`      | List and view all user accounts                              |
-| `admin:users:write`     | Update user role, status, display name, and avatar           |
-| `admin:users:delete`    | Permanently delete a user account                            |
-| `admin:config:read`     | Read site-wide configuration (credentials are redacted)      |
-| `admin:config:write`    | Update site settings (registration policy, appearance, etc.) |
-| `admin:invites:read`    | List all site invite links                                   |
-| `admin:invites:create`  | Generate new site invite links                               |
-| `admin:invites:delete`  | Revoke site invite links                                     |
-| `admin:webhooks:read`   | List webhooks and view delivery history                      |
-| `admin:webhooks:write`  | Create, update, and send test pings to webhooks              |
-| `admin:webhooks:delete` | Permanently delete webhooks                                  |
+For the full OAuth scope reference, see
+[OAuth → Scopes](oauth.md#scopes) and [Teams → OAuth scopes](teams.md#oauth-scopes).

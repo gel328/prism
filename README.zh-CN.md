@@ -6,15 +6,20 @@
 
 ## 功能特性
 
-- **OAuth 2.0 授权服务器** — 授权码 + PKCE、OpenID Connect、令牌内省与吊销
-- **社会化登录** — GitHub、Google、Microsoft、Discord
-- **多因素认证** — TOTP（RFC 6238）、通行密钥（WebAuthn）
-- **应用注册表** — 用户自助注册和管理 OAuth 应用
-- **域名验证** — 基于 DNS TXT 记录，支持自动周期性重新验证
-- **机器人防护** — Cloudflare Turnstile、hCaptcha、reCAPTCHA v3 或工作量证明（WASM）
-- **管理面板** — 用户管理、应用审核、审计日志、完整站点配置
-- **高度可定制** — 站点名称、图标、主题色、自定义 CSS、邮件服务商
-- **边缘原生** — Cloudflare Workers + D1 + KV + R2，无服务器
+- **OAuth 2.0 + OpenID Connect** — 授权码 + PKCE、RS256 ID Token、令牌内省 / 撤销、UserInfo、Discovery、JWKS
+- **步骤提升 2FA** — 服务端发起、行动钉死的二次确认；为高风险操作提供 sudo 宽限期
+- **社交与联邦登录** — GitHub、Google、Microsoft、Discord、Telegram，Generic OIDC、Generic OAuth 2 — 同一类型可多源
+- **多因素认证** — 单账号多 TOTP 认证器、Passkey（WebAuthn）、GPG 公钥（含 ML-DSA）、备用码
+- **团队** — OAuth 应用与域名的共享所有权；角色、邀请、所有权转移、站点级加入门槛
+- **应用注册** — 用户自助创建 OAuth 应用；管理员可验证；支持跨应用 scope
+- **域名验证** — 每个域名可在 DNS TXT、HTML meta、`.well-known` 中任选一种，自动重新核验
+- **机器人防护** — Cloudflare Turnstile、hCaptcha、reCAPTCHA v3 或工作量证明（Rust→WASM）；同时可门禁 2FA
+- **Webhook 与通知** — 用户 + 管理员 webhook、应用事件流（webhook / SSE / WebSocket）、邮件 + Telegram 通知，规则引擎做精细路由
+- **公开资料** — 可选启用 `/u/<username>` 与 `/t/<team-id>`，按字段控制可见性，支持 GPG 公钥与 GitHub README 同步
+- **数据库加密** — AES-GCM 信封 + keyed HMAC，根植于 Cloudflare Secrets Store 绑定
+- **管理面板** — 用户/应用/团队审核、审计日志、请求日志、登录错误、完整站点配置
+- **高度可定制** — 站点名称、图标、主题色、自定义 CSS、邮件 / 验证码 provider
+- **边缘原生 + SSR** — Cloudflare Workers + D1 + KV + R2，React 19 服务端渲染，零服务器
 
 ## 技术栈
 
@@ -81,11 +86,16 @@ pnpm deploy   # 类型检查 + 构建前端 + wrangler 部署
 ## 文档
 
 - [快速开始](https://prism.wss.moe/zh/getting-started) — 完整配置流程
-- [配置说明](https://prism.wss.moe/zh/configuration) — 所有站点配置项
+- [配置说明](https://prism.wss.moe/zh/configuration) — 所有站点配置项 + Wrangler 绑定
+- [架构说明](https://prism.wss.moe/zh/architecture) — 系统设计、数据模型、密钥存储策略
+- [管理员指南](https://prism.wss.moe/zh/admin) — 用户、应用、团队与配置管理
 - [API 参考](https://prism.wss.moe/zh/api) — REST API 文档
 - [OAuth / OIDC 指南](https://prism.wss.moe/zh/oauth) — 将 Prism 作为身份提供商集成
-- [架构说明](https://prism.wss.moe/zh/architecture) — 系统设计与数据模型
-- [管理员指南](https://prism.wss.moe/zh/admin) — 用户、应用与配置管理
+- [团队](https://prism.wss.moe/zh/teams) — 共享应用与域名的所有权
+- [通知](https://prism.wss.moe/zh/notifications) — 邮件与 Telegram 通知规则
+- [Webhook](https://prism.wss.moe/zh/webhooks) 与 [应用通知](https://prism.wss.moe/zh/app-notifications)
+- [跨应用权限](https://prism.wss.moe/zh/app-permissions) — 把 scope 暴露给其他应用
+- [个人访问令牌](https://prism.wss.moe/zh/personal-access-tokens) 与 [公开资料](https://prism.wss.moe/zh/public-profile)
 
 ## 项目结构
 
