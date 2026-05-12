@@ -535,7 +535,11 @@ export function TeamDetail() {
               </TableHeader>
               <TableBody>
                 {(invitesData?.invites ?? []).map((inv: TeamInvite) => {
+                  const isHashed = inv.token.startsWith("__HASH_v1__");
                   const inviteUrl = `${window.location.origin}/teams/join/${inv.token}`;
+                  const hashPreview = isHashed
+                    ? `${inv.token.slice(11, 19)}…`
+                    : null;
                   return (
                     <TableRow key={inv.token}>
                       <TableCell>
@@ -552,6 +556,31 @@ export function TeamDetail() {
                             />
                             <Text size={300}>{inv.email}</Text>
                           </div>
+                        ) : isHashed ? (
+                          <Tooltip content={inv.token} relationship="label">
+                            <div
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 6,
+                              }}
+                            >
+                              <LinkRegular
+                                style={{
+                                  color: tokens.colorNeutralForeground3,
+                                }}
+                              />
+                              <Text
+                                size={200}
+                                style={{
+                                  color: tokens.colorNeutralForeground3,
+                                  fontFamily: "monospace",
+                                }}
+                              >
+                                {hashPreview}
+                              </Text>
+                            </div>
+                          </Tooltip>
                         ) : (
                           <div
                             style={{
@@ -600,7 +629,7 @@ export function TeamDetail() {
                       </TableCell>
                       <TableCell>
                         <div style={{ display: "flex", gap: 4 }}>
-                          {!inv.email && (
+                          {!inv.email && !isHashed && (
                             <Tooltip
                               content={
                                 copiedToken === inv.token

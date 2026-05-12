@@ -785,13 +785,13 @@ app.get("/:id/invites", async (c) => {
 
   const now = Math.floor(Date.now() / 1000);
   const { results } = await c.env.DB.prepare(
-    `SELECT i.*, u.username as creator_username
+    `SELECT i.*, u.username AS created_by_username
      FROM team_invites i JOIN users u ON u.id = i.created_by
      WHERE i.team_id = ? AND i.expires_at > ?
      ORDER BY i.created_at DESC`,
   )
     .bind(id, now)
-    .all<InviteRow & { creator_username: string }>();
+    .all<InviteRow & { created_by_username: string }>();
 
   return c.json({ invites: results });
 });
@@ -810,6 +810,7 @@ app.post("/:id/invites", async (c) => {
     role?: string;
     max_uses?: number;
     expires_in_hours?: number;
+    ttl_hours?: number;
     email?: string;
   }>();
 
@@ -818,7 +819,8 @@ app.post("/:id/invites", async (c) => {
   if (body.role === "co-owner" && hasRole(member.role, "owner"))
     role = "co-owner";
   const maxUses = body.max_uses ?? 0;
-  const ttlHours = Math.min(body.expires_in_hours ?? 72, 720); // max 30 days
+  const requestedTtl = body.ttl_hours ?? body.expires_in_hours ?? 72;
+  const ttlHours = Math.min(Math.max(requestedTtl, 1), 720); // max 30 days
   const now = Math.floor(Date.now() / 1000);
   const expiresAt = now + ttlHours * 3600;
   const token = randomBase64url(24);
@@ -889,7 +891,22 @@ app.post("/:id/invites", async (c) => {
     }
   }
 
-  return c.json({ token, link: inviteLink, role, expires_at: expiresAt }, 201);
+  return c.json(
+    {
+      invite: {
+        token,
+        team_id: id,
+        role,
+        email: body.email ?? null,
+        max_uses: maxUses,
+        uses: 0,
+        expires_at: expiresAt,
+        created_at: now,
+        created_by_username: user.username,
+      },
+    },
+    201,
+  );
 });
 
 // Revoke an invite
