@@ -64,13 +64,17 @@ export function TeamDomainDetailDialog({
               </Badge>
               {domain?.verified_at && (
                 <Text size={200}>
-                  <strong>{t("domains.verifiedLabel")}:</strong>{" "}
+                  <Text size={200} weight="semibold">
+                    {t("domains.verifiedLabel")}:
+                  </Text>{" "}
                   {new Date(domain.verified_at * 1000).toLocaleDateString()}
                 </Text>
               )}
               {domain?.verified && domain.verification_method && (
                 <Text size={200}>
-                  <strong>{t("domains.methodLabel")}:</strong>{" "}
+                  <Text size={200} weight="semibold">
+                    {t("domains.methodLabel")}:
+                  </Text>{" "}
                   {t(`domains.method.${domain.verification_method}`)}
                 </Text>
               )}
@@ -103,12 +107,20 @@ export function TeamDomainDetailDialog({
                         {t("domains.addDnsTxtRecord")}
                       </Text>
                       <Text size={200}>
-                        <strong>{t("domains.dnsName")}:</strong>{" "}
-                        <code>_prism-verify.{domain.domain}</code>
+                        <Text size={200} weight="semibold">
+                          {t("domains.dnsName")}:
+                        </Text>{" "}
+                        <Text size={200} font="monospace">
+                          _prism-verify.{domain.domain}
+                        </Text>
                       </Text>
                       <Text size={200}>
-                        <strong>{t("domains.dnsValue")}:</strong>{" "}
-                        <code>prism-verify={domain.verification_token}</code>
+                        <Text size={200} weight="semibold">
+                          {t("domains.dnsValue")}:
+                        </Text>{" "}
+                        <Text size={200} font="monospace">
+                          prism-verify={domain.verification_token}
+                        </Text>
                       </Text>
                     </>
                   )}
@@ -119,15 +131,21 @@ export function TeamDomainDetailDialog({
                         {t("domains.addHttpFile")}
                       </Text>
                       <Text size={200}>
-                        <strong>{t("domains.httpUrl")}:</strong>{" "}
-                        <code>
+                        <Text size={200} weight="semibold">
+                          {t("domains.httpUrl")}:
+                        </Text>{" "}
+                        <Text size={200} font="monospace">
                           https://{domain.domain}/.well-known/prism-verify-
                           {domain.verification_token}.txt
-                        </code>
+                        </Text>
                       </Text>
                       <Text size={200}>
-                        <strong>{t("domains.httpContent")}:</strong>{" "}
-                        <code>prism-verify={domain.verification_token}</code>
+                        <Text size={200} weight="semibold">
+                          {t("domains.httpContent")}:
+                        </Text>{" "}
+                        <Text size={200} font="monospace">
+                          prism-verify={domain.verification_token}
+                        </Text>
                       </Text>
                     </>
                   )}
@@ -140,9 +158,10 @@ export function TeamDomainDetailDialog({
                       <Text size={200}>
                         {t("domains.htmlMetaHint", { domain: domain.domain })}
                       </Text>
-                      <Text size={200}>
-                        <code>{`<meta name="prism-verify" content="${domain.verification_token}">`}</code>
-                      </Text>
+                      <Text
+                        size={200}
+                        font="monospace"
+                      >{`<meta name="prism-verify" content="${domain.verification_token}">`}</Text>
                     </>
                   )}
                 </div>

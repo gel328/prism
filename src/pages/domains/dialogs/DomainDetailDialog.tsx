@@ -65,19 +65,25 @@ export function DomainDetailDialog({
 
               {domain?.verified_at && (
                 <Text size={200}>
-                  <strong>{t("domains.verifiedLabel")}:</strong>{" "}
+                  <Text size={200} weight="semibold">
+                    {t("domains.verifiedLabel")}:
+                  </Text>{" "}
                   {new Date(domain.verified_at * 1000).toLocaleDateString()}
                 </Text>
               )}
               {domain?.verified && domain.verification_method && (
                 <Text size={200}>
-                  <strong>{t("domains.methodLabel")}:</strong>{" "}
+                  <Text size={200} weight="semibold">
+                    {t("domains.methodLabel")}:
+                  </Text>{" "}
                   {t(`domains.method.${domain.verification_method}`)}
                 </Text>
               )}
               {domain?.next_reverify_at && (
                 <Text size={200}>
-                  <strong>{t("domains.nextReverifyLabel")}:</strong>{" "}
+                  <Text size={200} weight="semibold">
+                    {t("domains.nextReverifyLabel")}:
+                  </Text>{" "}
                   {new Date(
                     domain.next_reverify_at * 1000,
                   ).toLocaleDateString()}
@@ -165,15 +171,26 @@ export function VerificationInstructions({
             {t("domains.addDnsTxtRecord")}
           </Text>
           <Text size={200}>
-            <strong>{t("domains.dnsType")}:</strong> TXT
+            <Text size={200} weight="semibold">
+              {t("domains.dnsType")}:
+            </Text>{" "}
+            TXT
           </Text>
           <Text size={200}>
-            <strong>{t("domains.dnsName")}:</strong>{" "}
-            <code>_prism-verify.{domain.domain}</code>
+            <Text size={200} weight="semibold">
+              {t("domains.dnsName")}:
+            </Text>{" "}
+            <Text size={200} font="monospace">
+              _prism-verify.{domain.domain}
+            </Text>
           </Text>
           <Text size={200}>
-            <strong>{t("domains.dnsValue")}:</strong>{" "}
-            <code>prism-verify={token}</code>
+            <Text size={200} weight="semibold">
+              {t("domains.dnsValue")}:
+            </Text>{" "}
+            <Text size={200} font="monospace">
+              prism-verify={token}
+            </Text>
           </Text>
         </>
       )}
@@ -184,14 +201,20 @@ export function VerificationInstructions({
             {t("domains.addHttpFile")}
           </Text>
           <Text size={200}>
-            <strong>{t("domains.httpUrl")}:</strong>{" "}
-            <code>
+            <Text size={200} weight="semibold">
+              {t("domains.httpUrl")}:
+            </Text>{" "}
+            <Text size={200} font="monospace">
               https://{domain.domain}/.well-known/prism-verify-{token}.txt
-            </code>
+            </Text>
           </Text>
           <Text size={200}>
-            <strong>{t("domains.httpContent")}:</strong>{" "}
-            <code>prism-verify={token}</code>
+            <Text size={200} weight="semibold">
+              {t("domains.httpContent")}:
+            </Text>{" "}
+            <Text size={200} font="monospace">
+              prism-verify={token}
+            </Text>
           </Text>
         </>
       )}
@@ -204,9 +227,10 @@ export function VerificationInstructions({
           <Text size={200}>
             {t("domains.htmlMetaHint", { domain: domain.domain })}
           </Text>
-          <Text size={200}>
-            <code>{`<meta name="prism-verify" content="${token}">`}</code>
-          </Text>
+          <Text
+            size={200}
+            font="monospace"
+          >{`<meta name="prism-verify" content="${token}">`}</Text>
         </>
       )}
     </div>

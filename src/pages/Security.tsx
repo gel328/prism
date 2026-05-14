@@ -519,7 +519,9 @@ export function Security() {
                 <DialogTitle>{selectedTotp?.name}</DialogTitle>
                 <DialogContent>
                   <Text size={200}>
-                    <strong>{t("security.added")}:</strong>{" "}
+                    <Text size={200} weight="semibold">
+                      {t("security.added")}:
+                    </Text>{" "}
                     {selectedTotp
                       ? new Date(
                           selectedTotp.created_at * 1000,
@@ -865,11 +867,15 @@ export function Security() {
                     style={{ display: "flex", flexDirection: "column", gap: 8 }}
                   >
                     <Text size={200}>
-                      <strong>{t("security.typeHeader")}:</strong>{" "}
+                      <Text size={200} weight="semibold">
+                        {t("security.typeHeader")}:
+                      </Text>{" "}
                       {selectedPasskey?.device_type}
                     </Text>
                     <Text size={200}>
-                      <strong>{t("security.added")}:</strong>{" "}
+                      <Text size={200} weight="semibold">
+                        {t("security.added")}:
+                      </Text>{" "}
                       {selectedPasskey
                         ? new Date(
                             selectedPasskey.created_at * 1000,
@@ -877,7 +883,9 @@ export function Security() {
                         : ""}
                     </Text>
                     <Text size={200}>
-                      <strong>{t("security.lastUsedHeader")}:</strong>{" "}
+                      <Text size={200} weight="semibold">
+                        {t("security.lastUsedHeader")}:
+                      </Text>{" "}
                       {selectedPasskey?.last_used_at
                         ? new Date(
                             selectedPasskey.last_used_at * 1000,
@@ -971,9 +979,9 @@ export function Security() {
                 >
                   <TableCell>{k.name}</TableCell>
                   <TableCell className={styles.hiddenOnMobile}>
-                    <span style={{ fontFamily: "monospace", fontSize: 12 }}>
+                    <Text font="monospace" size={200}>
                       {k.fingerprint.slice(-16).toUpperCase()}
-                    </span>
+                    </Text>
                   </TableCell>
                   <TableCell className={styles.hiddenOnMobile}>
                     {new Date(k.created_at * 1000).toLocaleDateString()}
@@ -1013,13 +1021,17 @@ export function Security() {
                   style={{ display: "flex", flexDirection: "column", gap: 8 }}
                 >
                   <Text size={200}>
-                    <strong>{t("security.gpgFingerprintHeader")}:</strong>{" "}
-                    <span style={{ fontFamily: "monospace" }}>
+                    <Text size={200} weight="semibold">
+                      {t("security.gpgFingerprintHeader")}:
+                    </Text>{" "}
+                    <Text size={200} font="monospace">
                       {selectedGpg?.fingerprint.toUpperCase()}
-                    </span>
+                    </Text>
                   </Text>
                   <Text size={200}>
-                    <strong>{t("security.added")}:</strong>{" "}
+                    <Text size={200} weight="semibold">
+                      {t("security.added")}:
+                    </Text>{" "}
                     {selectedGpg
                       ? new Date(
                           selectedGpg.created_at * 1000,
@@ -1027,7 +1039,9 @@ export function Security() {
                       : ""}
                   </Text>
                   <Text size={200}>
-                    <strong>{t("security.lastUsedHeader")}:</strong>{" "}
+                    <Text size={200} weight="semibold">
+                      {t("security.lastUsedHeader")}:
+                    </Text>{" "}
                     {selectedGpg?.last_used_at
                       ? new Date(
                           selectedGpg.last_used_at * 1000,
@@ -1187,15 +1201,21 @@ export function Security() {
                     style={{ display: "flex", flexDirection: "column", gap: 8 }}
                   >
                     <Text size={200}>
-                      <strong>{t("security.deviceLabel")}:</strong>{" "}
+                      <Text size={200} weight="semibold">
+                        {t("security.deviceLabel")}:
+                      </Text>{" "}
                       {selectedSession?.user_agent ?? t("security.unknown")}
                     </Text>
                     <Text size={200}>
-                      <strong>{t("security.ipLabel")}:</strong>{" "}
+                      <Text size={200} weight="semibold">
+                        {t("security.ipLabel")}:
+                      </Text>{" "}
                       {selectedSession?.ip_address ?? "—"}
                     </Text>
                     <Text size={200}>
-                      <strong>{t("security.createdLabel")}:</strong>{" "}
+                      <Text size={200} weight="semibold">
+                        {t("security.createdLabel")}:
+                      </Text>{" "}
                       {selectedSession
                         ? new Date(
                             selectedSession.created_at * 1000,
@@ -1203,7 +1223,9 @@ export function Security() {
                         : ""}
                     </Text>
                     <Text size={200}>
-                      <strong>{t("security.expiresLabel")}:</strong>{" "}
+                      <Text size={200} weight="semibold">
+                        {t("security.expiresLabel")}:
+                      </Text>{" "}
                       {selectedSession
                         ? new Date(
                             selectedSession.expires_at * 1000,

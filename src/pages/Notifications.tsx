@@ -439,9 +439,9 @@ function AccountLevelRow({
   return (
     <div className={styles.channelRow}>
       <Tooltip content={label} relationship="label">
-        <span className={styles.channelLabel}>{icon}</span>
+        <Text className={styles.channelLabel}>{icon}</Text>
       </Tooltip>
-      <span className={styles.accountLabel}>{label}</span>
+      <Text className={styles.accountLabel}>{label}</Text>
       <div className={styles.levelPicker}>
         <Button
           className={styles.levelBtn}
@@ -586,7 +586,7 @@ function BulkLevelControls({
             content={t("notifications.emailChannel")}
             relationship="label"
           >
-            <span className={styles.channelLabel}>✉</span>
+            <Text className={styles.channelLabel}>✉</Text>
           </Tooltip>
           <div className={styles.levelPicker}>
             {BULK_LEVELS.map(([level, key]) => (
@@ -610,7 +610,7 @@ function BulkLevelControls({
       {showTg && connections.length > 0 && (
         <div className={styles.channelRow}>
           <Tooltip content={t("notifications.tgChannel")} relationship="label">
-            <span className={styles.channelLabel}>✈</span>
+            <Text className={styles.channelLabel}>✈</Text>
           </Tooltip>
           <div className={styles.levelPicker}>
             {BULK_LEVELS.map(([level, key]) => (
@@ -711,9 +711,9 @@ function RulesetSection(props: {
   return (
     <div className={styles.rulesetBar}>
       <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-        <span style={{ fontWeight: 600 }}>
+        <Text weight="semibold" size={200}>
           {t("notifications.rulesetsLabel")}
-        </span>
+        </Text>
         {" — "}
         {t("notifications.rulesetsHint")}
       </Text>
@@ -822,7 +822,7 @@ function RulesetSection(props: {
             <Button size="small" onClick={props.onAddRule}>
               {t("notifications.rulesetsAddRule")}
             </Button>
-            <span style={{ flex: 1 }} />
+            <Text style={{ flex: 1 }} />
             {draftDirty && (
               <Text
                 size={200}
@@ -1183,9 +1183,7 @@ function RuleChannelRow(props: {
     props.onChange({ ...channel, level });
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-      <span style={{ fontSize: 13 }}>
-        {channel.kind === "email" ? "✉" : "✈"}
-      </span>
+      <Text size={200}>{channel.kind === "email" ? "✉" : "✈"}</Text>
       <Dropdown
         size="small"
         value={
@@ -1748,9 +1746,9 @@ export function Notifications() {
 
       {(emails.length > 0 || showTg) && (
         <div className={styles.selectAllRow}>
-          <span className={styles.selectAllLabel}>
+          <Text className={styles.selectAllLabel}>
             {t("notifications.selectAll")}
-          </span>
+          </Text>
           <BulkLevelControls
             eventKeys={ALL_EVENT_KEYS}
             rules={rules}

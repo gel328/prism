@@ -79,9 +79,9 @@ export function AdminAudit() {
                 </TableCell>
                 <TableCell style={{ fontSize: 12 }}>
                   {log.resource_type && (
-                    <span style={{ color: tokens.colorNeutralForeground3 }}>
+                    <Text style={{ color: tokens.colorNeutralForeground3 }}>
                       {log.resource_type}/
-                    </span>
+                    </Text>
                   )}
                   {log.resource_id?.slice(0, 12) ?? "—"}
                 </TableCell>

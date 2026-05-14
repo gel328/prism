@@ -248,7 +248,7 @@ export function AdminInvites() {
               {t("admin.inviteLink")}
             </Text>
             <div className={styles.copyRow}>
-              <span className={styles.urlBox}>{newInviteUrl}</span>
+              <Text className={styles.urlBox}>{newInviteUrl}</Text>
               <Button
                 icon={<CopyRegular />}
                 appearance="subtle"

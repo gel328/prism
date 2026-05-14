@@ -68,7 +68,7 @@ const useStyles = makeStyles({
     padding: "16px",
     borderRadius: "8px",
     border: `1.5px solid ${tokens.colorBrandStroke1}`,
-    background: tokens.colorBrandBackground2,
+    background: tokens.colorNeutralBackground3,
     display: "flex",
     flexDirection: "column",
     gap: "8px",

@@ -191,15 +191,26 @@ export function Domains() {
             }}
           >
             <Text size={200}>
-              <strong>{t("domains.dnsType")}:</strong> TXT
+              <Text size={200} weight="semibold">
+                {t("domains.dnsType")}:
+              </Text>{" "}
+              TXT
             </Text>
             <Text size={200}>
-              <strong>{t("domains.dnsName")}:</strong>{" "}
-              <code>{addedInfo.txt_record}</code>
+              <Text size={200} weight="semibold">
+                {t("domains.dnsName")}:
+              </Text>{" "}
+              <Text size={200} font="monospace">
+                {addedInfo.txt_record}
+              </Text>
             </Text>
             <Text size={200}>
-              <strong>{t("domains.dnsValue")}:</strong>{" "}
-              <code>{addedInfo.txt_value}</code>
+              <Text size={200} weight="semibold">
+                {t("domains.dnsValue")}:
+              </Text>{" "}
+              <Text size={200} font="monospace">
+                {addedInfo.txt_value}
+              </Text>
             </Text>
           </div>
           <Button

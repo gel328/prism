@@ -1014,7 +1014,7 @@ export function Authorize() {
                             ) : (
                               <Avatar name={team.name} size={20} />
                             )}
-                            <span>{team.name}</span>
+                            <Text>{team.name}</Text>
                             <Text
                               size={100}
                               style={{

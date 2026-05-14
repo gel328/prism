@@ -174,10 +174,17 @@ export function TeamJoin() {
         >
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             <Text weight="semibold">{t("teams.cannotJoinRequirements")}</Text>
-            <ul style={{ margin: 0, paddingLeft: 20 }}>
+            <div
+              style={{
+                paddingLeft: 20,
+                display: "flex",
+                flexDirection: "column",
+                gap: 4,
+              }}
+            >
               {unmet_requirements.includes("2fa") && (
-                <li>
-                  <Text>{t("teams.requirement2FAUnmet")}</Text>{" "}
+                <Text>
+                  • {t("teams.requirement2FAUnmet")}{" "}
                   <Button
                     appearance="transparent"
                     size="small"
@@ -185,11 +192,11 @@ export function TeamJoin() {
                   >
                     {t("teams.goToSecurity")}
                   </Button>
-                </li>
+                </Text>
               )}
               {unmet_requirements.includes("verified_email") && (
-                <li>
-                  <Text>{t("teams.requirementVerifiedEmailUnmet")}</Text>{" "}
+                <Text>
+                  • {t("teams.requirementVerifiedEmailUnmet")}{" "}
                   <Button
                     appearance="transparent"
                     size="small"
@@ -197,9 +204,9 @@ export function TeamJoin() {
                   >
                     {t("teams.goToProfile")}
                   </Button>
-                </li>
+                </Text>
               )}
-            </ul>
+            </div>
           </div>
         </MessageBar>
       )}

@@ -232,7 +232,7 @@ export function AdminImageProxy() {
                     }}
                   >
                     <Tooltip content={m.id} relationship="description">
-                      <span>{m.id.slice(0, 12)}…</span>
+                      <Text>{m.id.slice(0, 12)}…</Text>
                     </Tooltip>
                   </TableCell>
                   <TableCell
@@ -260,11 +260,11 @@ export function AdminImageProxy() {
                         content={m.created_by}
                         relationship="description"
                       >
-                        <span style={{ fontFamily: "monospace" }}>
+                        <Text font="monospace">
                           {m.created_by_username ??
                             m.created_by_display_name ??
                             m.created_by.slice(0, 8) + "…"}
-                        </span>
+                        </Text>
                       </Tooltip>
                     ) : (
                       <Text

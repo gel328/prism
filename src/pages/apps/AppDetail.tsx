@@ -364,13 +364,24 @@ function AllowedScopesImporter({
                       })}
                     </Text>
                     {result.invalid.length > 0 && (
-                      <ul style={{ margin: "4px 0 0 18px", padding: 0 }}>
+                      <div
+                        style={{
+                          marginTop: 4,
+                          paddingLeft: 18,
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: 2,
+                        }}
+                      >
                         {result.invalid.map((s, i) => (
-                          <li key={i}>
-                            <code>{s}</code>
-                          </li>
+                          <Text key={i} size={200}>
+                            •{" "}
+                            <Text size={200} font="monospace">
+                              {s}
+                            </Text>
+                          </Text>
                         ))}
-                      </ul>
+                      </div>
                     )}
                   </div>
                 </MessageBar>
@@ -849,13 +860,25 @@ function ScopeDefinitionsPanel({
                           })}
                     </Text>
                     {importResult.failures.length > 0 && (
-                      <ul style={{ margin: "4px 0 0 18px", padding: 0 }}>
+                      <div
+                        style={{
+                          marginTop: 4,
+                          paddingLeft: 18,
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: 2,
+                        }}
+                      >
                         {importResult.failures.map((f) => (
-                          <li key={f.scope}>
-                            <code>{f.scope}</code>: {f.error}
-                          </li>
+                          <Text key={f.scope} size={200}>
+                            •{" "}
+                            <Text size={200} font="monospace">
+                              {f.scope}
+                            </Text>
+                            : {f.error}
+                          </Text>
                         ))}
-                      </ul>
+                      </div>
                     )}
                   </div>
                 </MessageBar>

@@ -208,9 +208,7 @@ function DebugControls() {
           {data?.log_except_pattern ? (
             <>
               <Badge appearance="filled" color="subtle">
-                <span style={{ fontFamily: "monospace" }}>
-                  {data.log_except_pattern}
-                </span>
+                <Text font="monospace">{data.log_except_pattern}</Text>
               </Badge>
               <Button
                 size="small"
@@ -266,7 +264,7 @@ function DebugControls() {
           {data?.log_ip ? (
             <>
               <Badge appearance="filled" color="brand">
-                <span style={{ fontFamily: "monospace" }}>{data.log_ip}</span>
+                <Text font="monospace">{data.log_ip}</Text>
               </Badge>
               <Button
                 size="small"
@@ -323,9 +321,7 @@ function DebugControls() {
             <>
               <Badge appearance="filled" color="warning">
                 {t("admin.logs.spectating")}:{" "}
-                <span style={{ fontFamily: "monospace" }}>
-                  {data.spectate_user_id}
-                </span>
+                <Text font="monospace">{data.spectate_user_id}</Text>
               </Badge>
               <Button
                 size="small"
@@ -382,9 +378,7 @@ function DebugControls() {
             <>
               <Badge appearance="filled" color="warning">
                 {t("admin.logs.spectating")}:{" "}
-                <span style={{ fontFamily: "monospace" }}>
-                  {data.spectate_path}
-                </span>
+                <Text font="monospace">{data.spectate_path}</Text>
               </Badge>
               <Button
                 size="small"
@@ -704,7 +698,7 @@ export function AdminLogs() {
                     }}
                   >
                     <Tooltip content={log.path} relationship="description">
-                      <span>{log.path}</span>
+                      <Text>{log.path}</Text>
                     </Tooltip>
                   </TableCell>
                   <TableCell>

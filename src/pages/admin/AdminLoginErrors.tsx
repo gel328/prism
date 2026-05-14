@@ -255,7 +255,7 @@ export function AdminLoginErrors() {
                         content={err.user_agent}
                         relationship="description"
                       >
-                        <span>{err.user_agent}</span>
+                        <Text>{err.user_agent}</Text>
                       </Tooltip>
                     ) : (
                       "—"

@@ -325,11 +325,11 @@ export function AdminConnections() {
       {/* Legacy migration banner */}
       {data && data.legacy_providers.length > 0 && !migrateResult && (
         <MessageBar intent="warning">
-          <span style={{ flex: 1 }}>
+          <Text style={{ flex: 1 }}>
             {t("admin.oauthMigrateBanner", {
               providers: data.legacy_providers.join(", "),
             })}
-          </span>
+          </Text>
           <Button
             appearance="subtle"
             size="small"
@@ -549,7 +549,7 @@ export function AdminConnections() {
             {data.sources.map((src) => (
               <TableRow key={src.id}>
                 <TableCell>
-                  <code style={{ fontFamily: "monospace" }}>{src.slug}</code>
+                  <Text font="monospace">{src.slug}</Text>
                 </TableCell>
                 <TableCell>
                   <Badge color="informative">

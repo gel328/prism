@@ -107,7 +107,7 @@ export function Init() {
     <div className={styles.page}>
       <div className={styles.card}>
         <div className={styles.header}>
-          <span className={styles.badge}>{t("init.firstRunSetup")}</span>
+          <Text className={styles.badge}>{t("init.firstRunSetup")}</Text>
           <Title1>{t("init.welcomeToPrism")}</Title1>
           <Text style={{ color: tokens.colorNeutralForeground3 }}>
             {t("init.createAdminDesc")}
