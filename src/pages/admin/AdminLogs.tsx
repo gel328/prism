@@ -722,7 +722,7 @@ export function AdminLogs() {
                   >
                     {log.user_id ? log.user_id.slice(0, 8) + "…" : "—"}
                   </TableCell>
-                  <TableCell style={{ fontFamily: "monospace", fontSize: 12 }}>
+                  <TableCell style={{ fontFamily: "monospace", fontSize: 12, wordBreak: "break-all" }}>
                     {log.ip_address ?? "—"}
                   </TableCell>
                   <TableCell>

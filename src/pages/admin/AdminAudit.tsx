@@ -85,7 +85,7 @@ export function AdminAudit() {
                   )}
                   {log.resource_id?.slice(0, 12) ?? "—"}
                 </TableCell>
-                <TableCell style={{ fontFamily: "monospace", fontSize: 12 }}>
+                <TableCell style={{ fontFamily: "monospace", fontSize: 12, wordBreak: "break-all" }}>
                   {log.ip_address ?? "—"}
                 </TableCell>
               </TableRow>

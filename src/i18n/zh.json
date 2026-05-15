@@ -1020,7 +1020,9 @@
       "error_totp_invalid": "TOTP 无效",
       "error_account_disabled": "账号已禁用",
       "error_rate_limited": "请求过于频繁",
-      "error_captcha_failed": "验证码失败"
+      "error_captcha_failed": "验证码失败",
+      "error_gpg_invalid_signature": "GPG 签名无效",
+      "error_gpg_invaild_signature": "GPG 签名无效"
     },
     "logs": {
       "debugTitle": "调试控制",

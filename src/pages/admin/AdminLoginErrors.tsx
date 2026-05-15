@@ -37,12 +37,17 @@ const ERROR_CODES = [
   "account_disabled",
   "rate_limited",
   "captcha_failed",
+  "gpg_invalid_signature",
 ] as const;
 
 function errorBadgeColor(
   code: string,
 ): "danger" | "warning" | "informative" | "subtle" {
-  if (code === "invalid_credentials" || code === "totp_invalid")
+  if (
+    code === "invalid_credentials" ||
+    code === "totp_invalid" ||
+    code === "gpg_invalid_signature"
+  )
     return "danger";
   if (code === "rate_limited") return "warning";
   if (code === "account_disabled") return "informative";
@@ -237,7 +242,7 @@ export function AdminLoginErrors() {
                   <TableCell style={{ fontFamily: "monospace", fontSize: 12 }}>
                     {err.identifier ?? "—"}
                   </TableCell>
-                  <TableCell style={{ fontFamily: "monospace", fontSize: 12 }}>
+                  <TableCell style={{ fontFamily: "monospace", fontSize: 12, wordBreak: "break-all" }}>
                     {err.ip_address ?? "—"}
                   </TableCell>
                   <TableCell

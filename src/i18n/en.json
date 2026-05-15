@@ -1020,7 +1020,9 @@
       "error_totp_invalid": "Invalid TOTP",
       "error_account_disabled": "Account disabled",
       "error_rate_limited": "Rate limited",
-      "error_captcha_failed": "Captcha failed"
+      "error_captcha_failed": "Captcha failed",
+      "error_gpg_invalid_signature": "Invalid GPG signature",
+      "error_gpg_invaild_signature": "Invalid GPG signature"
     },
     "logs": {
       "debugTitle": "Debug Controls",
