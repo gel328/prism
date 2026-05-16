@@ -28,6 +28,7 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api, ApiError } from "../../lib/api";
+import { useToastMessage } from "../../lib/useToastMessage";
 import { CopyIdButton } from "../../components/CopyIdButton";
 import { SkeletonTableRows } from "../../components/Skeletons";
 
@@ -45,21 +46,13 @@ export function AdminTeams() {
   const qc = useQueryClient();
   const { t } = useTranslation();
   const [page, setPage] = useState(1);
-  const [message, setMessage] = useState<{
-    type: "success" | "error";
-    text: string;
-  } | null>(null);
+  const { message, showMsg } = useToastMessage();
   const [viewing, setViewing] = useState<Record<string, unknown> | null>(null);
 
   const { data, isLoading } = useQuery({
     queryKey: ["admin-teams", page],
     queryFn: () => api.adminListTeams(page),
   });
-
-  const showMsg = (type: "success" | "error", text: string) => {
-    setMessage({ type, text });
-    setTimeout(() => setMessage(null), 5000);
-  };
 
   const handleDelete = async (id: string) => {
     try {

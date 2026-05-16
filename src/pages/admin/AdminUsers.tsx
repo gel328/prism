@@ -35,6 +35,7 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api, ApiError } from "../../lib/api";
+import { useToastMessage } from "../../lib/useToastMessage";
 import { CopyIdButton } from "../../components/CopyIdButton";
 import { useAuthStore } from "../../store/auth";
 import type { UserProfile } from "../../lib/api";
@@ -68,20 +69,12 @@ export function AdminUsers() {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
   const [searchInput, setSearchInput] = useState("");
-  const [message, setMessage] = useState<{
-    type: "success" | "error";
-    text: string;
-  } | null>(null);
+  const { message, showMsg } = useToastMessage();
   const [editing, setEditing] = useState<AdminUser | null>(null);
   const [editRole, setEditRole] = useState<string | null>(null);
   const [editActive, setEditActive] = useState<boolean | null>(null);
   const [editVerified, setEditVerified] = useState<boolean | null>(null);
   const [saving, setSaving] = useState(false);
-
-  const showMsg = (type: "success" | "error", text: string) => {
-    setMessage({ type, text });
-    setTimeout(() => setMessage(null), 5000);
-  };
 
   const { data, isLoading } = useQuery({
     queryKey: ["admin-users", page, search],

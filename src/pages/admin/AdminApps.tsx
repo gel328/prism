@@ -30,6 +30,7 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api, ApiError } from "../../lib/api";
+import { useToastMessage } from "../../lib/useToastMessage";
 import { CopyIdButton } from "../../components/CopyIdButton";
 import { SkeletonTableRows } from "../../components/Skeletons";
 
@@ -47,10 +48,7 @@ export function AdminApps() {
   const qc = useQueryClient();
   const { t } = useTranslation();
   const [page, setPage] = useState(1);
-  const [message, setMessage] = useState<{
-    type: "success" | "error";
-    text: string;
-  } | null>(null);
+  const { message, showMsg } = useToastMessage();
 
   const [editing, setEditing] = useState<Record<string, unknown> | null>(null);
   const [editOfficial, setEditOfficial] = useState<boolean | null>(null);
@@ -63,11 +61,6 @@ export function AdminApps() {
     queryKey: ["admin-apps", page],
     queryFn: () => api.adminListApps(page),
   });
-
-  const showMsg = (type: "success" | "error", text: string) => {
-    setMessage({ type, text });
-    setTimeout(() => setMessage(null), 5000);
-  };
 
   const openEdit = (app: Record<string, unknown>) => {
     setEditing(app);

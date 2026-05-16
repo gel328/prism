@@ -31,6 +31,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api, ApiError, useProxiedImage } from "../lib/api";
 import { SkeletonAppCards } from "../components/Skeletons";
+import { useToastMessage } from "../lib/useToastMessage";
 
 const useStyles = makeStyles({
   grid: {
@@ -249,18 +250,10 @@ export function Connections() {
 
   const isLoading = connsLoading || siteLoading;
 
-  const [message, setMessage] = useState<{
-    type: "success" | "error";
-    text: string;
-  } | null>(null);
+  const { message, showMsg } = useToastMessage(8000);
   const [refreshingConnectionId, setRefreshingConnectionId] = useState<
     string | null
   >(null);
-
-  const showMsg = (type: "success" | "error", text: string) => {
-    setMessage({ type, text });
-    setTimeout(() => setMessage(null), 8000);
-  };
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);

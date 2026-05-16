@@ -8,9 +8,6 @@ import {
   DialogSurface,
   DialogTitle,
   Spinner,
-  Tab,
-  TabList,
-  Text,
   tokens,
 } from "@fluentui/react-components";
 import {
@@ -20,6 +17,8 @@ import {
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Domain, VerificationMethod } from "../../../lib/api";
+import { LabeledLine } from "../../../components/LabeledLine";
+import { VerificationInstructions } from "../components";
 
 interface DomainDetailDialogProps {
   domain: Domain | null;
@@ -64,30 +63,21 @@ export function DomainDetailDialog({
               </Badge>
 
               {domain?.verified_at && (
-                <Text size={200}>
-                  <Text size={200} weight="semibold">
-                    {t("domains.verifiedLabel")}:
-                  </Text>{" "}
+                <LabeledLine label={t("domains.verifiedLabel")}>
                   {new Date(domain.verified_at * 1000).toLocaleDateString()}
-                </Text>
+                </LabeledLine>
               )}
               {domain?.verified && domain.verification_method && (
-                <Text size={200}>
-                  <Text size={200} weight="semibold">
-                    {t("domains.methodLabel")}:
-                  </Text>{" "}
+                <LabeledLine label={t("domains.methodLabel")}>
                   {t(`domains.method.${domain.verification_method}`)}
-                </Text>
+                </LabeledLine>
               )}
               {domain?.next_reverify_at && (
-                <Text size={200}>
-                  <Text size={200} weight="semibold">
-                    {t("domains.nextReverifyLabel")}:
-                  </Text>{" "}
+                <LabeledLine label={t("domains.nextReverifyLabel")}>
                   {new Date(
                     domain.next_reverify_at * 1000,
                   ).toLocaleDateString()}
-                </Text>
+                </LabeledLine>
               )}
 
               {!domain?.verified && domain && (
@@ -128,111 +118,5 @@ export function DomainDetailDialog({
         </DialogBody>
       </DialogSurface>
     </Dialog>
-  );
-}
-
-interface InstructionsProps {
-  domain: Domain;
-  method: VerificationMethod;
-  onMethodChange: (m: VerificationMethod) => void;
-}
-
-export function VerificationInstructions({
-  domain,
-  method,
-  onMethodChange,
-}: InstructionsProps) {
-  const { t } = useTranslation();
-  const token = domain.verification_token;
-  return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        gap: 8,
-        padding: "10px 12px",
-        borderRadius: 6,
-        background: tokens.colorNeutralBackground3,
-      }}
-    >
-      <TabList
-        size="small"
-        selectedValue={method}
-        onTabSelect={(_, d) => onMethodChange(d.value as VerificationMethod)}
-      >
-        <Tab value="dns-txt">{t("domains.method.dns-txt")}</Tab>
-        <Tab value="http-file">{t("domains.method.http-file")}</Tab>
-        <Tab value="html-meta">{t("domains.method.html-meta")}</Tab>
-      </TabList>
-
-      {method === "dns-txt" && (
-        <>
-          <Text size={200} weight="semibold">
-            {t("domains.addDnsTxtRecord")}
-          </Text>
-          <Text size={200}>
-            <Text size={200} weight="semibold">
-              {t("domains.dnsType")}:
-            </Text>{" "}
-            TXT
-          </Text>
-          <Text size={200}>
-            <Text size={200} weight="semibold">
-              {t("domains.dnsName")}:
-            </Text>{" "}
-            <Text size={200} font="monospace">
-              _prism-verify.{domain.domain}
-            </Text>
-          </Text>
-          <Text size={200}>
-            <Text size={200} weight="semibold">
-              {t("domains.dnsValue")}:
-            </Text>{" "}
-            <Text size={200} font="monospace">
-              prism-verify={token}
-            </Text>
-          </Text>
-        </>
-      )}
-
-      {method === "http-file" && (
-        <>
-          <Text size={200} weight="semibold">
-            {t("domains.addHttpFile")}
-          </Text>
-          <Text size={200}>
-            <Text size={200} weight="semibold">
-              {t("domains.httpUrl")}:
-            </Text>{" "}
-            <Text size={200} font="monospace">
-              https://{domain.domain}/.well-known/prism-verify-{token}.txt
-            </Text>
-          </Text>
-          <Text size={200}>
-            <Text size={200} weight="semibold">
-              {t("domains.httpContent")}:
-            </Text>{" "}
-            <Text size={200} font="monospace">
-              prism-verify={token}
-            </Text>
-          </Text>
-        </>
-      )}
-
-      {method === "html-meta" && (
-        <>
-          <Text size={200} weight="semibold">
-            {t("domains.addHtmlMeta")}
-          </Text>
-          <Text size={200}>
-            {t("domains.htmlMetaHint", { domain: domain.domain })}
-          </Text>
-          <Text
-            size={200}
-            font="monospace"
-          >{`<meta name="prism-verify" content="${token}">`}</Text>
-        </>
-      )}
-    </div>
   );
 }

@@ -36,6 +36,7 @@ import { TransferFromPersonalDialog } from "./dialogs/TransferFromPersonalDialog
 import { TeamDomainDetailDialog } from "./dialogs/TeamDomainDetailDialog";
 import { DeleteTeamDomainDialog } from "./dialogs/DeleteTeamDomainDialog";
 import { SkeletonTableRows } from "../../components/Skeletons";
+import { DnsAddedInfo } from "../domains/components";
 
 interface DomainsTableProps {
   teamId: string;
@@ -192,56 +193,10 @@ export function DomainsTable({
       )}
 
       {addedDomainInfo && (
-        <div
-          style={{
-            padding: 16,
-            borderRadius: 8,
-            border: `1px solid ${tokens.colorNeutralStroke1}`,
-            background: tokens.colorNeutralBackground3,
-          }}
-        >
-          <Text weight="semibold" block>
-            {t("domains.dnsInstructions", { domain: addedDomainInfo.domain })}
-          </Text>
-          <div
-            style={{
-              marginTop: 8,
-              display: "flex",
-              flexDirection: "column",
-              gap: 4,
-            }}
-          >
-            <Text size={200}>
-              <Text size={200} weight="semibold">
-                {t("domains.dnsType")}:
-              </Text>{" "}
-              TXT
-            </Text>
-            <Text size={200}>
-              <Text size={200} weight="semibold">
-                {t("domains.dnsName")}:
-              </Text>{" "}
-              <Text size={200} font="monospace">
-                {addedDomainInfo.txt_record}
-              </Text>
-            </Text>
-            <Text size={200}>
-              <Text size={200} weight="semibold">
-                {t("domains.dnsValue")}:
-              </Text>{" "}
-              <Text size={200} font="monospace">
-                {addedDomainInfo.txt_value}
-              </Text>
-            </Text>
-          </div>
-          <Button
-            size="small"
-            onClick={() => setAddedDomainInfo(null)}
-            style={{ marginTop: 12 }}
-          >
-            {t("common.dismiss")}
-          </Button>
-        </div>
+        <DnsAddedInfo
+          info={addedDomainInfo}
+          onDismiss={() => setAddedDomainInfo(null)}
+        />
       )}
 
       {loading && <SkeletonTableRows rows={5} cols={4} />}

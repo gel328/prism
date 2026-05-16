@@ -33,6 +33,7 @@ import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api, ApiError } from "../lib/api";
+import { useToastMessage } from "../lib/useToastMessage";
 import { useAuthStore } from "../store/auth";
 import { ImageUrlInput } from "../components/ImageUrlInput";
 import {
@@ -154,15 +155,7 @@ export function Profile() {
   const [readmeSyncing, setReadmeSyncing] = useState(false);
   const [ghTokenInput, setGhTokenInput] = useState<string>("");
   const readmeFileRef = useRef<HTMLInputElement>(null);
-  const [message, setMessage] = useState<{
-    type: "success" | "error";
-    text: string;
-  } | null>(null);
-
-  const showMsg = (type: "success" | "error", text: string) => {
-    setMessage({ type, text });
-    setTimeout(() => setMessage(null), 5000);
-  };
+  const { message, showMsg } = useToastMessage();
 
   // Seed the readme textarea from /me on first load. We don't keep the
   // textarea in sync with later refetches because that would clobber the

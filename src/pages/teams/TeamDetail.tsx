@@ -47,6 +47,7 @@ import {
   type OAuthApp,
   type TeamInvite,
 } from "../../lib/api";
+import { useToastMessage } from "../../lib/useToastMessage";
 import { ImageUrlInput } from "../../components/ImageUrlInput";
 import { useAuthStore } from "../../store/auth";
 import { InviteDialog } from "./dialogs/InviteDialog";
@@ -104,10 +105,7 @@ export function TeamDetail() {
   const { t } = useTranslation();
 
   const [tab, setTab] = useState<TabType>("members");
-  const [message, setMessage] = useState<{
-    type: "success" | "error";
-    text: string;
-  } | null>(null);
+  const { message, showMsg } = useToastMessage();
 
   const { data, isLoading } = useQuery({
     queryKey: ["team", id],
@@ -161,11 +159,6 @@ export function TeamDetail() {
     myRole === "owner" || myRole === "co-owner" || myRole === "admin";
   const isOwner = myRole === "owner";
   const isCoOwnerOrAbove = myRole === "owner" || myRole === "co-owner";
-
-  const showMsg = (type: "success" | "error", text: string) => {
-    setMessage({ type, text });
-    setTimeout(() => setMessage(null), 5000);
-  };
 
   const handleChangeRole = async (userId: string, role: string) => {
     if (!id) return;

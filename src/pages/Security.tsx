@@ -43,6 +43,8 @@ import { api, ApiError } from "../lib/api";
 import type { GpgKeyInfo, PasskeyInfo, SessionInfo } from "../lib/api";
 import { SkeletonSecurityCard } from "../components/Skeletons";
 import { DurationInput } from "../components/DurationInput";
+import { LabeledLine } from "../components/LabeledLine";
+import { useToastMessage } from "../lib/useToastMessage";
 
 const useStyles = makeStyles({
   page: { display: "flex", flexDirection: "column", gap: "32px" },
@@ -130,14 +132,7 @@ export function Security() {
     queryFn: api.listSessions,
   });
 
-  const [message, setMessage] = useState<{
-    type: "success" | "error";
-    text: string;
-  } | null>(null);
-  const showMsg = (type: "success" | "error", text: string) => {
-    setMessage({ type, text });
-    setTimeout(() => setMessage(null), 6000);
-  };
+  const { message, showMsg } = useToastMessage(6000);
 
   // ─── Token TTL prefs ─────────────────────────────────────────────────────
   const [accessTtl, setAccessTtl] = useState<number | null>(null);
@@ -518,16 +513,13 @@ export function Security() {
               <DialogBody>
                 <DialogTitle>{selectedTotp?.name}</DialogTitle>
                 <DialogContent>
-                  <Text size={200}>
-                    <Text size={200} weight="semibold">
-                      {t("security.added")}:
-                    </Text>{" "}
+                  <LabeledLine label={t("security.added")}>
                     {selectedTotp
                       ? new Date(
                           selectedTotp.created_at * 1000,
                         ).toLocaleDateString()
                       : ""}
-                  </Text>
+                  </LabeledLine>
                 </DialogContent>
                 <DialogActions>
                   <Button onClick={() => setSelectedTotp(null)}>
@@ -866,32 +858,23 @@ export function Security() {
                   <div
                     style={{ display: "flex", flexDirection: "column", gap: 8 }}
                   >
-                    <Text size={200}>
-                      <Text size={200} weight="semibold">
-                        {t("security.typeHeader")}:
-                      </Text>{" "}
+                    <LabeledLine label={t("security.typeHeader")}>
                       {selectedPasskey?.device_type}
-                    </Text>
-                    <Text size={200}>
-                      <Text size={200} weight="semibold">
-                        {t("security.added")}:
-                      </Text>{" "}
+                    </LabeledLine>
+                    <LabeledLine label={t("security.added")}>
                       {selectedPasskey
                         ? new Date(
                             selectedPasskey.created_at * 1000,
                           ).toLocaleDateString()
                         : ""}
-                    </Text>
-                    <Text size={200}>
-                      <Text size={200} weight="semibold">
-                        {t("security.lastUsedHeader")}:
-                      </Text>{" "}
+                    </LabeledLine>
+                    <LabeledLine label={t("security.lastUsedHeader")}>
                       {selectedPasskey?.last_used_at
                         ? new Date(
                             selectedPasskey.last_used_at * 1000,
                           ).toLocaleDateString()
                         : "—"}
-                    </Text>
+                    </LabeledLine>
                   </div>
                 </DialogContent>
                 <DialogActions>
@@ -1020,34 +1003,23 @@ export function Security() {
                 <div
                   style={{ display: "flex", flexDirection: "column", gap: 8 }}
                 >
-                  <Text size={200}>
-                    <Text size={200} weight="semibold">
-                      {t("security.gpgFingerprintHeader")}:
-                    </Text>{" "}
-                    <Text size={200} font="monospace">
-                      {selectedGpg?.fingerprint.toUpperCase()}
-                    </Text>
-                  </Text>
-                  <Text size={200}>
-                    <Text size={200} weight="semibold">
-                      {t("security.added")}:
-                    </Text>{" "}
+                  <LabeledLine label={t("security.gpgFingerprintHeader")} mono>
+                    {selectedGpg?.fingerprint.toUpperCase()}
+                  </LabeledLine>
+                  <LabeledLine label={t("security.added")}>
                     {selectedGpg
                       ? new Date(
                           selectedGpg.created_at * 1000,
                         ).toLocaleDateString()
                       : ""}
-                  </Text>
-                  <Text size={200}>
-                    <Text size={200} weight="semibold">
-                      {t("security.lastUsedHeader")}:
-                    </Text>{" "}
+                  </LabeledLine>
+                  <LabeledLine label={t("security.lastUsedHeader")}>
                     {selectedGpg?.last_used_at
                       ? new Date(
                           selectedGpg.last_used_at * 1000,
                         ).toLocaleDateString()
                       : "—"}
-                  </Text>
+                  </LabeledLine>
                 </div>
               </DialogContent>
               <DialogActions>
@@ -1200,38 +1172,26 @@ export function Security() {
                   <div
                     style={{ display: "flex", flexDirection: "column", gap: 8 }}
                   >
-                    <Text size={200}>
-                      <Text size={200} weight="semibold">
-                        {t("security.deviceLabel")}:
-                      </Text>{" "}
+                    <LabeledLine label={t("security.deviceLabel")}>
                       {selectedSession?.user_agent ?? t("security.unknown")}
-                    </Text>
-                    <Text size={200}>
-                      <Text size={200} weight="semibold">
-                        {t("security.ipLabel")}:
-                      </Text>{" "}
+                    </LabeledLine>
+                    <LabeledLine label={t("security.ipLabel")}>
                       {selectedSession?.ip_address ?? "—"}
-                    </Text>
-                    <Text size={200}>
-                      <Text size={200} weight="semibold">
-                        {t("security.createdLabel")}:
-                      </Text>{" "}
+                    </LabeledLine>
+                    <LabeledLine label={t("security.createdLabel")}>
                       {selectedSession
                         ? new Date(
                             selectedSession.created_at * 1000,
                           ).toLocaleDateString()
                         : ""}
-                    </Text>
-                    <Text size={200}>
-                      <Text size={200} weight="semibold">
-                        {t("security.expiresLabel")}:
-                      </Text>{" "}
+                    </LabeledLine>
+                    <LabeledLine label={t("security.expiresLabel")}>
                       {selectedSession
                         ? new Date(
                             selectedSession.expires_at * 1000,
                           ).toLocaleDateString()
                         : ""}
-                    </Text>
+                    </LabeledLine>
                   </div>
                 </DialogContent>
                 <DialogActions>

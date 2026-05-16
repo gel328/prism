@@ -20,6 +20,8 @@ import { DomainDetailDialog } from "./domains/dialogs/DomainDetailDialog";
 import { TransferDomainDialog } from "./domains/dialogs/TransferDomainDialog";
 import { ShareDomainDialog } from "./domains/dialogs/ShareDomainDialog";
 import { DomainsTable } from "./domains/DomainsTable";
+import { DnsAddedInfo } from "./domains/components";
+import { useToastMessage } from "../lib/useToastMessage";
 
 export function Domains() {
   const { t } = useTranslation();
@@ -41,19 +43,11 @@ export function Domains() {
   const [newDomain, setNewDomain] = useState("");
   const [adding, setAdding] = useState(false);
   const [addedInfo, setAddedInfo] = useState<DomainAddResponse | null>(null);
-  const [message, setMessage] = useState<{
-    type: "success" | "error";
-    text: string;
-  } | null>(null);
+  const { message, showMsg } = useToastMessage();
   const [verifying, setVerifying] = useState<string | null>(null);
   const [selectedDomain, setSelectedDomain] = useState<Domain | null>(null);
   const [transferDomain, setTransferDomain] = useState<Domain | null>(null);
   const [shareDomain, setShareDomain] = useState<Domain | null>(null);
-
-  const showMsg = (type: "success" | "error", text: string) => {
-    setMessage({ type, text });
-    setTimeout(() => setMessage(null), 5000);
-  };
 
   const handleAdd = async () => {
     setAdding(true);
@@ -171,56 +165,7 @@ export function Domains() {
       </div>
 
       {addedInfo && (
-        <div
-          style={{
-            padding: 16,
-            borderRadius: 8,
-            border: `1px solid ${tokens.colorNeutralStroke1}`,
-            background: tokens.colorNeutralBackground3,
-          }}
-        >
-          <Text weight="semibold" block>
-            {t("domains.dnsInstructions", { domain: addedInfo.domain })}
-          </Text>
-          <div
-            style={{
-              marginTop: 8,
-              display: "flex",
-              flexDirection: "column",
-              gap: 4,
-            }}
-          >
-            <Text size={200}>
-              <Text size={200} weight="semibold">
-                {t("domains.dnsType")}:
-              </Text>{" "}
-              TXT
-            </Text>
-            <Text size={200}>
-              <Text size={200} weight="semibold">
-                {t("domains.dnsName")}:
-              </Text>{" "}
-              <Text size={200} font="monospace">
-                {addedInfo.txt_record}
-              </Text>
-            </Text>
-            <Text size={200}>
-              <Text size={200} weight="semibold">
-                {t("domains.dnsValue")}:
-              </Text>{" "}
-              <Text size={200} font="monospace">
-                {addedInfo.txt_value}
-              </Text>
-            </Text>
-          </div>
-          <Button
-            size="small"
-            onClick={() => setAddedInfo(null)}
-            style={{ marginTop: 12 }}
-          >
-            {t("common.dismiss")}
-          </Button>
-        </div>
+        <DnsAddedInfo info={addedInfo} onDismiss={() => setAddedInfo(null)} />
       )}
 
       <DomainsTable

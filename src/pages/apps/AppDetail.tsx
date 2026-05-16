@@ -46,6 +46,7 @@ import {
   type AppScopeDefinition,
   type AppScopeAccessRule,
 } from "../../lib/api";
+import { useToastMessage } from "../../lib/useToastMessage";
 import { ImageUrlInput } from "../../components/ImageUrlInput";
 import {
   SkeletonFormCard,
@@ -1131,16 +1132,8 @@ export function AppDetail() {
   const [saving, setSaving] = useState(false);
   const [secretRotating, setSecretRotating] = useState(false);
   const [newSecret, setNewSecret] = useState("");
-  const [message, setMessage] = useState<{
-    type: "success" | "error";
-    text: string;
-  } | null>(null);
+  const { message, showMsg } = useToastMessage();
   const [copied, setCopied] = useState<string>("");
-
-  const showMsg = (type: "success" | "error", text: string) => {
-    setMessage({ type, text });
-    setTimeout(() => setMessage(null), 5000);
-  };
 
   const copy = (text: string, key: string) => {
     navigator.clipboard.writeText(text);

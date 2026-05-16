@@ -29,6 +29,7 @@ import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api, ApiError } from "../../lib/api";
+import { useToastMessage } from "../../lib/useToastMessage";
 import { useAuthStore } from "../../store/auth";
 import type { SiteConfig } from "../../types";
 import { ImageUrlInput } from "../../components/ImageUrlInput";
@@ -96,10 +97,7 @@ export function AdminSettings() {
 
   const [localConfig, setLocalConfig] = useState<Partial<SiteConfig>>({});
   const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState<{
-    type: "success" | "error";
-    text: string;
-  } | null>(null);
+  const { message, showMsg } = useToastMessage();
   const [tab, setTab] = useState("general");
   const [testingEmail, setTestingEmail] = useState(false);
   const [testingEmailReceiving, setTestingEmailReceiving] = useState(false);
@@ -146,11 +144,6 @@ export function AdminSettings() {
     enabled: tab === "danger",
     refetchInterval: tab === "danger" ? 30_000 : false,
   });
-
-  const showMsg = (type: "success" | "error", text: string) => {
-    setMessage({ type, text });
-    setTimeout(() => setMessage(null), 5000);
-  };
 
   const get = <K extends keyof SiteConfig>(key: K): SiteConfig[K] => {
     if (key in localConfig) return localConfig[key] as SiteConfig[K];
