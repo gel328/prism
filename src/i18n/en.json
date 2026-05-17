@@ -992,6 +992,8 @@
     "allowAltEmailLogin": "Allow login with alternate emails (site default)",
     "disableUserCreateTeam": "Disable users from creating teams (admins can bypass)",
     "disableUserCreateApp": "Disable users from creating OAuth apps (admins can bypass)",
+    "disableSsr": "Disable server-side rendering",
+    "disableSsrHint": "When on, the server returns the bare HTML shell for every page and the client bundle renders everything. Useful for isolating SSR-only bugs or reducing D1 reads during an incident.",
     "teamJoinRequirementsHint": "Site-wide floor for team join requirements. When on, every team is forced to require the corresponding factor — team owners can opt their teams in further but cannot opt out below the floor.",
     "defaultTeamRequireVerifiedEmail": "All teams require a verified primary email",
     "defaultTeamRequire2FA": "All teams require 2FA",

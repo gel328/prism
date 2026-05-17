@@ -25,6 +25,7 @@ interface InitialPayload {
   queryState: DehydratedState;
   auth: { token: string | null; user: UserProfile | null } | null;
   locale: string | null;
+  colorScheme: "dark" | "light" | null;
 }
 
 declare global {
@@ -37,6 +38,7 @@ const initial: InitialPayload = window.__INITIAL__ ?? {
   queryState: { mutations: [], queries: [] } as unknown as DehydratedState,
   auth: null,
   locale: null,
+  colorScheme: null,
 };
 
 // Seed the auth store from the server-injected payload, falling back to the

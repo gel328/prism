@@ -446,6 +446,11 @@ export interface SiteConfig {
   gpg_challenge_prefix: string; // extra lines inserted after the site header in the GPG challenge text
   disable_user_create_team: boolean;
   disable_user_create_app: boolean;
+  /** When true, the worker skips server-side rendering and returns the
+   *  bare index.html template for every non-API page, letting the client
+   *  bundle hydrate on its own. Useful for debugging SSR-only bugs or
+   *  cutting D1 read load during incidents. */
+  disable_ssr: boolean;
   tg_notify_source_slug: string;
   /** How long, in minutes, a successful 2FA step-up grants a sudo grace period
    *  during which subsequent challenges from the same app on the same session

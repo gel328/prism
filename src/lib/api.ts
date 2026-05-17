@@ -138,7 +138,19 @@ async function request<T>(
 
   if (token) headers["Authorization"] = `Bearer ${token}`;
 
-  const res = await fetch(`${BASE}${path}`, {
+  // During SSR (Cloudflare Workers), `fetch` requires absolute URLs. The
+  // worker installs an in-process dispatcher on globalThis.__SSR_FETCH__
+  // so route loaders can call `/api/...` and have it dispatched through
+  // the same Hono app, carrying the request's cookie for auth.
+  const ssrFetch =
+    typeof window === "undefined"
+      ? ((globalThis as { __SSR_FETCH__?: typeof fetch }).__SSR_FETCH__ as
+          | typeof fetch
+          | undefined)
+      : undefined;
+  const doFetch = ssrFetch ?? fetch;
+
+  const res = await doFetch(`${BASE}${path}`, {
     method,
     headers,
     // Send the session cookie alongside the Bearer header. We set the cookie

@@ -481,6 +481,13 @@ export function AdminSettings() {
               checked={!!get("disable_user_create_app")}
               onChange={(_, d) => set("disable_user_create_app", d.checked)}
             />
+            <Field hint={t("admin.disableSsrHint")}>
+              <Switch
+                label={t("admin.disableSsr")}
+                checked={!!get("disable_ssr")}
+                onChange={(_, d) => set("disable_ssr", d.checked)}
+              />
+            </Field>
             <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
               {t("admin.teamJoinRequirementsHint")}
             </Text>

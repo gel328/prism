@@ -95,21 +95,59 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
   });
   const styleRef = useRef<HTMLStyleElement | null>(null);
 
-  // SSR has no `window`. Default to light on the server; the dark-mode FOUC
-  // shim in index.html sets the `data-theme` attribute before hydration so
-  // the visible flash is brief.
+  // Seed from the same source the server used so the SSR'd FluentProvider
+  // classnames match the client's first paint (no light→dark flash).
+  //   • Server: globalThis.__SSR_COLOR_SCHEME__ (set by entry-server from
+  //     the cookie / Sec-CH-Prefers-Color-Scheme header).
+  //   • Client: window.__INITIAL__.colorScheme — what the server actually
+  //     rendered with. Falls back to the cookie or matchMedia if absent
+  //     (e.g. when SSR is disabled).
   const [prefersDark, setPrefersDark] = useState(() => {
-    if (typeof window === "undefined") return false;
+    if (typeof window === "undefined") {
+      return (
+        (globalThis as { __SSR_COLOR_SCHEME__?: "dark" | "light" })
+          .__SSR_COLOR_SCHEME__ === "dark"
+      );
+    }
+    const ssr = window.__INITIAL__?.colorScheme;
+    if (ssr === "dark" || ssr === "light") return ssr === "dark";
+    const cookieMatch = document.cookie.match(
+      /(?:^|; )prism_color_scheme=(dark|light)/,
+    );
+    if (cookieMatch) return cookieMatch[1] === "dark";
     return window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false;
   });
 
   useEffect(() => {
     const mediaQuery = window.matchMedia?.("(prefers-color-scheme: dark)");
     if (!mediaQuery) return;
+    // Sync to the current OS preference, not just future changes. SSR
+    // can't read matchMedia, so the first cookieless visit lands with
+    // whatever the server defaulted to (light); without this initial
+    // sync, dark-mode users would never get flipped. After this runs
+    // once, the cookie effect below writes the resolved value so the
+    // next SSR pass picks it up — no flash on subsequent visits.
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional post-hydration sync to OS preference
+    if (mediaQuery.matches !== prefersDark) setPrefersDark(mediaQuery.matches);
     const handler = (e: MediaQueryListEvent) => setPrefersDark(e.matches);
     mediaQuery.addEventListener("change", handler);
     return () => mediaQuery.removeEventListener("change", handler);
+    // Intentionally empty deps — the listener handles subsequent changes,
+    // and we only want the initial sync on mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Persist the current preference so the next SSR pass renders the same
+  // theme the client will hydrate to. 1-year max-age; samesite=lax is fine
+  // since the cookie only encodes a UI preference.
+  useEffect(() => {
+    const value = prefersDark ? "dark" : "light";
+    document.cookie = `prism_color_scheme=${value}; path=/; max-age=31536000; samesite=lax`;
+    document.documentElement.setAttribute(
+      "data-theme",
+      prefersDark ? "dark" : "light",
+    );
+  }, [prefersDark]);
 
   const theme = useMemo(() => {
     const accent = siteConfig?.accent_color ?? "#0078d4";

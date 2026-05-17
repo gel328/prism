@@ -46,6 +46,27 @@ export interface RenderOptions {
    * with real data instead of a "loading…" skeleton.
    */
   prefetched?: Array<{ queryKey: unknown[]; data: unknown }>;
+  /**
+   * In-process fetcher the api client uses while running on the server.
+   * Cloudflare Workers reject relative-URL fetches, so without this every
+   * route-loader `api.X()` call would silently fail and the rendered HTML
+   * would show loading skeletons that the client then fills via real API
+   * calls. The worker passes a fetcher that dispatches `/api/...` paths
+   * through the same Hono app, carrying the original request cookies for
+   * auth.
+   */
+  fetcher?: (input: string, init?: RequestInit) => Promise<Response>;
+  /**
+   * Resolved color scheme for this request (from cookie or client hint).
+   * Used to render FluentProvider with the right theme on the server so the
+   * client doesn't flash light → dark after hydration.
+   */
+  colorScheme?: "dark" | "light";
+}
+
+interface SsrGlobals {
+  __SSR_FETCH__?: (input: string, init?: RequestInit) => Promise<Response>;
+  __SSR_COLOR_SCHEME__?: "dark" | "light";
 }
 
 export interface RenderResult {
@@ -79,6 +100,56 @@ export async function render(
     queryClient.setQueryData(queryKey, data);
   }
 
+  // Install the in-process fetcher on globalThis so the api client picks
+  // it up during this render. Cleared in the finally below; the static
+  // handler runs loaders synchronously within this turn so no concurrent
+  // request can observe the global between set and clear.
+  const ssrGlobals = globalThis as unknown as SsrGlobals;
+  if (opts.fetcher) ssrGlobals.__SSR_FETCH__ = opts.fetcher;
+  if (opts.colorScheme) ssrGlobals.__SSR_COLOR_SCHEME__ = opts.colorScheme;
+
+  // ─── useQuery auto-prefetch ───────────────────────────────────────────
+  // React Query only fires queryFn from QueryObserver.onSubscribe (i.e.
+  // useEffect on the client), so `useQuery` calls don't fetch during a
+  // bare `renderToString` pass. To SSR every read query without forcing
+  // each page to declare its data needs in a route loader, we intercept
+  // defaultQueryOptions — which IS called synchronously from useQuery
+  // during render — and record each (queryKey, queryFn) pair. After the
+  // first render we drain the registry by prefetching, then re-render so
+  // child components that were gated on parent data get a chance to fire
+  // their own useQuery calls. Repeat until stable.
+  //
+  // Mutations don't auto-fire (useMutation only runs on .mutate()), so
+  // this naturally excludes writes.
+  interface CollectedQuery {
+    queryKey: readonly unknown[];
+    queryFn: (...args: unknown[]) => unknown;
+  }
+  const seenKeys = new Set<string>();
+  let collected: CollectedQuery[] = [];
+  const origDefaultQueryOptions =
+    queryClient.defaultQueryOptions.bind(queryClient);
+  queryClient.defaultQueryOptions = ((options: unknown) => {
+    const out = origDefaultQueryOptions(
+      options as Parameters<typeof origDefaultQueryOptions>[0],
+    );
+    const o = out as unknown as {
+      queryKey?: readonly unknown[];
+      queryFn?: (...args: unknown[]) => unknown;
+      enabled?: unknown;
+    };
+    // skipToken disables a query — react-query represents it as a
+    // symbol; just skip anything that isn't a callable.
+    if (o.queryKey && typeof o.queryFn === "function" && o.enabled !== false) {
+      const k = JSON.stringify(o.queryKey);
+      if (!seenKeys.has(k)) {
+        seenKeys.add(k);
+        collected.push({ queryKey: o.queryKey, queryFn: o.queryFn });
+      }
+    }
+    return out;
+  }) as typeof queryClient.defaultQueryOptions;
+
   // Build a per-request route tree whose loaders close over this request's
   // QueryClient and auth payload. No global state — concurrent requests on
   // the same isolate get isolated routers.
@@ -91,11 +162,20 @@ export async function render(
     isClient: false,
   });
   const handler = createStaticHandler(routes);
-  const context = await handler.query(request);
+  let context;
+  try {
+    context = await handler.query(request);
+  } catch (err) {
+    ssrGlobals.__SSR_FETCH__ = undefined;
+    ssrGlobals.__SSR_COLOR_SCHEME__ = undefined;
+    throw err;
+  }
 
   // Loaders throwing redirect() bubble out as a Response; pass through as a
   // real 30x so the browser navigates without rendering an empty shell.
   if (context instanceof Response) {
+    ssrGlobals.__SSR_FETCH__ = undefined;
+    ssrGlobals.__SSR_COLOR_SCHEME__ = undefined;
     const location = context.headers.get("Location") ?? "/";
     return {
       status: context.status,
@@ -129,9 +209,8 @@ export async function render(
     });
   }
 
-  let appHtml: string;
-  try {
-    appHtml = renderToString(
+  const renderOnce = () =>
+    renderToString(
       <RendererProvider renderer={renderer}>
         <I18nextProvider i18n={i18n}>
           <QueryClientProvider client={queryClient}>
@@ -142,10 +221,39 @@ export async function render(
         </I18nextProvider>
       </RendererProvider>,
     );
+
+  let appHtml: string;
+  try {
+    // First render registers queries that the initial tree calls. Then
+    // drain + re-render until no new queries appear, or we hit the cap.
+    // Cap protects against pathological cases where a fetch failure leaves
+    // a child component in a state that fires yet another query each pass.
+    const MAX_ITERATIONS = 5;
+    appHtml = renderOnce();
+    for (let i = 0; i < MAX_ITERATIONS; i++) {
+      if (collected.length === 0) break;
+      const batch = collected;
+      collected = [];
+      await Promise.all(
+        batch.map(({ queryKey, queryFn }) =>
+          queryClient
+            .prefetchQuery({
+              queryKey: queryKey as readonly unknown[] & { length: 1 },
+              queryFn: queryFn as () => Promise<unknown>,
+            })
+            .catch(() => {
+              /* fall back to client-side fetch */
+            }),
+        ),
+      );
+      appHtml = renderOnce();
+    }
   } finally {
     // Always clear, even on render error — otherwise the next request in the
-    // same isolate inherits this user's session.
+    // same isolate inherits this user's session or fetcher.
     useAuthStore.setState({ token: null, user: null, isLoading: false });
+    ssrGlobals.__SSR_FETCH__ = undefined;
+    ssrGlobals.__SSR_COLOR_SCHEME__ = undefined;
   }
 
   // Griffel emits an array of <style> elements; we serialise them to a
@@ -174,6 +282,7 @@ export async function render(
     queryState: dehydrate(queryClient),
     auth: opts.auth ?? null,
     locale: opts.locale ?? null,
+    colorScheme: opts.colorScheme ?? null,
   };
   // Escape `</` to keep the JSON safe inside a <script> tag.
   const initialJson = JSON.stringify(initialPayload).replace(/</g, "\\u003c");

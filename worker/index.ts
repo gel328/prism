@@ -85,8 +85,11 @@ app.notFound(async (c) => {
   if (c.req.path.startsWith("/.well-known/"))
     return new Response(null, { status: 404 });
   // Anything that wasn't an API route and didn't match a static asset is a
-  // user-facing page — render it on the server.
-  return await ssrHandler(c);
+  // user-facing page — render it on the server. Pass app.fetch so the SSR
+  // pass can dispatch its own /api/* sub-requests in-process (Cloudflare
+  // Workers reject relative-URL fetches, so we can't let route loaders
+  // round-trip through the network).
+  return await ssrHandler(c, app.fetch.bind(app));
 });
 
 app.onError((err, c) => {

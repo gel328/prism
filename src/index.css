@@ -12,6 +12,21 @@ body,
   height: 100%;
 }
 
+/* Match the FluentProvider's neutral background on the html/body so that
+   any area outside the rendered React tree (white margin while the bundle
+   loads, overscroll bounce, narrow viewports where the app doesn't fill
+   the viewport) paints in the right colour. Driven by the data-theme
+   attribute set synchronously by the FOUC shim before paint.
+   color-scheme also tells the UA to use the dark canvas + scrollbars. */
+html {
+  color-scheme: light;
+  background: #ffffff;
+}
+html[data-theme="dark"] {
+  color-scheme: dark;
+  background: #1f1f1f;
+}
+
 body {
   font-family:
     "Segoe UI",
@@ -20,6 +35,7 @@ body {
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  background: inherit;
 }
 
 a {

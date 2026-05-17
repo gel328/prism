@@ -992,6 +992,8 @@
     "allowAltEmailLogin": "允许使用备用邮箱登录（站点默认）",
     "disableUserCreateTeam": "禁止用户创建团队（管理员可绕过）",
     "disableUserCreateApp": "禁止用户创建 OAuth 应用（管理员可绕过）",
+    "disableSsr": "禁用服务端渲染",
+    "disableSsrHint": "开启后，服务端将仅返回页面的空壳 HTML，由客户端 bundle 完成渲染。可用于排查 SSR 专属问题，或在故障期间减少 D1 读取。",
     "teamJoinRequirementsHint": "团队加入要求的站点级下限。开启后，所有团队都将被强制要求对应因素 —— 团队所有者可以在此基础上加严，但不能低于该下限。",
     "defaultTeamRequireVerifiedEmail": "所有团队都要求已验证的主邮箱",
     "defaultTeamRequire2FA": "所有团队都要求二次验证",

@@ -23,16 +23,23 @@
       href="/ic_fluent_lock_shield_48_color.svg"
     />
 
-    <!-- Prevent flash of unstyled content for dark-mode users -->
+    <!-- Resolve color scheme synchronously before paint and refresh the
+         prism_color_scheme cookie from matchMedia. The cookie is what the
+         server reads on the *next* request to SSR with the right theme;
+         refreshing it on every load means an OS theme change is picked up
+         by the next navigation, not the one after. -->
     <script>
       (function () {
-        var s = localStorage.getItem("prism-theme");
-        if (
-          s === "dark" ||
-          (!s && window.matchMedia("(prefers-color-scheme: dark)").matches)
-        ) {
-          document.documentElement.setAttribute("data-theme", "dark");
-        }
+        var scheme =
+          window.matchMedia &&
+          window.matchMedia("(prefers-color-scheme: dark)").matches
+            ? "dark"
+            : "light";
+        document.cookie =
+          "prism_color_scheme=" +
+          scheme +
+          "; path=/; max-age=31536000; samesite=lax";
+        document.documentElement.setAttribute("data-theme", scheme);
       })();
     </script>
     <!--app-head-->

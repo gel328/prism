@@ -48,6 +48,7 @@ const DEFAULT_CONFIG: SiteConfig = {
   gpg_challenge_prefix: "",
   disable_user_create_team: false,
   disable_user_create_app: false,
+  disable_ssr: false,
   tg_notify_source_slug: "",
   sudo_mode_ttl_minutes: 5,
   require_captcha_for_2fa: false,

@@ -20,7 +20,9 @@ interface RenderOptions {
   template: string;
   auth?: { token: string | null; user: unknown | null } | null;
   locale?: string | null;
+  colorScheme?: "dark" | "light";
   prefetched?: Array<{ queryKey: unknown[]; data: unknown }>;
+  fetcher?: (input: string, init?: RequestInit) => Promise<Response>;
 }
 interface RenderResult {
   status: number;
@@ -34,7 +36,7 @@ const render = _render as (
 
 import { readSessionCookie } from "./lib/cookies";
 import { verifyJWT } from "./lib/jwt";
-import { getJwtSecret } from "./lib/config";
+import { getConfigValue, getJwtSecret } from "./lib/config";
 import { proxyImageUrl } from "./lib/proxyImage";
 import siteRoutes from "./routes/site";
 import type { UserRow, Variables } from "./types";
@@ -92,11 +94,55 @@ async function loadTemplate(c: Context<AppEnv>): Promise<string | null> {
   return await res.text();
 }
 
-export async function ssrHandler(c: Context<AppEnv>): Promise<Response> {
+type AppFetch = (
+  req: Request,
+  env: Env,
+  ctx: ExecutionContext,
+) => Response | Promise<Response>;
+
+export async function ssrHandler(
+  c: Context<AppEnv>,
+  appFetch: AppFetch,
+): Promise<Response> {
   const template = await loadTemplate(c);
   if (!template) {
     return new Response("SSR template missing", { status: 500 });
   }
+
+  // Admin kill switch: serve the bare client template and let the bundle
+  // hydrate on its own. Mirrors the catch-block fallback further down.
+  if (await getConfigValue(c.env.DB, "disable_ssr")) {
+    return new Response(
+      template
+        .replace("<!--app-head-->", "")
+        .replace("<!--app-html-->", "")
+        .replace("<!--app-state-->", ""),
+      { headers: { "Content-Type": "text/html; charset=utf-8" } },
+    );
+  }
+
+  // In-process fetcher passed into the SSR pass so route loaders' api.X()
+  // calls (which target relative `/api/...` URLs) dispatch through the
+  // same Hono app instead of a network round trip. We forward the original
+  // request's cookie header so the auth middleware sees prism_session.
+  const origin = new URL(c.req.url).origin;
+  const cookieHeader = c.req.header("Cookie") ?? "";
+  const fetcher = async (
+    input: string,
+    init?: RequestInit,
+  ): Promise<Response> => {
+    const url = /^https?:/i.test(input)
+      ? input
+      : new URL(input, origin).toString();
+    const headers = new Headers(init?.headers ?? {});
+    if (cookieHeader && !headers.has("Cookie"))
+      headers.set("Cookie", cookieHeader);
+    return appFetch(
+      new Request(url, { ...init, headers }),
+      c.env,
+      c.executionCtx,
+    );
+  };
 
   const auth = await loadAuth(c);
 
@@ -124,29 +170,53 @@ export async function ssrHandler(c: Context<AppEnv>): Promise<Response> {
   // Pick a locale from the i18nextLng cookie (set by the browser-side
   // detector) or fall back to Accept-Language. Phase 9 wires this through
   // to a per-request i18next instance; for now we just pass it along.
-  const cookieLocale = (() => {
+  const readCookie = (name: string): string | null => {
     const raw = c.req.header("Cookie");
     if (!raw) return null;
     for (const part of raw.split(";")) {
-      const [name, ...rest] = part.trim().split("=");
-      if (name === "i18nextLng") return rest.join("=") || null;
+      const [n, ...rest] = part.trim().split("=");
+      if (n === name) return rest.join("=") || null;
     }
     return null;
-  })();
+  };
+  const cookieLocale = readCookie("i18nextLng");
   const acceptLang = c.req.header("Accept-Language");
   const locale =
     cookieLocale ?? acceptLang?.split(",")[0]?.split("-")[0] ?? "en";
+
+  // Resolve color scheme so the SSR pass renders FluentProvider with the
+  // same theme the client will hydrate to — otherwise users see a light→
+  // dark flash on every page load. The cookie is written by the FOUC shim
+  // on first visit (and by ThemeProvider on change); the client hint
+  // covers Chromium browsers' first request before the cookie exists.
+  const cookieScheme = readCookie("prism_color_scheme");
+  const chScheme = c.req.header("Sec-CH-Prefers-Color-Scheme");
+  const colorScheme: "dark" | "light" =
+    cookieScheme === "dark" || cookieScheme === "light"
+      ? cookieScheme
+      : chScheme === "dark"
+        ? "dark"
+        : "light";
 
   try {
     const result = await render(c.req.raw, {
       template,
       auth: auth ?? undefined,
       locale,
+      colorScheme,
       prefetched,
+      fetcher,
     });
     return new Response(result.body, {
       status: result.status,
-      headers: result.headers,
+      headers: {
+        ...result.headers,
+        // Ask Chromium browsers to send the color-scheme client hint on
+        // future requests so a cookie-less first visit can still SSR with
+        // the right theme. Vary on the inputs that affect the response.
+        "Accept-CH": "Sec-CH-Prefers-Color-Scheme",
+        Vary: "Cookie, Sec-CH-Prefers-Color-Scheme, Accept-Language",
+      },
     });
   } catch (err) {
     console.error("SSR error:", err);
