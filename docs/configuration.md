@@ -143,7 +143,7 @@ respects ETag and serves stale-on-error.
 
 ## Social login
 
-Each OAuth source (GitHub, Google, Microsoft, Discord, Telegram, Generic OIDC,
+Each OAuth source (GitHub, Google, Microsoft, Discord, Telegram, X, Generic OIDC,
 Generic OAuth 2) is now a row in the `oauth_sources` table — managed in
 **Admin → OAuth Sources**, not here. The legacy keys below remain readable for
 backwards compatibility but new deployments should use OAuth Sources directly.

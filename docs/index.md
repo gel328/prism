@@ -26,7 +26,7 @@ features:
 
   - icon: 🌐
     title: Social & Federated Login
-    details: GitHub, Google, Microsoft, Discord, Telegram, plus Generic OIDC and Generic OAuth 2 sources for any compliant provider. Multiple sources of the same type, signed-in via GPG clearsign, and per-source linking.
+    details: GitHub, Google, Microsoft, Discord, Telegram, X, plus Generic OIDC and Generic OAuth 2 sources for any compliant provider. Multiple sources of the same type, signed-in via GPG clearsign, and per-source linking.
 
   - icon: 🛡️
     title: Multi-Factor & Step-Up

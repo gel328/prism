@@ -60,6 +60,7 @@ const PROVIDER_LABELS: Record<string, string> = {
   google: "Google",
   microsoft: "Microsoft",
   discord: "Discord",
+  x: "X",
 };
 
 export function SocialConfirm() {

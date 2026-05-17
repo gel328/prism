@@ -1,8 +1,13 @@
-// Social platform connections (GitHub, Google, Microsoft, Discord, Telegram, generic OIDC/OAuth2)
+// Social platform connections (GitHub, Google, Microsoft, Discord, Telegram, X, generic OIDC/OAuth2)
 
 import { Hono } from "hono";
 import type { Context } from "hono";
-import { randomId, randomBase64url, sha256Hex } from "../lib/crypto";
+import {
+  randomId,
+  randomBase64url,
+  sha256Hex,
+  bufToBase64url,
+} from "../lib/crypto";
 import { getConfig, getJwtSecret } from "../lib/config";
 import { decryptSecret, encryptSecret } from "../lib/secretCrypto";
 import { requireAuth, optionalAuth } from "../middleware/auth";
@@ -86,6 +91,23 @@ const PROVIDER_DEFS: Record<string, ProviderDef> = {
     tokenUrl: "",
     userUrl: "",
     scopes: "",
+  },
+  // X (Twitter) OAuth 2.0:
+  //   • PKCE is mandatory on every request (handled in /begin and /callback).
+  //   • Token endpoint authenticates confidential clients via HTTP Basic
+  //     (base64(client_id:client_secret)), NOT client_secret in the body.
+  //   • offline.access is required to get a refresh_token.
+  //   • /2/users/me only returns useful fields when user.fields is set, so
+  //     the params travel as part of userUrl — the standard fetcher sends
+  //     them through unchanged.
+  //   • The v2 API never returns email; users register with the synthetic
+  //     x_<id>@prism.local placeholder, same fallback as Telegram.
+  x: {
+    authUrl: "https://x.com/i/oauth2/authorize",
+    tokenUrl: "https://api.twitter.com/2/oauth2/token",
+    userUrl:
+      "https://api.twitter.com/2/users/me?user.fields=profile_image_url,name,username",
+    scopes: "users.read tweet.read offline.access",
   },
   // Generic providers — all URLs/scopes are configured per-source in oauth_sources table
   oidc: {
@@ -233,9 +255,24 @@ app.get("/:provider/begin", optionalAuth, async (c) => {
     }
   }
 
+  // X (Twitter) requires PKCE on every authorization request — generate a
+  // verifier here, send the SHA-256 challenge to the auth endpoint, and
+  // stash the verifier alongside the state so /callback can replay it
+  // during token exchange.
+  let codeVerifier: string | null = null;
+  if (source.provider === "x") {
+    codeVerifier = randomBase64url(32); // 43 base64url chars — PKCE minimum
+  }
+
   await c.env.KV_CACHE.put(
     `social:state:${nonce}`,
-    JSON.stringify({ slug, provider: source.provider, mode, userId }),
+    JSON.stringify({
+      slug,
+      provider: source.provider,
+      mode,
+      userId,
+      codeVerifier,
+    }),
     { expirationTtl: 600 },
   );
 
@@ -288,6 +325,14 @@ app.get("/:provider/begin", optionalAuth, async (c) => {
   }
   if (source.provider === "discord") {
     params.set("prompt", "consent");
+  }
+  if (source.provider === "x" && codeVerifier) {
+    const challengeBuf = await crypto.subtle.digest(
+      "SHA-256",
+      new TextEncoder().encode(codeVerifier),
+    );
+    params.set("code_challenge", bufToBase64url(challengeBuf));
+    params.set("code_challenge_method", "S256");
   }
 
   return c.json({ redirect: `${source.authUrl}?${params}` });
@@ -525,31 +570,48 @@ app.get("/:provider/callback", async (c) => {
     return c.redirect(`${c.env.APP_URL}/connections?error=invalid_state`);
   await c.env.KV_CACHE.delete(`social:state:${state}`);
 
-  const { provider, mode, userId } = JSON.parse(stateData) as {
+  const { provider, mode, userId, codeVerifier } = JSON.parse(stateData) as {
     slug: string;
     provider: string;
     mode: string;
     userId: string | null;
+    codeVerifier?: string | null;
   };
 
   const redirectUri = `${c.env.APP_URL}/api/connections/${slug}/callback`;
+
+  // X (Twitter) authenticates confidential clients on the token endpoint
+  // with HTTP Basic (NOT client_secret in body) and requires the PKCE
+  // verifier in the body. Build the request shape accordingly.
+  const isX = provider === "x";
+  const tokenHeaders: Record<string, string> = {
+    "Content-Type": "application/x-www-form-urlencoded",
+    Accept: "application/json",
+  };
+  const tokenBody: Record<string, string> = {
+    client_id: source.clientId,
+    code,
+    redirect_uri: redirectUri,
+    grant_type: "authorization_code",
+  };
+  if (isX) {
+    tokenHeaders.Authorization = `Basic ${btoa(`${source.clientId}:${source.clientSecret}`)}`;
+    if (!codeVerifier)
+      return c.redirect(
+        `${c.env.APP_URL}/connections?error=pkce_verifier_missing`,
+      );
+    tokenBody.code_verifier = codeVerifier;
+  } else {
+    tokenBody.client_secret = source.clientSecret;
+  }
 
   // Exchange code for token
   let tokenData: Record<string, unknown>;
   try {
     const tokenRes = await fetch(source.tokenUrl, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-        Accept: "application/json",
-      },
-      body: new URLSearchParams({
-        client_id: source.clientId,
-        client_secret: source.clientSecret,
-        code,
-        redirect_uri: redirectUri,
-        grant_type: "authorization_code",
-      }),
+      headers: tokenHeaders,
+      body: new URLSearchParams(tokenBody),
     });
     tokenData = (await tokenRes.json()) as Record<string, unknown>;
   } catch {
@@ -591,6 +653,16 @@ app.get("/:provider/callback", async (c) => {
     return c.redirect(
       `${c.env.APP_URL}/connections?error=profile_fetch_failed`,
     );
+  }
+
+  // X (Twitter) v2 wraps the profile in a `data` envelope. Flatten it so
+  // the rest of the system can treat the profile like any other provider.
+  if (
+    provider === "x" &&
+    profileData.data &&
+    typeof profileData.data === "object"
+  ) {
+    profileData = profileData.data as Record<string, unknown>;
   }
 
   // GitHub's /user response carries `email` only when the user has set their
@@ -1088,19 +1160,29 @@ app.post("/:id/refresh", requireAuth, async (c) => {
     const plainRefresh =
       (await decryptSecret(c.env, conn.refresh_token)) ?? conn.refresh_token;
     let tokenRes: Response;
+    // X (Twitter) refresh uses the same HTTP Basic auth pattern as its
+    // initial token exchange — secret in the Authorization header, not in
+    // the body.
+    const isX = source.provider === "x";
+    const refreshHeaders: Record<string, string> = {
+      "Content-Type": "application/x-www-form-urlencoded",
+      Accept: "application/json",
+    };
+    const refreshBody: Record<string, string> = {
+      client_id: source.clientId,
+      grant_type: "refresh_token",
+      refresh_token: plainRefresh,
+    };
+    if (isX) {
+      refreshHeaders.Authorization = `Basic ${btoa(`${source.clientId}:${source.clientSecret}`)}`;
+    } else {
+      refreshBody.client_secret = source.clientSecret;
+    }
     try {
       tokenRes = await fetch(source.tokenUrl, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-          Accept: "application/json",
-        },
-        body: new URLSearchParams({
-          client_id: source.clientId,
-          client_secret: source.clientSecret,
-          grant_type: "refresh_token",
-          refresh_token: plainRefresh,
-        }),
+        headers: refreshHeaders,
+        body: new URLSearchParams(refreshBody),
       });
     } catch (err) {
       console.error("[connections] refresh token request threw:", err);
@@ -1178,6 +1260,14 @@ app.post("/:id/refresh", requireAuth, async (c) => {
   } catch (err) {
     console.error("[connections] refresh profile fetch threw:", err);
     return c.json({ error: "profile_fetch_failed" }, 502);
+  }
+
+  if (
+    source.provider === "x" &&
+    profileData.data &&
+    typeof profileData.data === "object"
+  ) {
+    profileData = profileData.data as Record<string, unknown>;
   }
 
   const providerUserId = extractProviderUserId(source.provider, profileData);
@@ -1342,6 +1432,7 @@ function extractProviderUserId(
     case "microsoft":
     case "discord":
     case "telegram":
+    case "x":
       return String(profile.id ?? "");
     case "google":
     case "oidc":
@@ -1377,7 +1468,8 @@ function extractProviderEmail(
   provider: string,
   profile: Record<string, unknown>,
 ): string | null {
-  if (provider === "telegram") return null;
+  // X (Twitter) v2 API never exposes email — treat the same as Telegram.
+  if (provider === "telegram" || provider === "x") return null;
   const email = typeof profile.email === "string" ? profile.email : null;
 
   switch (provider) {
@@ -1429,6 +1521,8 @@ function extractDisplayName(
         .join(" ");
       return parts || (profile.username as string) || "User";
     }
+    case "x":
+      return (profile.name as string) || (profile.username as string) || "User";
     default:
       // oauth2 and unknown
       return (
@@ -1448,7 +1542,11 @@ function extractUsername(
   let base: string;
   if (provider === "github") {
     base = (profile.login as string) || email?.split("@")[0] || "user";
-  } else if (provider === "discord" || provider === "telegram") {
+  } else if (
+    provider === "discord" ||
+    provider === "telegram" ||
+    provider === "x"
+  ) {
     base = (profile.username as string) || email?.split("@")[0] || "user";
   } else {
     // google, microsoft, oidc, oauth2, unknown — prefer preferred_username, then email prefix
@@ -1484,6 +1582,8 @@ function extractProviderAvatar(
     }
     case "telegram":
       return (profile.photo_url as string) ?? null;
+    case "x":
+      return (profile.profile_image_url as string) ?? null;
     default:
       // oauth2 and unknown — try common field names
       return (

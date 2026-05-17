@@ -205,7 +205,7 @@ plaintext is shown only once at creation.
 ### `oauth_sources`
 
 OAuth providers configured in **Admin → OAuth Sources**: built-in (GitHub,
-Google, Microsoft, Discord, Telegram) plus Generic OIDC and Generic OAuth 2.
+Google, Microsoft, Discord, Telegram, X) plus Generic OIDC and Generic OAuth 2.
 Each source has its own slug, enabled flag, and (for OIDC/OAuth2) issuer / auth
 / token / userinfo URLs. The same provider type can have multiple sources.
 `client_secret` is encrypted at rest.

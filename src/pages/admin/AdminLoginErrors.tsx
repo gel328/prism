@@ -242,7 +242,13 @@ export function AdminLoginErrors() {
                   <TableCell style={{ fontFamily: "monospace", fontSize: 12 }}>
                     {err.identifier ?? "—"}
                   </TableCell>
-                  <TableCell style={{ fontFamily: "monospace", fontSize: 12, wordBreak: "break-all" }}>
+                  <TableCell
+                    style={{
+                      fontFamily: "monospace",
+                      fontSize: 12,
+                      wordBreak: "break-all",
+                    }}
+                  >
                     {err.ip_address ?? "—"}
                   </TableCell>
                   <TableCell

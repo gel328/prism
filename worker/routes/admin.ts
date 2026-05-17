@@ -2401,6 +2401,7 @@ const VALID_PROVIDERS = new Set([
   "microsoft",
   "discord",
   "telegram",
+  "x",
   "oidc",
   "oauth2",
 ]);

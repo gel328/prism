@@ -1,6 +1,6 @@
 ---
 title: 社交登录配置
-description: 在 Prism 中配置 OAuth 来源——内置提供商（GitHub、Google、Microsoft、Discord、Telegram）以及自定义通用 OIDC / OAuth 2.0 提供商。
+description: 在 Prism 中配置 OAuth 来源——内置提供商（GitHub、Google、Microsoft、Discord、Telegram、X）以及自定义通用 OIDC / OAuth 2.0 提供商。
 ---
 
 # 社交登录配置
@@ -177,6 +177,41 @@ Telegram 要求在允许登录前，先在 BotFather 中注册来源域名：
 - **Telegram 不提供邮箱地址。** 通过 Telegram 注册的用户将使用占位邮箱（`telegram_<id>@prism.local`），且无法通过 Telegram 完成邮箱验证。用户注册后可在个人资料设置中添加并验证真实邮箱。
 - 身份验证数据中的时间戳（`auth_date`）会在服务器端验证——超过 24 小时的会话将被拒绝。
 - 与其他提供商不同，无需在提供商处注册回调 URL。Telegram 通过在 BotFather 中设置的来源域名进行路由，而非注册的重定向 URI。
+
+### X（Twitter）
+
+X 采用强制 PKCE 的 OAuth 2.0。Prism 会在每次授权请求中生成并发送 `code_challenge`，并通过 HTTP Basic 完成令牌交换——无需任何额外配置。
+
+#### 1. 创建 X OAuth 2.0 应用
+
+1. 打开 [X 开发者后台](https://developer.x.com/en/portal/dashboard)，选择（或创建）项目，并在其中新建 **App**。
+2. 在应用的 **User authentication settings** 中点击 **Set up**（或 **Edit**）：
+   - **App permissions**：选择 **Read** 即可——Prism 仅读取资料。
+   - **Type of App**：**Web App, Automated App or Bot**（机密客户端，会下发 client secret）。
+   - **Callback URI / Redirect URL**：`https://your-prism-domain/api/connections/<slug>/callback`
+   - **Website URL**：你的 Prism 域名
+3. 保存后在 **Keys and tokens** 标签的 **OAuth 2.0 Client ID and Client Secret** 区域复制 **Client ID** 与 **Client Secret**（密钥只显示一次，遗失需重新生成）。
+
+#### 2. 在 Prism 中添加来源
+
+进入 **Admin → OAuth Sources → Add source**：
+
+| 字段          | 值                                       |
+|---------------|------------------------------------------|
+| Slug          | `x`（或任意唯一键）                        |
+| 提供商        | **X (Twitter)**                          |
+| 显示名称      | `X`（显示在登录按钮上）                    |
+| Client ID     | 从 X 开发者后台复制                        |
+| Client Secret | 从 X 开发者后台复制                        |
+
+保存后，登录页面会立即出现该按钮。
+
+#### 注意事项
+
+- **X v2 API 不返回邮箱。** 通过 X 注册的用户将使用占位邮箱（`x_<id>@prism.local`），且初始状态为未验证——注册后可在个人资料设置中添加并验证真实邮箱。与 Telegram 流程一致。
+- Prism 请求的 scope 为 `users.read tweet.read offline.access`。其中 `offline.access` 是获取 `refresh_token` 的前提；缺失它时连接页的**刷新**按钮会要求用户重新授权。
+- Prism 调用 `/2/users/me?user.fields=profile_image_url,name,username`，并在写入前展开 v2 的 `data` 外层。
+- X 的令牌端点要求 HTTP Basic 认证，而非在请求体里附带 `client_secret`。Prism 在初次换码和刷新流程中已自动处理。
 
 ## 通用 OpenID Connect
 

@@ -173,7 +173,7 @@ migration and is idempotent — re-running is safe.
 | Field         | Description                                                                         |
 |---------------|-------------------------------------------------------------------------------------|
 | Slug          | Unique URL key — appears in the callback URL as `/api/connections/<slug>/callback`  |
-| Provider      | Base OAuth type (GitHub, Google, Microsoft, Discord, Generic OIDC, Generic OAuth 2) |
+| Provider      | Base OAuth type (GitHub, Google, Microsoft, Discord, Telegram, X, Generic OIDC, Generic OAuth 2) |
 | Display name  | Label shown on login/register buttons                                               |
 | Client ID     | OAuth application client ID                                                         |
 | Client Secret | OAuth application client secret                                                     |

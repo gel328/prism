@@ -75,6 +75,7 @@ const PROVIDER_COLORS: Record<string, string> = {
   microsoft: "#0078d4",
   discord: "#5865f2",
   telegram: "#2AABEE",
+  x: "#000000",
 };
 
 const PROVIDER_ICON_URLS: Record<string, string> = {
@@ -83,6 +84,7 @@ const PROVIDER_ICON_URLS: Record<string, string> = {
   microsoft: "https://cdn.simpleicons.org/microsoft",
   discord: "https://cdn.simpleicons.org/discord",
   telegram: "https://cdn.simpleicons.org/telegram",
+  x: "https://cdn.simpleicons.org/x",
 };
 
 // Routes the icon URL through the image proxy. Hook needs its own

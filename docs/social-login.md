@@ -1,6 +1,6 @@
 ---
 title: Social Login Setup
-description: Configure OAuth sources in Prism — built-in providers (GitHub, Google, Microsoft, Discord, Telegram) and custom Generic OIDC / OAuth 2.0 providers.
+description: Configure OAuth sources in Prism — built-in providers (GitHub, Google, Microsoft, Discord, Telegram, X) and custom Generic OIDC / OAuth 2.0 providers.
 ---
 
 # Social Login Setup
@@ -178,6 +178,41 @@ Save. The button appears on the login page immediately.
 - The auth data timestamp (`auth_date`) is verified server-side — sessions older than 24 hours are rejected.
 - Unlike other providers, there is no redirect callback URL to register with the provider. Telegram routes via the whitelisted origin domain set in BotFather, not a registered redirect URI.
 - Telegram does not support multiple account linking with the same bot by default. Each user's Telegram account can be linked to one Prism account per source slug.
+
+### X (Twitter)
+
+X uses OAuth 2.0 with mandatory PKCE. Prism generates and sends a `code_challenge` on every authorization request and authenticates the token exchange with HTTP Basic — no extra configuration is required on your side.
+
+#### 1. Create an X OAuth 2.0 app
+
+1. Open the [X Developer Portal](https://developer.x.com/en/portal/dashboard) and select (or create) a project, then create an **App** inside it.
+2. In **User authentication settings** on the app, click **Set up** (or **Edit**):
+   - **App permissions**: **Read** is sufficient — Prism only reads the profile.
+   - **Type of App**: **Web App, Automated App or Bot** (this issues a confidential client with a client secret).
+   - **Callback URI / Redirect URL**: `https://your-prism-domain/api/connections/<slug>/callback`
+   - **Website URL**: your Prism domain
+3. Save. On the **Keys and tokens** tab, under **OAuth 2.0 Client ID and Client Secret**, copy the **Client ID** and **Client Secret** (the secret is shown once — regenerate if you lose it).
+
+#### 2. Add the source in Prism
+
+Go to **Admin → OAuth Sources → Add source**:
+
+| Field         | Value                          |
+|---------------|--------------------------------|
+| Slug          | `x` (or any unique key)        |
+| Provider      | **X (Twitter)**                |
+| Display name  | `X` (shown on login button)    |
+| Client ID     | Paste from the X Developer Portal |
+| Client Secret | Paste from the X Developer Portal |
+
+Save. The button appears on the login page immediately.
+
+#### Notes
+
+- **X does not provide an email address** through the v2 API. Users who register through X get a placeholder email (`x_<id>@prism.local`) and start unverified — they can add and verify a real email from their profile settings after registering. This mirrors the Telegram flow.
+- Prism requests `users.read tweet.read offline.access`. `offline.access` is what allows the access token to be refreshed; without it X returns no `refresh_token` and the **Refresh** action on the Connections page will require the user to reconnect.
+- Prism calls `/2/users/me?user.fields=profile_image_url,name,username` and flattens the v2 `data` envelope before storing the profile.
+- The X token endpoint requires HTTP Basic authentication, not `client_secret` in the request body. Prism handles this automatically for both the initial token exchange and refreshes.
 
 ## Generic OpenID Connect
 

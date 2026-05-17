@@ -26,7 +26,7 @@ features:
 
   - icon: 🌐
     title: 社交与联邦登录
-    details: GitHub、Google、Microsoft、Discord、Telegram，并通过 Generic OIDC / Generic OAuth 2 接入任意兼容 provider。同一类型可多源、可 GPG clearsign 登录、可按源绑定。
+    details: GitHub、Google、Microsoft、Discord、Telegram、X，并通过 Generic OIDC / Generic OAuth 2 接入任意兼容 provider。同一类型可多源、可 GPG clearsign 登录、可按源绑定。
 
   - icon: 🛡️
     title: 多因素与步骤提升

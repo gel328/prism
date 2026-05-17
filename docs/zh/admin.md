@@ -132,7 +132,7 @@ description: 在 Prism 管理面板中管理用户、应用、OAuth 来源、设
 | 字段          | 说明                                                                      |
 |---------------|---------------------------------------------------------------------------|
 | Slug          | 唯一 URL 键 — 出现在回调 URL 中，格式为 `/api/connections/<slug>/callback` |
-| 提供商        | 基础 OAuth 类型（GitHub、Google、Microsoft、Discord、通用 OIDC、通用 OAuth 2）   |
+| 提供商        | 基础 OAuth 类型（GitHub、Google、Microsoft、Discord、Telegram、X、通用 OIDC、通用 OAuth 2）   |
 | 显示名称      | 显示在登录/注册按钮上的标签                                               |
 | Client ID     | OAuth 应用的客户端 ID                                                     |
 | Client Secret | OAuth 应用的客户端密钥                                                    |
