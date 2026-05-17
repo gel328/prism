@@ -1490,6 +1490,9 @@ export const api = {
     userinfo_url?: string;
     scopes?: string;
     issuer_url?: string;
+    icon_url?: string;
+    show_icon?: boolean;
+    icon_only?: 0 | 1 | 2;
   }) =>
     request<{ source: OAuthSource }>(
       "POST",
@@ -1509,6 +1512,9 @@ export const api = {
       userinfo_url?: string;
       scopes?: string;
       issuer_url?: string;
+      icon_url?: string;
+      show_icon?: boolean;
+      icon_only?: 0 | 1 | 2;
     },
   ) =>
     request<{ message: string }>(
@@ -1607,6 +1613,26 @@ export interface SitePublicConfig {
     name: string;
     provider: string;
     icon_url?: string | null;
+    show_icon?: number;
+    /** Pre-proxied URL ready to drop into <img src> without calling the
+     *  client-side proxy register (which requires auth). Null when the
+     *  source has no resolvable icon (e.g. show_icon=0, or an unknown
+     *  provider type with no override). */
+    icon_proxied_url?: string | null;
+    /** True when the resolved icon is a known monochrome black silhouette
+     *  (built-in default for x, github, etc.) — the UI should apply an
+     *  invert filter in dark mode so it doesn't vanish on dark
+     *  backgrounds. False for per-source override icons (palette
+     *  unknown). */
+    icon_invert_on_dark?: boolean;
+    /** Tri-state, gated on actually having an icon to render:
+     *    0 = text + icon (default)
+     *    1 = icon-only, normal size
+     *    2 = icon-only, large size
+     *  Server forces 0 when no icon is available, so the frontend can
+     *  trust this without re-checking. The provider name still flows in
+     *  via aria-label for icon-only modes. */
+    icon_only?: 0 | 1 | 2;
   }[];
 }
 
@@ -2333,6 +2359,10 @@ export interface OAuthSource {
   userinfo_url: string | null;
   scopes: string | null;
   issuer_url: string | null;
+  icon_url: string | null;
+  show_icon: number;
+  /** 0 = text + icon, 1 = icon-only small, 2 = icon-only large */
+  icon_only: number;
 }
 
 export interface SiteInvite {

@@ -29,9 +29,10 @@ import {
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { api, ApiError, useProxiedImage } from "../lib/api";
+import { api, ApiError } from "../lib/api";
 import { SkeletonAppCards } from "../components/Skeletons";
 import { useToastMessage } from "../lib/useToastMessage";
+import { PROVIDER_COLORS } from "../lib/providerIcons";
 
 const useStyles = makeStyles({
   grid: {
@@ -69,26 +70,8 @@ const useStyles = makeStyles({
   },
 });
 
-const PROVIDER_COLORS: Record<string, string> = {
-  github: "#24292e",
-  google: "#4285f4",
-  microsoft: "#0078d4",
-  discord: "#5865f2",
-  telegram: "#2AABEE",
-  x: "#000000",
-};
-
-const PROVIDER_ICON_URLS: Record<string, string> = {
-  github: "https://cdn.simpleicons.org/github",
-  google: "https://cdn.simpleicons.org/google",
-  microsoft: "https://cdn.simpleicons.org/microsoft",
-  discord: "https://cdn.simpleicons.org/discord",
-  telegram: "https://cdn.simpleicons.org/telegram",
-  x: "https://cdn.simpleicons.org/x",
-};
-
-// Routes the icon URL through the image proxy. Hook needs its own
-// component because the parent grid renders one per provider in a .map().
+// URL is pre-proxied by /api/site so no client-side proxy registration is
+// needed here. Wrapped just to keep the markup tidy.
 function ProviderIcon({
   url,
   alt,
@@ -98,11 +81,9 @@ function ProviderIcon({
   alt: string;
   className: string;
 }) {
-  const src = useProxiedImage(url);
-  if (!src) return null;
   return (
     <div className={className}>
-      <Image src={src} alt={alt} width={18} height={18} fit="contain" />
+      <Image src={url} alt={alt} width={18} height={18} fit="contain" />
     </div>
   );
 }
@@ -364,8 +345,7 @@ export function Connections() {
         {providers.map((p) => {
           const conns = getConnections(p.slug);
           const color = PROVIDER_COLORS[p.provider] ?? "#666";
-          const providerIconUrl =
-            p.icon_url ?? PROVIDER_ICON_URLS[p.provider] ?? null;
+          const providerIconUrl = p.icon_proxied_url ?? null;
 
           return (
             <div key={p.slug} className={styles.providerCard}>

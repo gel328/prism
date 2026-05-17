@@ -278,6 +278,16 @@ export interface OAuthSourceRow {
   scopes: string | null;
   // Added in 0013 — OIDC issuer URL for discovery reference
   issuer_url: string | null;
+  // Added in 0046 — per-source icon override; null falls back to the
+  // global default for the source's provider type.
+  icon_url: string | null;
+  // Added in 0046 — when 0, the source's login button renders text-only
+  // (no icon, even if icon_url or a global default exists).
+  show_icon: number;
+  // Added in 0046 — tri-state login button display: 0 = text + icon
+  // (default), 1 = icon only normal size, 2 = icon only large size.
+  // Falls back to text when no icon is available.
+  icon_only: number;
 }
 
 export interface SiteInviteRow {

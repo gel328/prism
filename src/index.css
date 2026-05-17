@@ -27,6 +27,24 @@ a {
   text-decoration: none;
 }
 
+/* Monochrome provider icons (X, GitHub) ship as a black silhouette and
+   vanish on the dark background. /api/site flags them with
+   icon_invert_on_dark; we invert via filter only in dark mode. */
+[data-theme="dark"] .provider-icon--invert-on-dark {
+  filter: invert(1);
+}
+
+/* Full-width icon-only login button. Fluent UI auto-applies a square
+   (min-width: auto, width: max-content, square padding) layout to any
+   Button with no text children. Those rules sit in atomic classes that
+   we can't reliably out-order via griffel, so !important is the only
+   reliable beat — scoped narrowly to this opt-in class. */
+button.provider-button--full-width {
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+}
+
 /* Scrollbar styling */
 ::-webkit-scrollbar {
   width: 6px;

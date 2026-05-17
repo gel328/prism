@@ -3,6 +3,10 @@
 import { Hono } from "hono";
 import { getConfig } from "../lib/config";
 import { proxyImageUrl } from "../lib/proxyImage";
+import {
+  resolveProviderIconUrl,
+  isMonochromeDarkProvider,
+} from "../lib/providerIcons";
 import type { Variables } from "../types";
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -11,9 +15,55 @@ app.get("/health", (c) => c.json({ ok: true }));
 
 app.get("/site", async (c) => {
   const config = await getConfig(c.env.DB);
-  const { results: enabled_providers } = await c.env.DB.prepare(
-    "SELECT slug, name, provider FROM oauth_sources WHERE enabled = 1 ORDER BY created_at ASC",
-  ).all<{ slug: string; name: string; provider: string }>();
+  const { results: providerRows } = await c.env.DB.prepare(
+    "SELECT slug, name, provider, icon_url, show_icon, icon_only FROM oauth_sources WHERE enabled = 1 ORDER BY created_at ASC",
+  ).all<{
+    slug: string;
+    name: string;
+    provider: string;
+    icon_url: string | null;
+    show_icon: number;
+    icon_only: number;
+  }>();
+
+  // Pre-register each resolved icon through the image proxy so the
+  // (unauthenticated) Login page can render it without hitting the
+  // auth-required /proxy/image/register endpoint.
+  const enabled_providers = await Promise.all(
+    providerRows.map(async (p) => {
+      const resolved = resolveProviderIconUrl(p);
+      const icon_proxied_url = await proxyImageUrl(
+        c.env.APP_URL,
+        c.env.DB,
+        resolved,
+      );
+      // Only auto-invert when we're serving the built-in default for a
+      // known-monochrome provider. If the admin pasted their own icon_url
+      // override we have no idea what's in it — leave it alone.
+      const icon_invert_on_dark =
+        !p.icon_url &&
+        resolved !== null &&
+        isMonochromeDarkProvider(p.provider);
+      // icon_only is gated on actually having an icon — otherwise the
+      // button would render empty. Flatten that here so the frontend
+      // doesn't have to repeat the guard. Values: 0 = text + icon,
+      // 1 = icon-only small, 2 = icon-only large.
+      const icon_only =
+        icon_proxied_url !== null && (p.icon_only === 1 || p.icon_only === 2)
+          ? p.icon_only
+          : 0;
+      return {
+        slug: p.slug,
+        name: p.name,
+        provider: p.provider,
+        icon_url: p.icon_url,
+        show_icon: p.show_icon,
+        icon_proxied_url,
+        icon_invert_on_dark,
+        icon_only,
+      };
+    }),
+  );
 
   return c.json({
     site_name: config.site_name,

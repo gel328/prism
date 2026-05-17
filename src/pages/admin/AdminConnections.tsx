@@ -14,6 +14,8 @@ import {
   Input,
   MessageBar,
   Option,
+  Radio,
+  RadioGroup,
   Spinner,
   Switch,
   Table,
@@ -123,6 +125,9 @@ const EMPTY_FORM = {
   token_url: "",
   userinfo_url: "",
   scopes: "",
+  icon_url: "",
+  show_icon: true,
+  icon_only: 0 as 0 | 1 | 2,
 };
 
 const EMPTY_EDIT = {
@@ -134,6 +139,9 @@ const EMPTY_EDIT = {
   token_url: "",
   userinfo_url: "",
   scopes: "",
+  icon_url: "",
+  show_icon: true,
+  icon_only: 0 as 0 | 1 | 2,
 };
 
 type DiscoveredUrls = {
@@ -213,6 +221,9 @@ export function AdminConnections() {
         name: form.name,
         client_id: form.client_id,
         client_secret: form.client_secret,
+        icon_url: form.icon_url || undefined,
+        show_icon: form.show_icon,
+        icon_only: form.icon_only,
         ...(isGenericCreate && {
           auth_url: form.auth_url,
           token_url: form.token_url,
@@ -244,6 +255,11 @@ export function AdminConnections() {
       token_url: src.token_url ?? "",
       userinfo_url: src.userinfo_url ?? "",
       scopes: src.scopes ?? "",
+      icon_url: src.icon_url ?? "",
+      show_icon: src.show_icon !== 0,
+      icon_only: (src.icon_only === 1 || src.icon_only === 2
+        ? src.icon_only
+        : 0) as 0 | 1 | 2,
     });
     setEditError("");
     setEditDiscoverError("");
@@ -258,6 +274,11 @@ export function AdminConnections() {
         name: editForm.name || undefined,
         client_id: editForm.client_id || undefined,
         client_secret: editForm.client_secret || undefined,
+        // Empty string clears the per-source override (falls back to global
+        // default), so send "" — not undefined — when the user blanks it.
+        icon_url: editForm.icon_url,
+        show_icon: editForm.show_icon,
+        icon_only: editForm.icon_only,
         ...(isGenericEdit && {
           auth_url: editForm.auth_url || undefined,
           token_url: editForm.token_url || undefined,
@@ -406,6 +427,70 @@ export function AdminConnections() {
                 setForm((f) => ({ ...f, client_secret: e.target.value }))
               }
             />
+          </Field>
+        </div>
+
+        <div className={styles.formFull}>
+          <Field
+            label={t("admin.oauthIconUrl")}
+            hint={t("admin.oauthIconUrlHint")}
+          >
+            <Input
+              value={form.icon_url}
+              onChange={(e) =>
+                setForm((f) => ({ ...f, icon_url: e.target.value }))
+              }
+              placeholder="https://example.com/icon.svg"
+              disabled={!form.show_icon}
+            />
+          </Field>
+        </div>
+
+        <div className={styles.formFull}>
+          <Field
+            label={t("admin.oauthShowIcon")}
+            hint={t("admin.oauthShowIconHint")}
+          >
+            <Switch
+              checked={form.show_icon}
+              onChange={(_, d) =>
+                setForm((f) => ({ ...f, show_icon: d.checked }))
+              }
+            />
+          </Field>
+        </div>
+
+        <div className={styles.formFull}>
+          <Field
+            label={t("admin.oauthIconOnly")}
+            hint={t("admin.oauthIconOnlyHint")}
+          >
+            <RadioGroup
+              value={String(form.icon_only)}
+              layout="horizontal"
+              onChange={(_, d) =>
+                setForm((f) => ({
+                  ...f,
+                  icon_only: (Number(d.value) as 0 | 1 | 2) ?? 0,
+                }))
+              }
+            >
+              <Radio
+                value="0"
+                label={t("admin.oauthIconOnlyOff")}
+                disabled={!form.show_icon}
+              />
+              <Radio
+                value="1"
+                label={t("admin.oauthIconOnlySmall")}
+                disabled={!form.show_icon}
+              />
+              <Radio
+                value="2"
+                label={t("admin.oauthIconOnlyLarge")}
+                disabled={!form.show_icon}
+              />
+            </RadioGroup>
           </Field>
         </div>
 
@@ -628,6 +713,64 @@ export function AdminConnections() {
                     }))
                   }
                 />
+              </Field>
+
+              <Field
+                label={t("admin.oauthIconUrl")}
+                hint={t("admin.oauthIconUrlHint")}
+              >
+                <Input
+                  value={editForm.icon_url}
+                  onChange={(e) =>
+                    setEditForm((f) => ({ ...f, icon_url: e.target.value }))
+                  }
+                  placeholder="https://example.com/icon.svg"
+                  disabled={!editForm.show_icon}
+                />
+              </Field>
+
+              <Field
+                label={t("admin.oauthShowIcon")}
+                hint={t("admin.oauthShowIconHint")}
+              >
+                <Switch
+                  checked={editForm.show_icon}
+                  onChange={(_, d) =>
+                    setEditForm((f) => ({ ...f, show_icon: d.checked }))
+                  }
+                />
+              </Field>
+
+              <Field
+                label={t("admin.oauthIconOnly")}
+                hint={t("admin.oauthIconOnlyHint")}
+              >
+                <RadioGroup
+                  value={String(editForm.icon_only)}
+                  layout="horizontal"
+                  onChange={(_, d) =>
+                    setEditForm((f) => ({
+                      ...f,
+                      icon_only: (Number(d.value) as 0 | 1 | 2) ?? 0,
+                    }))
+                  }
+                >
+                  <Radio
+                    value="0"
+                    label={t("admin.oauthIconOnlyOff")}
+                    disabled={!editForm.show_icon}
+                  />
+                  <Radio
+                    value="1"
+                    label={t("admin.oauthIconOnlySmall")}
+                    disabled={!editForm.show_icon}
+                  />
+                  <Radio
+                    value="2"
+                    label={t("admin.oauthIconOnlyLarge")}
+                    disabled={!editForm.show_icon}
+                  />
+                </RadioGroup>
               </Field>
 
               {isGenericEdit && (

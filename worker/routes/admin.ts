@@ -2417,7 +2417,7 @@ const LEGACY_PROVIDER_KEYS = [
 app.get("/oauth-sources", async (c) => {
   const [{ results }, config] = await Promise.all([
     c.env.DB.prepare(
-      "SELECT id, slug, provider, name, enabled, created_at, auth_url, token_url, userinfo_url, scopes, issuer_url FROM oauth_sources ORDER BY created_at ASC",
+      "SELECT id, slug, provider, name, enabled, created_at, auth_url, token_url, userinfo_url, scopes, issuer_url, icon_url, show_icon, icon_only FROM oauth_sources ORDER BY created_at ASC",
     ).all<Omit<OAuthSourceRow, "client_id" | "client_secret">>(),
     getConfig(c.env.DB),
   ]);
@@ -2552,6 +2552,9 @@ app.post("/oauth-sources", async (c) => {
     userinfo_url?: string;
     scopes?: string;
     issuer_url?: string;
+    icon_url?: string;
+    show_icon?: boolean;
+    icon_only?: 0 | 1 | 2;
   }>();
 
   if (
@@ -2599,8 +2602,12 @@ app.post("/oauth-sources", async (c) => {
   const now = Math.floor(Date.now() / 1000);
 
   try {
+    // icon_only is a 0|1|2 enum; clamp anything else to 0 so a bad value
+    // can't poison the row.
+    const iconOnlyInt =
+      body.icon_only === 1 || body.icon_only === 2 ? body.icon_only : 0;
     await c.env.DB.prepare(
-      "INSERT INTO oauth_sources (id, slug, provider, name, client_id, client_secret, enabled, created_at, auth_url, token_url, userinfo_url, scopes, issuer_url) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO oauth_sources (id, slug, provider, name, client_id, client_secret, enabled, created_at, auth_url, token_url, userinfo_url, scopes, issuer_url, icon_url, show_icon, icon_only) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
       .bind(
         id,
@@ -2615,6 +2622,9 @@ app.post("/oauth-sources", async (c) => {
         body.userinfo_url ?? null,
         body.scopes ?? null,
         body.issuer_url ?? null,
+        body.icon_url ?? null,
+        body.show_icon === false ? 0 : 1,
+        iconOnlyInt,
       )
       .run();
   } catch (err) {
@@ -2669,6 +2679,9 @@ app.patch("/oauth-sources/:id", async (c) => {
     userinfo_url?: string;
     scopes?: string;
     issuer_url?: string;
+    icon_url?: string;
+    show_icon?: boolean;
+    icon_only?: 0 | 1 | 2;
   }>();
 
   const sets: string[] = [];
@@ -2708,6 +2721,20 @@ app.patch("/oauth-sources/:id", async (c) => {
   if (body.issuer_url !== undefined) {
     sets.push("issuer_url = ?");
     vals.push(body.issuer_url || null);
+  }
+  if (body.icon_url !== undefined) {
+    sets.push("icon_url = ?");
+    vals.push(body.icon_url || null);
+  }
+  if (body.show_icon !== undefined) {
+    sets.push("show_icon = ?");
+    vals.push(body.show_icon ? 1 : 0);
+  }
+  if (body.icon_only !== undefined) {
+    sets.push("icon_only = ?");
+    vals.push(
+      body.icon_only === 1 || body.icon_only === 2 ? body.icon_only : 0,
+    );
   }
 
   if (!sets.length) return c.json({ error: "Nothing to update" }, 400);
