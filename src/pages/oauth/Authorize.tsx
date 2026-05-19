@@ -155,22 +155,18 @@ export function Authorize() {
 
   const isSiteScope = useCallback((s: string) => s.startsWith("site:"), []);
 
-  // Auto-decline all site scopes when the user has no 2FA enrolled.
+  // Auto-decline all site scopes by default, so users must explicitly opt-in.
   // Render-time set (guarded by an identity ref) so the React 19 strict
   // rule against setState-in-effect is satisfied.
   const [autoDeclinedFor, setAutoDeclinedFor] = useState<{
     siteGrant: boolean;
-    grantable: boolean;
   } | null>(null);
   if (
     data?.requires_site_grant &&
-    !data.site_scopes_grantable &&
-    (autoDeclinedFor?.siteGrant !== data.requires_site_grant ||
-      autoDeclinedFor?.grantable !== data.site_scopes_grantable)
+    autoDeclinedFor?.siteGrant !== data.requires_site_grant
   ) {
     setAutoDeclinedFor({
       siteGrant: data.requires_site_grant,
-      grantable: data.site_scopes_grantable,
     });
     setDeclinedScopes((prev) => {
       const next = new Set(prev);
