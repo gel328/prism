@@ -41,7 +41,7 @@ A self-hosted OAuth 2.0 / OpenID Connect identity platform built on Cloudflare W
 # 1. Clone and install
 git clone https://github.com/siiway/prism
 cd prism
-pnpm install
+bun install
 
 # 2. Provision Cloudflare resources
 wrangler d1 create prism-db
@@ -52,10 +52,10 @@ wrangler r2 bucket create prism-assets
 # 3. Fill in the resource IDs in wrangler.jsonc
 
 # 4. Run migrations
-pnpm db:migrate
+bun run db:migrate
 
 # 5. Start dev server
-pnpm dev          # Vite on :5173
+bun run dev          # Vite on :5173
 ```
 
 Open <http://localhost:5173> — you will be redirected to the first-run setup page to create the admin account.
@@ -73,14 +73,14 @@ bash scripts/build.sh
 .\scripts\build.ps1
 ```
 
-All scripts auto-install missing toolchain dependencies (Rust, wasm-pack, Node.js, pnpm).
+All scripts auto-install missing toolchain dependencies (Rust, wasm-pack, Node.js, bun).
 
 Optional flags: `--skip-wasm` (skip PoW WASM compilation), `--skip-frontend` (skip Vite build)
 
 ## Deploy
 
 ```bash
-pnpm deploy   # type-checks + builds frontend + wrangler deploy
+bun run deploy   # type-checks + builds frontend + wrangler deploy
 ```
 
 ## Documentation

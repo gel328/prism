@@ -11,3 +11,7 @@
 - Build docs: bun run docs:build
 - Run docs dev server: bun run docs:dev
 - Lint: bun run lint
+
+## Contributing
+
+@CONTRIBUTING.md

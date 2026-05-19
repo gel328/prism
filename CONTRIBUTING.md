@@ -14,7 +14,7 @@ bun run lint
 ```bash
 prettier -w worker src
 ```
-1. Your commit message should only contain ASCII characters and should be clean. e.g,
+4. Your commit message should only contain ASCII characters and should be clean. e.g,
 ```text
 implement <stuff you implemented>
 fix <bug you fixed>

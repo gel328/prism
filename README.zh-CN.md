@@ -41,7 +41,7 @@
 # 1. 克隆并安装依赖
 git clone https://github.com/siiway/prism
 cd prism
-pnpm install
+bun install
 
 # 2. 创建 Cloudflare 资源
 wrangler d1 create prism-db
@@ -52,10 +52,10 @@ wrangler r2 bucket create prism-assets
 # 3. 将资源 ID 填入 wrangler.jsonc
 
 # 4. 执行数据库迁移
-pnpm db:migrate
+bun run db:migrate
 
 # 5. 启动开发服务器
-pnpm dev   # Wrangler 监听 :8787
+bun run dev   # Wrangler 监听 :8787
 ```
 
 打开 <http://localhost:5173>，系统会自动跳转到首次运行配置页面以创建管理员账号。
@@ -73,14 +73,14 @@ bash scripts/build.sh
 .\scripts\build.ps1
 ```
 
-所有脚本均可自动安装缺失的工具链依赖（Rust、wasm-pack、Node.js、pnpm）。
+所有脚本均可自动安装缺失的工具链依赖（Rust、wasm-pack、Node.js、bun）。
 
 可选参数：`--skip-wasm`（跳过 PoW WASM 编译）、`--skip-frontend`（跳过 Vite 构建）
 
 ## 部署
 
 ```bash
-pnpm deploy   # 类型检查 + 构建前端 + wrangler 部署
+bun run deploy   # 类型检查 + 构建前端 + wrangler 部署
 ```
 
 ## 文档
