@@ -99,7 +99,7 @@ worker/
     ├── auth.ts             # 注册、登录、TOTP、Passkey、GPG、会话、PoW
     ├── oauth.ts            # 授权服务器、token、OIDC、步骤提升 2FA、/me/* API
     ├── apps.ts             # OAuth 应用 CRUD + scope 定义/访问规则
-    ├── teams.ts            # 团队、成员、邀请、转让、团队的域名/应用
+    ├── teams.ts            # 团队 + 子团队（parent_team_id）、成员、邀请、转让、团队的域名/应用；导出 getEffectiveMember / dissolveTeam
     ├── domains.ts          # 域名验证（TXT/meta/well-known）
     ├── connections.ts      # 社交 OAuth 流（含 Telegram）
     ├── user.ts             # 资料、头像、改密、邮箱、通知、PAT、webhook
@@ -169,6 +169,34 @@ WebAuthn 凭据。`credential_id` 用 base64url。每次成功认证后更新 `c
 ### `domains`
 
 用户/团队添加的域名，用于 OAuth redirect URI 校验。`verification_method` 是 `dns-txt`、`html-meta`、`well-known` 之一。重新核验时使用最初采用的方法。
+
+团队为已验证父域（包括 — 当 `inherit_team_domains` 开启时 — 任意上级团队的已验证父域）添加子域时，新行会直接落库为已验证状态，`verified_by_parent` 记录所用的父域。
+
+### `teams` / `team_members` / `team_invites`
+
+`teams` 承载团队名/描述/头像、公开资料主开关 `profile_is_public`、所有 `profile_show_*` 分区覆写（`NULL` 跟随站点默认，`0`/`1` 表示团队显式选择）、加入门槛字段（`require_2fa`、`require_verified_email`，启用站点底线后再被向上钳制）以及让嵌套生效的 **`parent_team_id`**。
+
+- `parent_team_id` 是自引用外键，`ON DELETE CASCADE`（迁移 `0047_sub_teams.sql`）。`parent_team_id` 上有索引，`WHERE parent_team_id = ?` 查询很便宜。顶层团队此字段为 `NULL`；循环和超深嵌套在 API 层拒绝（服务端上限 = `max_team_depth`，默认 5；递归 helper 外层有硬护栏 `ANCESTOR_WALK_LIMIT = 64`，即便数据被破坏也不会失控）。
+- `profile_show_sub_teams`（迁移 `0048_sub_team_config.sql` 加入）沿用与其它 `profile_show_*` 字段相同的 `NULL`/`0`/`1` 三态。
+
+`team_members` 每个 `(team_id, user_id)` 一行，`role` ∈ `owner | co-owner | admin | member`，`show_on_profile` 是用户主开关 `profile_show_joined_teams` 的按团队覆写。
+
+`team_members` 只记录**直接**成员资格。继承访问在读时由 `getEffectiveMember`（位于 `routes/teams.ts`）计算：沿 `parent_team_id` 从团队向上走到根，挑用户在整条链上拥有的最高角色。`listEffectiveTeamMemberships` 反向操作 —— 先取直接成员资格，再把每条扩展成其后代子树，用以呈现“我通过继承能看到的团队”。两个 helper 都遵循 `inherit_team_membership` 站点配置；关闭时退化为仅看直接行。
+
+`team_invites` 是标准的随机 token + 过期 + 最大次数表；token 在数据库里以 keyed-HMAC 哈希存储（`__HASH_v1__…`），单凭被盗数据库行无法伪造加入。签发 `role = co-owner` 的邀请要求签发者本人是 `owner`；admin/member 等级对 admin+ 开放。
+
+团队的应用与域名归属仍走原本的字段（`oauth_apps.team_id`、`domains.team_id`）—— 子团队继承**不会**复制行。团队域名列表会把上级团队拥有的域名作为只读条目带上 `inherited_from` 标记返回（受 `inherit_team_domains` 控制）。
+
+#### 子团队语义速览
+
+| 行为                              | 开关                                            | 默认值 | 关闭时                                                                 |
+|-----------------------------------|-------------------------------------------------|--------|------------------------------------------------------------------------|
+| 整个特性是否可用                  | `enable_sub_teams`                              | `true` | 所有子团队接口返回 403；`parent_team_id` 行保留但被忽略。              |
+| 成员角色向下级联                  | `inherit_team_membership`                       | `true` | 有效角色 = 仅直接行。                                                  |
+| 已验证域名向下级联                | `inherit_team_domains`                          | `true` | 子团队域名列表和自动验证只看本团队拥有的行。                           |
+| 公开资料中展示子团队              | `default_team_profile_show_sub_teams` + 团队的 `profile_show_sub_teams` | `true` | 公开团队资料省略 `sub_teams` 数组。                                    |
+
+解散团队走递归的 `dissolveTeam`：自下而上，每一层先把它的 OAuth 应用重新分配给该层自己的 owner（若没有则给执行删除的用户），再删除 `kind = 'team'` 的 user 行，最后才删 `teams` 行。`parent_team_id` 上的数据库级联是“双保险”的第二道防线 —— 真正负责在级联过程中不让团队应用被 `oauth_apps.owner_id → users.id ON DELETE CASCADE` 顺带删掉的是应用层的这个循环。
 
 ### `social_connections`
 

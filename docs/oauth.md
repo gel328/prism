@@ -139,9 +139,16 @@ token. The token can only act on that one team.
 Two extra rules at consent time (`worker/routes/oauth.ts:830-859`):
 
 - The user must be `owner`, `co-owner`, or `admin` of the chosen team.
+  **Effective role counts** — an admin inherited from an ancestor team can
+  grant single-team scopes on a sub-team (matching the session API). The
+  consent screen's team picker shows every team the user can manage,
+  direct or inherited.
 - `team:delete` additionally requires `owner` or `co-owner`. (Admins can grant
   reads/writes; only the people who could actually disband the team can grant
-  the deletion.)
+  the deletion.) Same effective-role rule applies — an inherited owner can
+  grant `team:delete` on a sub-team and the recursive
+  [`dissolveTeam` cascade](teams.md#sub-teams-nested-teams) carries it
+  through.
 
 `team:member:write` also can't escalate beyond what the granting user could
 do themselves: an admin granting `team:member:write` cannot give the app the

@@ -72,6 +72,14 @@ const useStyles = makeStyles({
     minWidth: "max-content",
   },
   actions: { display: "flex", gap: "8px", marginTop: "4px" },
+  subGroup: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "12px",
+    paddingLeft: "12px",
+    borderLeft: `2px solid ${tokens.colorNeutralStroke2}`,
+    marginLeft: "4px",
+  },
 });
 
 export function AdminSettings() {
@@ -503,6 +511,44 @@ export function AdminSettings() {
               checked={!!get("default_team_require_2fa")}
               onChange={(_, d) => set("default_team_require_2fa", d.checked)}
             />
+            <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
+              {t("admin.subTeamConfigHint")}
+            </Text>
+            <Switch
+              label={t("admin.enableSubTeams")}
+              checked={get("enable_sub_teams") ?? true}
+              onChange={(_, d) => set("enable_sub_teams", d.checked)}
+            />
+            <div className={styles.subGroup}>
+              <Field
+                label={t("admin.maxTeamDepth")}
+                hint={t("admin.maxTeamDepthHint")}
+              >
+                <Input
+                  type="number"
+                  min={1}
+                  max={20}
+                  value={String(get("max_team_depth") ?? 5)}
+                  onChange={(e) =>
+                    set("max_team_depth", Number(e.target.value))
+                  }
+                  disabled={!(get("enable_sub_teams") ?? true)}
+                  style={{ width: 100 }}
+                />
+              </Field>
+              <Switch
+                label={t("admin.inheritTeamMembership")}
+                checked={get("inherit_team_membership") ?? true}
+                disabled={!(get("enable_sub_teams") ?? true)}
+                onChange={(_, d) => set("inherit_team_membership", d.checked)}
+              />
+              <Switch
+                label={t("admin.inheritTeamDomains")}
+                checked={get("inherit_team_domains") ?? true}
+                disabled={!(get("enable_sub_teams") ?? true)}
+                onChange={(_, d) => set("inherit_team_domains", d.checked)}
+              />
+            </div>
             <Field
               label={t("admin.ipv6RateLimitPrefix")}
               hint={t("admin.ipv6RateLimitPrefixHint")}
@@ -720,6 +766,17 @@ export function AdminSettings() {
               disabled={!(get("enable_public_profiles") ?? true)}
               onChange={(_, d) =>
                 set("default_team_profile_show_members", d.checked)
+              }
+            />
+            <Switch
+              label={t("admin.defaultTeamProfileShowSubTeams")}
+              checked={get("default_team_profile_show_sub_teams") ?? true}
+              disabled={
+                !(get("enable_public_profiles") ?? true) ||
+                !(get("enable_sub_teams") ?? true)
+              }
+              onChange={(_, d) =>
+                set("default_team_profile_show_sub_teams", d.checked)
               }
             />
           </div>

@@ -50,6 +50,15 @@ Teams have their own visibility flags, controlled by **team owners and admins** 
 | Member count | Number of team members (a number, not the list) | Public |
 | Team-owned apps | OAuth apps registered to this team | Public |
 | Verified domains | Domains owned by the team | Public |
+| Member list | Each individual member (each member's own `profile_show_joined_teams` also applies) | **Private** |
+| Sub-teams | Immediate sub-teams that have *themselves* opted into a public profile | Public |
+
+When a team is a sub-team, its public page also surfaces a small "Sub-team
+of <parent>" breadcrumb at the top — but **only when the parent is itself
+public**. If the parent is private, the breadcrumb is omitted so the
+parent's existence isn't leaked via the child. The breadcrumb is always
+on; there's no per-team toggle to hide it (it's just inherent to the
+hierarchy).
 
 ::: tip Why owner defaults to private
 A team's owner is a specific user. Showing their username on a public team page would surface that person even when their own user profile is private. The team owner has to explicitly opt in.
@@ -240,6 +249,9 @@ Both calls return `null` (instead of throwing) when the profile is missing or pr
 | `profile_show_member_count` | `INTEGER` (nullable) | Same. |
 | `profile_show_apps` | `INTEGER` (nullable) | Same. |
 | `profile_show_domains` | `INTEGER` (nullable) | Same. |
+| `profile_show_members` | `INTEGER` (nullable) | Same. |
+| `profile_show_sub_teams` | `INTEGER` (nullable) | Same. Added in `0048_sub_team_config.sql`. |
+| `parent_team_id` | `TEXT` (nullable, self-FK `ON DELETE CASCADE`) | Set when the team is a sub-team. Drives both the public breadcrumb and inheritance. |
 
 ### `site_config`
 

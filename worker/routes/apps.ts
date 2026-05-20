@@ -163,6 +163,20 @@ async function getTeamMember(
     .first<TeamMemberRow>();
 }
 
+/** Same shape as {@link getTeamMember} but returns the user's *effective*
+ *  role on the team, including any role inherited from an ancestor team.
+ *  Backs the canAccess() team-app gate so sub-team-owned apps respect the
+ *  same inheritance rules the session API uses. */
+async function getEffectiveTeamMember(
+  db: D1Database,
+  teamId: string,
+  userId: string,
+): Promise<{ role: "owner" | "co-owner" | "admin" | "member" } | null> {
+  const mod = await import("./teams");
+  const eff = await mod.getEffectiveMember(db, teamId, userId);
+  return eff ? { role: eff.role } : null;
+}
+
 /** Try to authenticate the request as the app itself via HTTP Basic.
  *
  * Only succeeds when ALL of these hold:
@@ -240,7 +254,7 @@ async function canAccess(
 ): Promise<boolean> {
   if (siteRole === "admin") return true;
   if (row.team_id) {
-    const m = await getTeamMember(db, row.team_id, userId);
+    const m = await getEffectiveTeamMember(db, row.team_id, userId);
     if (!m) return false;
     return write ? (ROLE_RANK[m.role] ?? 0) >= ROLE_RANK["admin"] : true;
   }

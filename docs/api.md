@@ -66,6 +66,11 @@ endpoint reads only fields safe to expose; secrets are never included.
   "enable_public_profiles": true,
   "disable_user_create_team": false,
   "disable_user_create_app": false,
+  "enable_sub_teams": true,
+  "max_team_depth": 5,
+  "inherit_team_membership": true,
+  "inherit_team_domains": true,
+  "default_team_profile_show_sub_teams": true,
   "enabled_sources": [
     { "slug": "github", "provider": "github", "name": "GitHub" },
     { "slug": "google", "provider": "google", "name": "Google" }
@@ -342,11 +347,13 @@ See [Teams](teams.md) for the full guide. Endpoint summary:
 
 | Method   | Path                                                       | Notes                                                           |
 |----------|------------------------------------------------------------|-----------------------------------------------------------------|
-| `GET`    | `/api/teams`                                               | List teams the current user is a member of                      |
-| `POST`   | `/api/teams`                                               | Create team                                                     |
-| `GET`    | `/api/teams/:id`                                           | Team details + member's role + effective requirements           |
-| `PATCH`  | `/api/teams/:id`                                           | Update name, description, avatar, public-profile flags, `require_2fa`, `require_verified_email` |
-| `DELETE` | `/api/teams/:id`                                           | Disband (owner only)                                            |
+| `GET`    | `/api/teams`                                               | List teams the user can reach (direct + inherited via sub-team nesting; each entry carries `parent_team_id` + `inherited_from`) |
+| `POST`   | `/api/teams`                                               | Create team. Optional `parent_team_id` makes it a sub-team — caller must be admin+ (direct or inherited) of the parent, depth ≤ `max_team_depth` |
+| `GET`    | `/api/teams/:id`                                           | Team details + `my_role` (effective), `inherited_from`, `ancestors[]` (parent → root), `sub_teams[]` (immediate children with member counts), direct members |
+| `PATCH`  | `/api/teams/:id`                                           | Update name, description, avatar, public-profile flags (incl. `profile_show_sub_teams`), `parent_team_id` (owner-only, cycle/depth-checked), `require_2fa`, `require_verified_email` |
+| `DELETE` | `/api/teams/:id`                                           | Disband (owner — direct or inherited). Cascades to every sub-team; each level's apps fall back to that level's own owner |
+| `GET`    | `/api/teams/:id/sub-teams`                                 | List immediate sub-teams. Members of an ancestor team (direct or inherited) may list |
+| `POST`   | `/api/teams/:id/sub-teams`                                 | Create a sub-team under `:id` — convenience alias for `POST /api/teams` with `parent_team_id` |
 | `POST`   | `/api/teams/:id/members`                                   | Add member by username/id (admins+)                             |
 | `PATCH`  | `/api/teams/:id/members/:userId`                           | Change role                                                     |
 | `DELETE` | `/api/teams/:id/members/:userId`                           | Remove member (or leave the team if `:userId = self`)           |
@@ -357,7 +364,7 @@ See [Teams](teams.md) for the full guide. Endpoint summary:
 | `DELETE` | `/api/teams/:id/invites/:token`                            | Revoke an invite                                                |
 | `GET`    | `/api/teams/join/:token` (auth optional)                   | Inspect an invite — returns the team, requirements, unmet flags |
 | `POST`   | `/api/teams/join/:token`                                   | Accept an invite                                                |
-| `GET` / `POST` / `DELETE` | `/api/teams/:id/domains[/:domainId]`           | Team-owned domains                                              |
+| `GET` / `POST` / `DELETE` | `/api/teams/:id/domains[/:domainId]`           | Team-owned domains. `GET` also returns ancestor-owned domains as read-only entries tagged `inherited_from` (subject to `inherit_team_domains`) |
 | `POST`   | `/api/teams/:id/domains/:domainId/verify`                  | Trigger re-verification                                         |
 | `POST`   | `/api/teams/:id/domains/:domainId/to-personal`             | Move a verified domain to the user's personal namespace         |
 | `POST`   | `/api/teams/:id/domains/:domainId/share-to-team`           | Share a personal domain with the team                           |
@@ -430,8 +437,8 @@ PAT. The required scopes are listed in [OAuth → Scopes](oauth.md#scopes) and
 | `PATCH /me/profile`                                      | `profile:write`                |
 | `GET /me/apps` / `POST /me/apps` / `PATCH /me/apps/:id` / `DELETE /me/apps/:id` | `apps:read` / `apps:write` |
 | `GET /me/team-apps`                                      | `apps:read`                    |
-| `GET /me/teams` / `POST` / `PATCH /me/teams/:id` / `DELETE` | `teams:read` / `teams:write` / `teams:create` / `teams:delete` |
-| `POST /me/teams/:id/members` / `DELETE`                  | `teams:write`                  |
+| `GET /me/teams` / `POST` / `PATCH /me/teams/:id` / `DELETE` | `teams:read` / `teams:write` / `teams:create` / `teams:delete` — listing includes inherited sub-teams (`inherited_from`). Effective-role auth (inherited admin/owner counts) on PATCH/DELETE |
+| `POST /me/teams/:id/members` / `DELETE`                  | `teams:write` — effective-role auth (inherited admin/owner counts) |
 | `GET /me/domains` / `POST` / `POST :domain/verify` / `DELETE` | `domains:read` / `domains:write` |
 | `GET /me/gpg-keys` / `POST` / `DELETE`                   | `gpg:read` / `gpg:write`       |
 | `GET /me/social-connections` / `DELETE`                  | `social:read` / `social:write` |
@@ -464,6 +471,15 @@ even when private. See [Public Profiles](public-profile.md).
 
 Returns the team profile. Same 404 semantics. A token from any *member* of the
 team returns the data even when private.
+
+When sub-teams are enabled and the team owner opted into the section
+(`profile_show_sub_teams`, or the site default
+`default_team_profile_show_sub_teams`), the response includes a
+`sub_teams[]` array with only those children that have themselves opted
+into a public profile — privacy-preserving (a private sub-team's name
+isn't leaked just because the parent is public). If the team's parent is
+itself public, the response also includes a `parent_team` breadcrumb
+`{id, name, avatar_url}`.
 
 ## Image proxy
 

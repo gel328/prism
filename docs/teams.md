@@ -73,6 +73,93 @@ endpoint payload includes:
 }
 ```
 
+## Sub-teams (nested teams)
+
+A team can be created **under another team** to mirror an organisation's
+internal structure. Sub-teams nest recursively up to the operator-configured
+`max_team_depth` (default **5 levels**); the server rejects cycles and
+over-depth re-parents on both create and move.
+
+The entire feature is gated behind site config — operators can turn it off,
+tighten the depth cap, or toggle the inheritance semantics independently.
+See [Configurability](#configurability) below.
+
+### Inheritance — what flows down
+
+Sub-teams are not isolated copies. Two things automatically flow from an
+ancestor to every team underneath it (each can be turned off independently
+in site config):
+
+1. **Membership** (`inherit_team_membership`, default on) — a member of team
+   **A** has *at least* their A-role on every descendant of A. A direct
+   membership on a sub-team stacks on top: the effective role is
+   `max(direct, inherited)`. Useful for "department head is an admin of
+   every project sub-team" without duplicating rows. When the toggle is off,
+   `getEffectiveMember` degenerates to a direct-only lookup and listings
+   stop expanding into sub-team subtrees.
+2. **Verified domains** (`inherit_team_domains`, default on) — every domain
+   owned by an ancestor is visible to sub-teams as a read-only entry tagged
+   with `inherited_from`. This lets a sub-team auto-verify a sub-domain when
+   the parent already owns the apex domain. When the toggle is off, both
+   the listing and the auto-verify lookup are restricted to the team's own
+   domains.
+
+Everything else stays independent. Apps belong to whatever team created them;
+the existing `share-to-team` flow still works for explicit copies.
+
+### Configurability
+
+All sub-team behavior is driven by site config (admin → **Settings → Teams
+& App Limits**). Each value is also surfaced on the unauthenticated
+`/api/site` payload so SDK clients can mirror the gates in their UIs.
+
+| Key                                       | Type    | Default | Effect                                                                 |
+|-------------------------------------------|---------|---------|------------------------------------------------------------------------|
+| `enable_sub_teams`                        | bool    | `true`  | Master switch — when `false` the sub-team endpoints reject every request and the UI hides the Sub-teams tab. |
+| `max_team_depth`                          | int     | `5`     | Server-enforced cap on nesting depth. Validated 1–20 on the admin API.|
+| `inherit_team_membership`                 | bool    | `true`  | Cascade member roles to descendants.                                  |
+| `inherit_team_domains`                    | bool    | `true`  | Surface ancestor-owned domains on sub-team listings + auto-verify.    |
+| `default_team_profile_show_sub_teams`     | bool    | `true`  | Public-profile default for the sub-team listing section.              |
+
+The per-team override `profile_show_sub_teams` (column on `teams`) follows
+the same `null`/`0`/`1` convention as every other `profile_show_*` flag:
+`null` follows the site default, `0`/`1` override.
+
+### Managing sub-teams
+
+- **Create**: `POST /api/teams/:parentId/sub-teams` (admin+ on the parent —
+  direct *or* inherited counts) or the equivalent **Teams → \<team\> →
+  Sub-teams → New sub-team** button. The creator becomes the new sub-team's
+  owner.
+- **List**: `GET /api/teams/:id/sub-teams` returns the immediate children with
+  member counts and the caller's effective role. Members of an ancestor team
+  can list.
+- **Move / re-parent**: `PATCH /api/teams/:id { "parent_team_id": "..." }`
+  with `null` to promote back to top-level. **Owner-only** on the team being
+  moved, and the caller must be admin+ on the new parent. The server walks
+  both subtrees to reject moves that would create a cycle or exceed
+  `MAX_TEAM_DEPTH`.
+- **Delete**: `DELETE /api/teams/:id` cascades through every descendant. For
+  each level (deepest first) `dissolveTeam` reassigns that level's apps to
+  that level's own owner — sub-team owners keep their apps, with the
+  deleting user as the final fallback. The DB schema has
+  `parent_team_id REFERENCES teams(id) ON DELETE CASCADE` as a belt to the
+  application-level braces.
+
+### Inherited memberships in listings
+
+- `GET /api/teams` (session) and `GET /api/oauth/me/teams` both expand each
+  direct membership to its full subtree. Entries carry an `inherited_from`
+  ancestor id (or `null` for direct memberships).
+- `GET /api/teams/:id` returns:
+  - `team.ancestors` — `[{id, name, avatar_url}]` from immediate parent to
+    root, useful for breadcrumbs.
+  - `team.sub_teams` — immediate children with member counts.
+  - `team.my_role` — the *effective* role; `team.inherited_from` carries the
+    ancestor id when the role came from inheritance.
+  - `members` — direct members only (inherited members are visible by
+    inspecting ancestor teams, surfacing them here would multiply listings).
+
 ## Team-owned apps and domains
 
 OAuth apps can be created directly under a team (**Teams → \<team\> → Apps → New**)
@@ -199,14 +286,17 @@ markers. See the
 See [API → Teams](api.md#teams) for the full table. The most-used endpoints:
 
 ```
-GET    /api/teams                            list memberships
-POST   /api/teams                            create
-PATCH  /api/teams/:id                        update settings + requirements
-GET    /api/teams/:id/members                list members
+GET    /api/teams                            list memberships (expanded with inherited)
+POST   /api/teams                            create (optionally with parent_team_id)
+PATCH  /api/teams/:id                        update settings, requirements, parent_team_id
+GET    /api/teams/:id                        team + ancestors + sub_teams summary
+GET    /api/teams/:id/sub-teams              list immediate children
+POST   /api/teams/:id/sub-teams              create a sub-team under :id
+GET    /api/teams/:id/members                list members (direct only)
 POST   /api/teams/:id/members                add by username/id
 PATCH  /api/teams/:id/members/:userId        change role
 DELETE /api/teams/:id/members/:userId        remove (or leave with self)
-POST   /api/teams/:id/transfer-ownership     transfer to a co-owner
+POST   /api/teams/:id/transfer-ownership     transfer to a co-owner (direct owner only)
 GET    /api/teams/join/:token                preview an invite (auth optional)
 POST   /api/teams/join/:token                accept
 ```

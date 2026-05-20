@@ -48,6 +48,10 @@ Prism 用户可以启用 `/u/<username>` 路径下的公开资料页面，团队
 | 成员数 | 团队成员的数量（仅数字，不显示成员列表） | 公开 |
 | 团队应用 | 注册到团队的 OAuth 应用 | 公开 |
 | 已验证域名 | 团队拥有的域名 | 公开 |
+| 成员列表 | 各成员逐一展示（每位成员的 `profile_show_joined_teams` 同样适用） | **私密** |
+| 子团队 | 直接子团队中**自身也已开启公开资料**的那些 | 公开 |
+
+当一个团队本身是子团队时，它的公开页面顶部还会显示一条小型“XX 的子团队”面包屑 —— 但**仅当父团队自身也是公开的**。父团队私密时面包屑会被省略，避免通过子团队顺带泄露父团队的存在。这条面包屑没有按团队的开关，是层级关系本身的固有产物。
 
 ::: tip 为何所有者默认私密
 团队所有者是某个具体的用户，将其用户名展示在公开页面会"被动公开"该用户——即便其本人的用户资料是私密的。因此团队所有者必须明确选择是否暴露自己。
@@ -238,6 +242,9 @@ console.log(profile?.display_name, team?.member_count);
 | `profile_show_member_count` | `INTEGER`（可空） | 同上。 |
 | `profile_show_apps` | `INTEGER`（可空） | 同上。 |
 | `profile_show_domains` | `INTEGER`（可空） | 同上。 |
+| `profile_show_members` | `INTEGER`（可空） | 同上。 |
+| `profile_show_sub_teams` | `INTEGER`（可空） | 同上。`0048_sub_team_config.sql` 加入。 |
+| `parent_team_id` | `TEXT`（可空，自引用外键 `ON DELETE CASCADE`） | 团队为子团队时设置。驱动公开面包屑与继承。 |
 
 ### `site_config`
 

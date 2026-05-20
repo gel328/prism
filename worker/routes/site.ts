@@ -116,6 +116,14 @@ app.get("/site", async (c) => {
     default_team_require_2fa: config.default_team_require_2fa,
     default_team_require_verified_email:
       config.default_team_require_verified_email,
+    // Sub-team configurability — clients use these to hide UI when the
+    // feature is off, to enforce the depth cap before round-tripping, etc.
+    enable_sub_teams: config.enable_sub_teams,
+    max_team_depth: config.max_team_depth,
+    inherit_team_membership: config.inherit_team_membership,
+    inherit_team_domains: config.inherit_team_domains,
+    default_team_profile_show_sub_teams:
+      config.default_team_profile_show_sub_teams,
     enabled_providers,
   });
 });

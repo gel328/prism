@@ -110,7 +110,7 @@ worker/
     ├── auth.ts             # Register, login, TOTP, passkeys, GPG, sessions, PoW
     ├── oauth.ts            # Authorization server, token endpoint, OIDC, step-up 2FA, /me/* APIs
     ├── apps.ts             # OAuth app CRUD + scope definitions/access rules
-    ├── teams.ts            # Teams, members, invites, transfers, team domains/apps
+    ├── teams.ts            # Teams + sub-teams (parent_team_id), members, invites, transfers, team domains/apps; exports getEffectiveMember / dissolveTeam
     ├── domains.ts          # Domain verification (TXT/meta/well-known)
     ├── connections.ts      # Social OAuth flows (incl. Telegram)
     ├── user.ts             # Profile, avatar, password, emails, notifications, PATs, webhooks
@@ -225,6 +225,69 @@ Each source has its own slug, enabled flag, and (for OIDC/OAuth2) issuer / auth
 Domains added by users / teams for OAuth redirect URI validation.
 `verification_method` is one of `dns-txt`, `html-meta`, `well-known`. Re-verify
 runs on the cron schedule using whichever method was originally used.
+
+When a team adds a sub-domain of a domain it (or any ancestor team, subject
+to `inherit_team_domains`) already has verified, the row is created already
+verified and `verified_by_parent` carries the apex.
+
+### `teams` / `team_members` / `team_invites`
+
+`teams` carries the team name + description + avatar, the master
+`profile_is_public` flag, every per-section `profile_show_*` override (each
+`NULL` = follow the site default, `0`/`1` = explicit team choice), the
+join-requirement flags (`require_2fa`, `require_verified_email`, both
+clamped up by the site floor when set), and the **`parent_team_id`** that
+makes nesting work.
+
+- `parent_team_id` is a self-FK with `ON DELETE CASCADE` (`migration
+  0047_sub_teams.sql`). Index on `parent_team_id` keeps the
+  `WHERE parent_team_id = ?` lookups cheap. Top-level teams have it `NULL`;
+  cycles and over-depth nests are rejected at the API layer (server-enforced
+  cap = `max_team_depth`, default 5, hard outer guard
+  `ANCESTOR_WALK_LIMIT = 64` defends recursive helpers against data
+  corruption).
+- `profile_show_sub_teams` (added in `0048_sub_team_config.sql`) follows the
+  same `NULL`/`0`/`1` convention as the other `profile_show_*` flags.
+
+`team_members` is one row per `(team_id, user_id)` with `role` ∈
+`owner | co-owner | admin | member` and `show_on_profile` (per-team override
+of the user's master `profile_show_joined_teams` toggle).
+
+`team_members` records only **direct** memberships. Inherited access is
+computed on read by `getEffectiveMember` (in `routes/teams.ts`), which walks
+`parent_team_id` from the team up to the root and picks the highest role
+the user holds anywhere on that chain. `listEffectiveTeamMemberships`
+does the inverse — direct memberships first, then expands each into its
+descendant subtree to surface "teams I can see via inheritance." Both
+helpers honor the `inherit_team_membership` site config and degrade to
+direct-only when the toggle is off.
+
+`team_invites` is the standard random-token + expiry + max-uses table; the
+token is keyed-HMAC-hashed at rest (`__HASH_v1__…`) so a stolen DB row alone
+cannot mint joins. Issuing an invite for `role = co-owner` requires the
+issuer to be an `owner`; admin/member tiers are open to admins+.
+
+A team's apps and verified domains follow ownership the obvious way
+(`oauth_apps.team_id`, `domains.team_id`) — sub-team inheritance does **not**
+duplicate rows. Instead the team-domain listing returns ancestor-owned
+domains tagged with `inherited_from` (subject to `inherit_team_domains`).
+
+#### Sub-team semantics at a glance
+
+| Behavior                          | Toggle                                  | Default | When off                                                                 |
+|-----------------------------------|-----------------------------------------|---------|--------------------------------------------------------------------------|
+| Feature available at all          | `enable_sub_teams`                      | `true`  | Every sub-team endpoint returns 403; `parent_team_id` rows are preserved but ignored. |
+| Member role cascades down         | `inherit_team_membership`               | `true`  | Effective role = direct row only.                                        |
+| Verified domains cascade down     | `inherit_team_domains`                  | `true`  | Sub-team domain listing + auto-verify see only own-team rows.            |
+| Sub-teams listed on public profile | `default_team_profile_show_sub_teams` + per-team `profile_show_sub_teams` | `true` | The public team profile omits the `sub_teams` array. |
+
+Disbanding a team uses the recursive `dissolveTeam` helper: deepest-first,
+each level reassigns its OAuth apps to its own owner (or, if none, to the
+deleting user) and drops the `kind = 'team'` user row before the
+`teams` row itself goes away. The DB cascade on `parent_team_id` is a
+belt-and-braces second line of defence — the application-level loop is what
+keeps team-owned apps from being orphaned mid-cascade by the
+`oauth_apps.owner_id → users.id ON DELETE CASCADE` FK.
 
 ### `social_connections`
 

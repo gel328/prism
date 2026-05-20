@@ -75,6 +75,12 @@ app.get("/:id", optionalAuth, async (c) => {
     team.profile_show_members,
     config.default_team_profile_show_members,
   );
+  const showSubTeams =
+    config.enable_sub_teams &&
+    resolve(
+      team.profile_show_sub_teams,
+      config.default_team_profile_show_sub_teams,
+    );
 
   // Team owners get surfaced by username only — and only if their own
   // user public profile is public, so an opted-out user isn't accidentally
@@ -130,45 +136,86 @@ app.get("/:id", optionalAuth, async (c) => {
         }>()
     : Promise.resolve(null);
 
-  const [owner, memberCountRow, apps, domains, members] = await Promise.all([
-    ownerPromise,
-    showMemberCount
-      ? c.env.DB.prepare(
-          "SELECT COUNT(*) AS n FROM team_members WHERE team_id = ?",
-        )
-          .bind(team.id)
-          .first<{ n: number }>()
-      : Promise.resolve(null),
-    showApps
-      ? c.env.DB.prepare(
-          `SELECT id, client_id, name, description, icon_url, website_url, created_at
+  // Public sub-team listing — surfaces only children that have themselves
+  // opted in to a public profile. We don't want a private sub-team's name
+  // leaked just because the parent is public.
+  const subTeamsPromise = showSubTeams
+    ? c.env.DB.prepare(
+        `SELECT id, name, avatar_url, (
+           SELECT COUNT(*) FROM team_members WHERE team_id = t.id
+         ) AS member_count
+         FROM teams t
+         WHERE t.parent_team_id = ? AND t.profile_is_public = 1
+         ORDER BY t.created_at DESC`,
+      )
+        .bind(team.id)
+        .all<{
+          id: string;
+          name: string;
+          avatar_url: string | null;
+          member_count: number;
+        }>()
+    : Promise.resolve(null);
+
+  // Parent breadcrumb — show only when the parent is itself a public team
+  // (parent_team_id may exist but point at a private team; we treat that
+  // as "no parent" for public-facing purposes).
+  const parentPromise = team.parent_team_id
+    ? c.env.DB.prepare(
+        `SELECT id, name, avatar_url, profile_is_public
+         FROM teams WHERE id = ? LIMIT 1`,
+      )
+        .bind(team.parent_team_id)
+        .first<{
+          id: string;
+          name: string;
+          avatar_url: string | null;
+          profile_is_public: number;
+        }>()
+    : Promise.resolve(null);
+
+  const [owner, memberCountRow, apps, domains, members, subTeams, parent] =
+    await Promise.all([
+      ownerPromise,
+      showMemberCount
+        ? c.env.DB.prepare(
+            "SELECT COUNT(*) AS n FROM team_members WHERE team_id = ?",
+          )
+            .bind(team.id)
+            .first<{ n: number }>()
+        : Promise.resolve(null),
+      showApps
+        ? c.env.DB.prepare(
+            `SELECT id, client_id, name, description, icon_url, website_url, created_at
            FROM oauth_apps
            WHERE team_id = ? AND is_active = 1
            ORDER BY created_at ASC`,
-        )
-          .bind(team.id)
-          .all<{
-            id: string;
-            client_id: string;
-            name: string;
-            description: string;
-            icon_url: string | null;
-            website_url: string | null;
-            created_at: number;
-          }>()
-      : Promise.resolve(null),
-    showDomains
-      ? c.env.DB.prepare(
-          `SELECT domain, verified_at
+          )
+            .bind(team.id)
+            .all<{
+              id: string;
+              client_id: string;
+              name: string;
+              description: string;
+              icon_url: string | null;
+              website_url: string | null;
+              created_at: number;
+            }>()
+        : Promise.resolve(null),
+      showDomains
+        ? c.env.DB.prepare(
+            `SELECT domain, verified_at
            FROM domains
            WHERE team_id = ? AND verified = 1
            ORDER BY verified_at ASC`,
-        )
-          .bind(team.id)
-          .all<{ domain: string; verified_at: number | null }>()
-      : Promise.resolve(null),
-    membersPromise,
-  ]);
+          )
+            .bind(team.id)
+            .all<{ domain: string; verified_at: number | null }>()
+        : Promise.resolve(null),
+      membersPromise,
+      subTeamsPromise,
+      parentPromise,
+    ]);
 
   return c.json({
     team: {
@@ -239,6 +286,32 @@ app.get("/:id", optionalAuth, async (c) => {
             })),
           )
         : null,
+      sub_teams: subTeams
+        ? await Promise.all(
+            subTeams.results.map(async (s) => ({
+              id: s.id,
+              name: s.name,
+              avatar_url: await proxyImageUrl(
+                c.env.APP_URL,
+                c.env.DB,
+                s.avatar_url,
+              ),
+              member_count: s.member_count,
+            })),
+          )
+        : null,
+      parent_team:
+        parent && parent.profile_is_public === 1
+          ? {
+              id: parent.id,
+              name: parent.name,
+              avatar_url: await proxyImageUrl(
+                c.env.APP_URL,
+                c.env.DB,
+                parent.avatar_url,
+              ),
+            }
+          : null,
     },
   });
 });

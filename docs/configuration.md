@@ -98,9 +98,22 @@ never silently flip a private profile to public.
 | `default_team_profile_show_apps`                 | boolean | `true`  |                                                      |
 | `default_team_profile_show_domains`              | boolean | `true`  |                                                      |
 | `default_team_profile_show_members`              | boolean | `false` | The full member list. Each member's own `profile_show_joined_teams` still applies |
+| `default_team_profile_show_sub_teams`            | boolean | `true`  | Sub-team listing. Each child must also be public to actually appear |
 
 There is no site default for the master `profile_is_public` flag — privacy-first.
 The team owner (or admin) must always set it explicitly.
+
+### Sub-teams (nested teams)
+
+Master switch and inheritance toggles for the [sub-team feature](teams.md#sub-teams-nested-teams).
+See that page for the full semantics; the keys themselves:
+
+| Key                          | Type    | Default | Description                                                                 |
+|------------------------------|---------|---------|-----------------------------------------------------------------------------|
+| `enable_sub_teams`           | boolean | `true`  | Master switch. When `false` every sub-team endpoint returns 403.            |
+| `max_team_depth`             | integer | `5`     | Hard cap on nesting depth (root = 0). Admin API validates 1–20.             |
+| `inherit_team_membership`    | boolean | `true`  | Cascade member roles to descendants (effective role = max(direct, inherited)). |
+| `inherit_team_domains`       | boolean | `true`  | Surface ancestor-owned domains on sub-team listings + use them for auto-verify. |
 
 ### Team join requirements (site floor)
 

@@ -129,8 +129,8 @@ team:delete                     team:member:profile:read
 
 同意时还有两条额外限制（`worker/routes/oauth.ts:830-859`）：
 
-- 用户必须是所选团队的 `owner`、`co-owner` 或 `admin`。
-- `team:delete` 还要求 `owner` 或 `co-owner`（admin 能授予读写，但只有真正能解散团队的人才能授予删除权）。
+- 用户必须是所选团队的 `owner`、`co-owner` 或 `admin`。**有效角色同样适用** —— 通过上级团队继承得到的 admin 也可以在子团队上授予单团队 scope（与会话 API 一致）。同意页的团队选择器会列出该用户能管理的所有团队，无论是直接还是继承。
+- `team:delete` 还要求 `owner` 或 `co-owner`（admin 能授予读写，但只有真正能解散团队的人才能授予删除权）。继承的 owner 同样可以授予 `team:delete`，递归的 [`dissolveTeam` 级联](teams.md#子团队-递归嵌套) 会完整执行。
 
 `team:member:write` 同样不能越权：admin 用户授权后，应用提升成员的角色受到与该 admin 相同的上限保护，不会因 token 而获得超越授权人本身的能力 — 这条上限会在每次成员变更时校验。
 

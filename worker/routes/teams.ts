@@ -65,6 +65,253 @@ export async function getMember(
     .first<TeamMemberRow>();
 }
 
+// ─── Sub-team helpers ─────────────────────────────────────────────────────────
+
+/** Absolute upper bound on nesting depth — guards the ancestor walk against
+ *  data corruption even when the site config is set higher. The admin
+ *  config endpoint also clamps `max_team_depth` to 20 to keep recursive
+ *  helpers cheap. */
+const ANCESTOR_WALK_LIMIT = 64;
+
+/** Read the operator-configured max nesting depth from site_config, falling
+ *  back to the default in DEFAULT_CONFIG (5). Walked once per write; reads
+ *  use the cap on the same getConfig fetch the caller already had. */
+export async function getMaxTeamDepth(db: D1Database): Promise<number> {
+  return getConfigValue(db, "max_team_depth");
+}
+
+/** Walks from the given team up to the root. Returns [team, parent,
+ *  grandparent, ...]. Hard-capped at ANCESTOR_WALK_LIMIT entries to defend
+ *  against data corruption (a cycle that slipped past API validation). */
+export async function getTeamAncestors(
+  db: D1Database,
+  teamId: string,
+): Promise<TeamRow[]> {
+  const out: TeamRow[] = [];
+  const seen = new Set<string>();
+  let currentId: string | null = teamId;
+  while (currentId && out.length <= ANCESTOR_WALK_LIMIT) {
+    if (seen.has(currentId)) break;
+    seen.add(currentId);
+    const row: TeamRow | null = await db
+      .prepare("SELECT * FROM teams WHERE id = ?")
+      .bind(currentId)
+      .first<TeamRow>();
+    if (!row) break;
+    out.push(row);
+    currentId = row.parent_team_id;
+  }
+  return out;
+}
+
+/** All team IDs in the subtree rooted at teamId, inclusive. Children-first
+ *  order so callers can clean up descendants before parents. */
+export async function getDescendantTeamIds(
+  db: D1Database,
+  teamId: string,
+): Promise<string[]> {
+  const order: string[] = [];
+  const queue: string[] = [teamId];
+  const visited = new Set<string>();
+  while (queue.length) {
+    const id = queue.shift()!;
+    if (visited.has(id)) continue;
+    visited.add(id);
+    order.push(id);
+    const { results } = await db
+      .prepare("SELECT id FROM teams WHERE parent_team_id = ?")
+      .bind(id)
+      .all<{ id: string }>();
+    for (const r of results) queue.push(r.id);
+  }
+  // Reverse to children-first.
+  return order.reverse();
+}
+
+/** A user's effective role on a team: max(direct role, any inherited role
+ *  from an ancestor team they're a member of). Returns null if the user has
+ *  neither direct nor inherited membership.
+ *
+ *  Inherited from sub-team semantics (Inherited model): a member of team A
+ *  with role R is treated as a member of every descendant of A with at
+ *  least role R. Stacking with a direct membership picks the higher role.
+ *
+ *  Honors the `inherit_team_membership` site config — when disabled the
+ *  function degenerates to a direct-only lookup (equivalent to {@link
+ *  getMember} with an `{ inherited_from: null }` wrapper). */
+export async function getEffectiveMember(
+  db: D1Database,
+  teamId: string,
+  userId: string,
+): Promise<{
+  role: "owner" | "co-owner" | "admin" | "member";
+  direct: TeamMemberRow | null;
+  /** Team id this role was inherited from, or null when the highest role
+   *  came from a direct membership on `teamId` itself. */
+  inherited_from: string | null;
+} | null> {
+  const inherit = await getConfigValue(db, "inherit_team_membership");
+  if (!inherit) {
+    const direct = await getMember(db, teamId, userId);
+    return direct ? { role: direct.role, direct, inherited_from: null } : null;
+  }
+
+  const ancestors = await getTeamAncestors(db, teamId);
+  if (!ancestors.length) return null;
+
+  let best: { row: TeamMemberRow; teamId: string } | null = null;
+  let direct: TeamMemberRow | null = null;
+  for (const t of ancestors) {
+    const m = await getMember(db, t.id, userId);
+    if (!m) continue;
+    if (t.id === teamId) direct = m;
+    if (!best || (ROLE_RANK[m.role] ?? 0) > (ROLE_RANK[best.row.role] ?? 0)) {
+      best = { row: m, teamId: t.id };
+    }
+  }
+  if (!best) return null;
+  return {
+    role: best.row.role,
+    direct,
+    inherited_from: best.teamId === teamId ? null : best.teamId,
+  };
+}
+
+/** Returns true if moving `teamId` under `newParentId` would create a cycle
+ *  or exceed the operator-configured max nesting depth for any team in the
+ *  affected subtree. */
+export async function isInvalidReparent(
+  db: D1Database,
+  teamId: string,
+  newParentId: string | null,
+): Promise<string | null> {
+  if (!newParentId) return null;
+  if (newParentId === teamId) return "A team cannot be its own parent";
+
+  const maxDepth = await getMaxTeamDepth(db);
+  const parentAncestors = await getTeamAncestors(db, newParentId);
+  if (!parentAncestors.length) return "Parent team not found";
+  if (parentAncestors.some((a) => a.id === teamId))
+    return "Cannot move a team under one of its own descendants (cycle)";
+  if (parentAncestors.length >= maxDepth)
+    return `Team nesting limit (${maxDepth}) reached`;
+
+  // Need to also bound the subtree depth: parent depth + subtree depth ≤ MAX
+  const subtreeDepth = await maxSubtreeDepth(db, teamId);
+  if (parentAncestors.length + subtreeDepth > maxDepth)
+    return `Team nesting limit (${maxDepth}) would be exceeded`;
+  return null;
+}
+
+/** All teams the user has effective access to. Each entry is the team row
+ *  plus the highest effective role and an `inherited_from` ancestor id (null
+ *  for direct memberships). Order is unspecified — callers should sort.
+ *
+ *  Subtree expansion respects the `inherit_team_membership` site config:
+ *  when off, only direct memberships are returned. */
+export async function listEffectiveTeamMemberships(
+  db: D1Database,
+  userId: string,
+): Promise<
+  Array<{
+    team: TeamRow;
+    role: "owner" | "co-owner" | "admin" | "member";
+    joined_at: number;
+    show_on_profile: number | null;
+    inherited_from: string | null;
+  }>
+> {
+  const { results: direct } = await db
+    .prepare(
+      `SELECT t.*, tm.role, tm.show_on_profile, tm.joined_at
+       FROM teams t JOIN team_members tm ON tm.team_id = t.id
+       WHERE tm.user_id = ?`,
+    )
+    .bind(userId)
+    .all<
+      TeamRow & {
+        role: "owner" | "co-owner" | "admin" | "member";
+        joined_at: number;
+        show_on_profile: number | null;
+      }
+    >();
+
+  const map = new Map<
+    string,
+    {
+      team: TeamRow;
+      role: "owner" | "co-owner" | "admin" | "member";
+      joined_at: number;
+      show_on_profile: number | null;
+      inherited_from: string | null;
+    }
+  >();
+  for (const r of direct) {
+    const { role, show_on_profile, joined_at, ...team } = r;
+    map.set(r.id, {
+      team,
+      role,
+      joined_at,
+      show_on_profile,
+      inherited_from: null,
+    });
+  }
+  const inherit = await getConfigValue(db, "inherit_team_membership");
+  if (inherit) {
+    for (const r of direct) {
+      const subtree = await getDescendantTeamIds(db, r.id);
+      for (const descId of subtree) {
+        if (descId === r.id) continue;
+        const existing = map.get(descId);
+        if (existing && existing.inherited_from === null) continue;
+        if (
+          existing &&
+          (ROLE_RANK[existing.role] ?? 0) >= (ROLE_RANK[r.role] ?? 0)
+        )
+          continue;
+        const descRow = await db
+          .prepare("SELECT * FROM teams WHERE id = ?")
+          .bind(descId)
+          .first<TeamRow>();
+        if (!descRow) continue;
+        map.set(descId, {
+          team: descRow,
+          role: r.role,
+          joined_at: r.joined_at,
+          show_on_profile: null,
+          inherited_from: r.id,
+        });
+      }
+    }
+  }
+  return Array.from(map.values());
+}
+
+/** Depth of the deepest descendant under `teamId` (0 = no children). */
+async function maxSubtreeDepth(
+  db: D1Database,
+  teamId: string,
+): Promise<number> {
+  let deepest = 0;
+  const queue: Array<{ id: string; depth: number }> = [
+    { id: teamId, depth: 0 },
+  ];
+  const visited = new Set<string>();
+  while (queue.length) {
+    const { id, depth } = queue.shift()!;
+    if (visited.has(id)) continue;
+    visited.add(id);
+    if (depth > deepest) deepest = depth;
+    if (depth > ANCESTOR_WALK_LIMIT) break;
+    const { results } = await db
+      .prepare("SELECT id FROM teams WHERE parent_team_id = ?")
+      .bind(id)
+      .all<{ id: string }>();
+    for (const r of results) queue.push({ id: r.id, depth: depth + 1 });
+  }
+  return deepest;
+}
+
 // ─── Team-as-user helpers ────────────────────────────────────────────────────
 //
 // Synthetic credentials used to satisfy the NOT NULL UNIQUE constraints on
@@ -81,41 +328,49 @@ export function teamUserSyntheticEmail(teamId: string): string {
 }
 
 /**
- * Disband a team. Reassigns any team-owned apps to a real-user fallback so
- * the app rows survive the cascading delete that follows from removing the
- * team-user (oauth_apps.owner_id REFERENCES users(id) ON DELETE CASCADE).
+ * Disband a team and all its sub-teams (cascade). For each team in the
+ * subtree (deepest first) we reassign team-owned apps to a real-user
+ * fallback so the rows survive the FK cascade that follows from removing
+ * the team-user (oauth_apps.owner_id REFERENCES users(id) ON DELETE
+ * CASCADE), then drop the team-user and team rows.
  *
- * Falls back to the deleting user if the team has no owner-role member.
+ * Fallback choice: prefer the team's own owner, otherwise the parent
+ * team's owner walking up the chain, otherwise the deleting user. This
+ * keeps apps inside the same human-owned tree when possible.
  */
 export async function dissolveTeam(
   db: D1Database,
   teamId: string,
   fallbackUserId: string,
 ): Promise<void> {
-  const ownerRow = await db
-    .prepare(
-      "SELECT user_id FROM team_members WHERE team_id = ? AND role = 'owner' LIMIT 1",
-    )
-    .bind(teamId)
-    .first<{ user_id: string }>();
-  const reassignTo = ownerRow?.user_id ?? fallbackUserId;
+  const ids = await getDescendantTeamIds(db, teamId); // children-first
   const now = Math.floor(Date.now() / 1000);
 
-  await db
-    .prepare(
-      "UPDATE oauth_apps SET team_id = NULL, owner_id = ?, updated_at = ? WHERE team_id = ?",
-    )
-    .bind(reassignTo, now, teamId)
-    .run();
+  for (const id of ids) {
+    const ownerRow = await db
+      .prepare(
+        "SELECT user_id FROM team_members WHERE team_id = ? AND role = 'owner' LIMIT 1",
+      )
+      .bind(id)
+      .first<{ user_id: string }>();
+    const reassignTo = ownerRow?.user_id ?? fallbackUserId;
 
-  // Drop the team-user row if it exists. CASCADE-safe now that no app
-  // rows still point at it as owner.
-  await db
-    .prepare("DELETE FROM users WHERE id = ? AND kind = 'team'")
-    .bind(teamId)
-    .run();
+    await db
+      .prepare(
+        "UPDATE oauth_apps SET team_id = NULL, owner_id = ?, updated_at = ? WHERE team_id = ?",
+      )
+      .bind(reassignTo, now, id)
+      .run();
 
-  await db.prepare("DELETE FROM teams WHERE id = ?").bind(teamId).run();
+    // Drop the team-user row if it exists. CASCADE-safe now that no app
+    // rows still point at it as owner.
+    await db
+      .prepare("DELETE FROM users WHERE id = ? AND kind = 'team'")
+      .bind(id)
+      .run();
+
+    await db.prepare("DELETE FROM teams WHERE id = ?").bind(id).run();
+  }
 }
 
 // ─── Public invite join routes (BEFORE global auth middleware) ────────────────
@@ -262,7 +517,10 @@ app.use("*", requireAuth);
 
 // ─── Team CRUD ────────────────────────────────────────────────────────────────
 
-// List teams the current user belongs to
+// List teams the current user belongs to.
+// Includes both direct memberships AND inherited memberships (member of an
+// ancestor team). `inherited_from` carries the ancestor team's id when the
+// listing entry came from inheritance only; null for direct memberships.
 app.get("/", async (c) => {
   const user = c.get("user");
   const rows = await c.env.DB.prepare(
@@ -275,14 +533,64 @@ app.get("/", async (c) => {
     .bind(user.id)
     .all<TeamRow & { role: string; show_on_profile: number | null }>();
 
+  // Expand each direct membership to its descendant subtree (inherited
+  // visibility). Use a map keyed by team id so direct entries override
+  // inherited ones, and the highest inherited role wins on overlap.
+  const collected = new Map<
+    string,
+    {
+      team: TeamRow;
+      role: string;
+      show_on_profile: number | null;
+      inherited_from: string | null;
+    }
+  >();
+  for (const row of rows.results) {
+    collected.set(row.id, {
+      team: row,
+      role: row.role,
+      show_on_profile: row.show_on_profile,
+      inherited_from: null,
+    });
+  }
+  for (const row of rows.results) {
+    const subtree = await getDescendantTeamIds(c.env.DB, row.id);
+    for (const descendantId of subtree) {
+      if (descendantId === row.id) continue;
+      const existing = collected.get(descendantId);
+      if (existing && existing.inherited_from === null) continue; // direct wins
+      if (
+        existing &&
+        (ROLE_RANK[existing.role] ?? 0) >= (ROLE_RANK[row.role] ?? 0)
+      )
+        continue;
+      const descRow = await c.env.DB.prepare("SELECT * FROM teams WHERE id = ?")
+        .bind(descendantId)
+        .first<TeamRow>();
+      if (!descRow) continue;
+      collected.set(descendantId, {
+        team: descRow,
+        role: row.role,
+        show_on_profile: null,
+        inherited_from: row.id,
+      });
+    }
+  }
+
   return c.json({
     teams: await Promise.all(
-      rows.results.map(async (t) => ({
-        ...t,
-        avatar_url: await proxyImageUrl(c.env.APP_URL, c.env.DB, t.avatar_url),
-        unproxied_avatar_url: t.avatar_url,
+      Array.from(collected.values()).map(async (entry) => ({
+        ...entry.team,
+        role: entry.role,
+        avatar_url: await proxyImageUrl(
+          c.env.APP_URL,
+          c.env.DB,
+          entry.team.avatar_url,
+        ),
+        unproxied_avatar_url: entry.team.avatar_url,
         show_on_profile:
-          t.show_on_profile === null ? null : t.show_on_profile === 1,
+          entry.show_on_profile === null ? null : entry.show_on_profile === 1,
+        inherited_from: entry.inherited_from,
       })),
     ),
   });
@@ -313,21 +621,51 @@ app.patch("/:id/membership/show-on-profile", async (c) => {
   return c.json({ show_on_profile: body.show_on_profile });
 });
 
-// Create team
+// Create team (top-level if `parent_team_id` is omitted, otherwise a
+// sub-team under the named parent).
 app.post("/", async (c) => {
   const user = c.get("user");
-
-  if (user.role !== "admin") {
-    const disabled = await getConfigValue(c.env.DB, "disable_user_create_team");
-    if (disabled) return c.json({ error: "Team creation is disabled" }, 403);
-  }
 
   const body = await c.req.json<{
     name: string;
     description?: string;
     avatar_url?: string;
+    parent_team_id?: string | null;
   }>();
   if (!body.name?.trim()) return c.json({ error: "name is required" }, 400);
+
+  // Parent validation — sub-team creation requires admin+ on the parent.
+  // Top-level creation respects the site-wide disable toggle.
+  let parentId: string | null = null;
+  if (body.parent_team_id) {
+    const enabled = await getConfigValue(c.env.DB, "enable_sub_teams");
+    if (!enabled)
+      return c.json({ error: "Sub-teams are disabled on this instance" }, 403);
+    const parentRow = await c.env.DB.prepare(
+      "SELECT id FROM teams WHERE id = ?",
+    )
+      .bind(body.parent_team_id)
+      .first<{ id: string }>();
+    if (!parentRow) return c.json({ error: "Parent team not found" }, 404);
+    const eff = await getEffectiveMember(
+      c.env.DB,
+      body.parent_team_id,
+      user.id,
+    );
+    if (!eff || !hasRole(eff.role, "admin"))
+      return c.json(
+        { error: "Forbidden: must be admin+ of the parent team" },
+        403,
+      );
+    const maxDepth = await getMaxTeamDepth(c.env.DB);
+    const ancestors = await getTeamAncestors(c.env.DB, body.parent_team_id);
+    if (ancestors.length >= maxDepth)
+      return c.json({ error: `Team nesting limit (${maxDepth}) reached` }, 400);
+    parentId = body.parent_team_id;
+  } else if (user.role !== "admin") {
+    const disabled = await getConfigValue(c.env.DB, "disable_user_create_team");
+    if (disabled) return c.json({ error: "Team creation is disabled" }, 403);
+  }
 
   if (body.avatar_url) {
     const imgErr = await validateImageUrl(body.avatar_url);
@@ -341,12 +679,13 @@ app.post("/", async (c) => {
 
   await c.env.DB.batch([
     c.env.DB.prepare(
-      "INSERT INTO teams (id, name, description, avatar_url, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+      "INSERT INTO teams (id, name, description, avatar_url, parent_team_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
     ).bind(
       id,
       body.name.trim(),
       body.description ?? "",
       body.avatar_url ?? null,
+      parentId,
       now,
       now,
     ),
@@ -376,15 +715,137 @@ app.post("/", async (c) => {
   return c.json({ team: { ...team!, role: "owner" } }, 201);
 });
 
-// Get team details + members
+// List immediate sub-teams of a parent team.
+// Members of an ancestor team (inherited or direct) may list.
+app.get("/:id/sub-teams", async (c) => {
+  const user = c.get("user");
+  const id = c.req.param("id");
+
+  const enabled = await getConfigValue(c.env.DB, "enable_sub_teams");
+  if (!enabled)
+    return c.json({ error: "Sub-teams are disabled on this instance" }, 403);
+
+  const eff = await getEffectiveMember(c.env.DB, id, user.id);
+  if (!eff) return c.json({ error: "Not found" }, 404);
+
+  const { results } = await c.env.DB.prepare(
+    `SELECT t.*, (
+       SELECT COUNT(*) FROM team_members WHERE team_id = t.id
+     ) AS member_count
+     FROM teams t WHERE t.parent_team_id = ?
+     ORDER BY t.created_at DESC`,
+  )
+    .bind(id)
+    .all<TeamRow & { member_count: number }>();
+
+  return c.json({
+    sub_teams: await Promise.all(
+      results.map(async (t) => ({
+        ...t,
+        avatar_url: await proxyImageUrl(c.env.APP_URL, c.env.DB, t.avatar_url),
+        unproxied_avatar_url: t.avatar_url,
+        // Effective role of caller in this sub-team (inherited from the
+        // ancestor at minimum). Clients can use this to disable UI affordances
+        // for non-admin viewers.
+        my_role: eff.role,
+        inherited_from: eff.inherited_from ?? id,
+      })),
+    ),
+  });
+});
+
+// Create a sub-team under :id. Convenience alias for
+// POST / with parent_team_id — body is the same as POST /.
+app.post("/:id/sub-teams", async (c) => {
+  const user = c.get("user");
+  const id = c.req.param("id");
+
+  const enabled = await getConfigValue(c.env.DB, "enable_sub_teams");
+  if (!enabled)
+    return c.json({ error: "Sub-teams are disabled on this instance" }, 403);
+
+  const body = await c.req.json<{
+    name: string;
+    description?: string;
+    avatar_url?: string;
+  }>();
+  if (!body.name?.trim()) return c.json({ error: "name is required" }, 400);
+
+  const parentRow = await c.env.DB.prepare("SELECT id FROM teams WHERE id = ?")
+    .bind(id)
+    .first<{ id: string }>();
+  if (!parentRow) return c.json({ error: "Parent team not found" }, 404);
+  const eff = await getEffectiveMember(c.env.DB, id, user.id);
+  if (!eff || !hasRole(eff.role, "admin"))
+    return c.json(
+      { error: "Forbidden: must be admin+ of the parent team" },
+      403,
+    );
+  const maxDepth = await getMaxTeamDepth(c.env.DB);
+  const ancestors = await getTeamAncestors(c.env.DB, id);
+  if (ancestors.length >= maxDepth)
+    return c.json({ error: `Team nesting limit (${maxDepth}) reached` }, 400);
+
+  if (body.avatar_url) {
+    const imgErr = await validateImageUrl(body.avatar_url);
+    if (imgErr) return c.json({ error: `avatar_url: ${imgErr}` }, 400);
+  }
+
+  const subId = randomId();
+  const now = Math.floor(Date.now() / 1000);
+  await c.env.DB.batch([
+    c.env.DB.prepare(
+      "INSERT INTO teams (id, name, description, avatar_url, parent_team_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    ).bind(
+      subId,
+      body.name.trim(),
+      body.description ?? "",
+      body.avatar_url ?? null,
+      id,
+      now,
+      now,
+    ),
+    c.env.DB.prepare(
+      "INSERT INTO users (id, email, username, password_hash, display_name, avatar_url, role, kind, email_verified, is_active, created_at, updated_at) VALUES (?, ?, ?, NULL, ?, ?, 'user', 'team', 0, 1, ?, ?)",
+    ).bind(
+      subId,
+      teamUserSyntheticEmail(subId),
+      teamUserSyntheticUsername(subId),
+      body.name.trim(),
+      body.avatar_url ?? null,
+      now,
+      now,
+    ),
+    c.env.DB.prepare(
+      "INSERT INTO team_members (team_id, user_id, role, joined_at) VALUES (?, ?, 'owner', ?)",
+    ).bind(subId, user.id, now),
+  ]);
+
+  const team = await c.env.DB.prepare("SELECT * FROM teams WHERE id = ?")
+    .bind(subId)
+    .first<TeamRow>();
+  return c.json({ team: { ...team!, role: "owner" } }, 201);
+});
+
+// Get team details + members + hierarchy info.
+//
+// Visible to direct members and to members of any ancestor team (inherited
+// visibility). The response includes:
+//   - `team.ancestors` — array of {id, name} from immediate parent to root
+//   - `team.sub_teams` — immediate children with member_count
+//   - `team.my_role` — effective role (direct ∪ inherited, max wins)
+//   - `team.inherited_from` — ancestor id when my_role came from inheritance
+//   - `members` — direct members of this team only (inherited members are
+//     visible by inspecting ancestor teams, which the client can do on its
+//     own; surfacing them here would multiply listings on every sub-team).
 app.get("/:id", async (c) => {
   const user = c.get("user");
   const id = c.req.param("id");
 
-  const member = await getMember(c.env.DB, id, user.id);
-  if (!member) return c.json({ error: "Not found" }, 404);
+  const eff = await getEffectiveMember(c.env.DB, id, user.id);
+  if (!eff) return c.json({ error: "Not found" }, 404);
 
-  const [team, members] = await Promise.all([
+  const [team, members, ancestors, subTeams] = await Promise.all([
     c.env.DB.prepare("SELECT * FROM teams WHERE id = ?")
       .bind(id)
       .first<TeamRow>(),
@@ -403,16 +864,54 @@ app.get("/:id", async (c) => {
         display_name: string;
         avatar_url: string | null;
       }>(),
+    getTeamAncestors(c.env.DB, id),
+    c.env.DB.prepare(
+      `SELECT t.id, t.name, t.avatar_url, (
+         SELECT COUNT(*) FROM team_members WHERE team_id = t.id
+       ) AS member_count
+       FROM teams t WHERE t.parent_team_id = ?
+       ORDER BY t.created_at DESC`,
+    )
+      .bind(id)
+      .all<{
+        id: string;
+        name: string;
+        avatar_url: string | null;
+        member_count: number;
+      }>(),
   ]);
 
   if (!team) return c.json({ error: "Not found" }, 404);
+
+  // ancestors[0] is the team itself — slice it off and rewrite avatars.
+  const ancestorChain = await Promise.all(
+    ancestors.slice(1).map(async (a) => ({
+      id: a.id,
+      name: a.name,
+      avatar_url: await proxyImageUrl(c.env.APP_URL, c.env.DB, a.avatar_url),
+    })),
+  );
 
   return c.json({
     team: {
       ...team,
       avatar_url: await proxyImageUrl(c.env.APP_URL, c.env.DB, team.avatar_url),
       unproxied_avatar_url: team.avatar_url,
-      my_role: member.role,
+      my_role: eff.role,
+      inherited_from: eff.inherited_from,
+      ancestors: ancestorChain,
+      sub_teams: await Promise.all(
+        subTeams.results.map(async (s) => ({
+          id: s.id,
+          name: s.name,
+          avatar_url: await proxyImageUrl(
+            c.env.APP_URL,
+            c.env.DB,
+            s.avatar_url,
+          ),
+          member_count: s.member_count,
+        })),
+      ),
     },
     members: await Promise.all(
       members.results.map(async (m) => ({
@@ -429,15 +928,16 @@ app.patch("/:id", async (c) => {
   const user = c.get("user");
   const id = c.req.param("id");
 
-  const member = await getMember(c.env.DB, id, user.id);
-  if (!member) return c.json({ error: "Not found" }, 404);
-  if (!hasRole(member.role, "admin"))
-    return c.json({ error: "Forbidden" }, 403);
+  const eff = await getEffectiveMember(c.env.DB, id, user.id);
+  if (!eff) return c.json({ error: "Not found" }, 404);
+  if (!hasRole(eff.role, "admin")) return c.json({ error: "Forbidden" }, 403);
+  const member = { role: eff.role };
 
   const body = await c.req.json<{
     name?: string;
     description?: string;
     avatar_url?: string;
+    parent_team_id?: string | null;
     profile_is_public?: boolean;
     profile_show_description?: boolean | null;
     profile_show_avatar?: boolean | null;
@@ -446,6 +946,7 @@ app.patch("/:id", async (c) => {
     profile_show_apps?: boolean | null;
     profile_show_domains?: boolean | null;
     profile_show_members?: boolean | null;
+    profile_show_sub_teams?: boolean | null;
     require_2fa?: boolean;
     require_verified_email?: boolean;
   }>();
@@ -477,6 +978,35 @@ app.patch("/:id", async (c) => {
     updates.push("profile_is_public = ?");
     values.push(body.profile_is_public ? 1 : 0);
   }
+  if (body.parent_team_id !== undefined) {
+    const enabled = await getConfigValue(c.env.DB, "enable_sub_teams");
+    if (!enabled)
+      return c.json({ error: "Sub-teams are disabled on this instance" }, 403);
+    // Moving a team. Owner-only (the team's own owner, direct or inherited)
+    // because re-parenting redistributes inherited access across the whole
+    // organisation tree.
+    if (!hasRole(member.role, "owner"))
+      return c.json(
+        { error: "Only the owner can move the team to a new parent" },
+        403,
+      );
+    const reason = await isInvalidReparent(c.env.DB, id, body.parent_team_id);
+    if (reason) return c.json({ error: reason }, 400);
+    if (body.parent_team_id) {
+      const parentEff = await getEffectiveMember(
+        c.env.DB,
+        body.parent_team_id,
+        user.id,
+      );
+      if (!parentEff || !hasRole(parentEff.role, "admin"))
+        return c.json(
+          { error: "Forbidden: must be admin+ of the new parent team" },
+          403,
+        );
+    }
+    updates.push("parent_team_id = ?");
+    values.push(body.parent_team_id);
+  }
   if (body.require_2fa !== undefined) {
     if (!hasRole(member.role, "owner"))
       return c.json(
@@ -503,6 +1033,7 @@ app.patch("/:id", async (c) => {
     "profile_show_apps",
     "profile_show_domains",
     "profile_show_members",
+    "profile_show_sub_teams",
   ] as const) {
     const v = body[field];
     if (v !== undefined) {
@@ -537,14 +1068,16 @@ app.patch("/:id", async (c) => {
   return c.json({ team: { ...updated!, my_role: member.role } });
 });
 
-// Delete team (owner only)
+// Delete team — owner only (direct OR inherited from an ancestor team).
+// Cascades through all sub-teams (deepest first); each level's apps fall back
+// to that level's own owner, then the deleting user. See {@link dissolveTeam}.
 app.delete("/:id", async (c) => {
   const user = c.get("user");
   const id = c.req.param("id");
 
-  const member = await getMember(c.env.DB, id, user.id);
-  if (!member) return c.json({ error: "Not found" }, 404);
-  if (!hasRole(member.role, "owner"))
+  const eff = await getEffectiveMember(c.env.DB, id, user.id);
+  if (!eff) return c.json({ error: "Not found" }, 404);
+  if (!hasRole(eff.role, "owner"))
     return c.json({ error: "Only the team owner can delete the team" }, 403);
 
   await dissolveTeam(c.env.DB, id, user.id);
@@ -564,15 +1097,14 @@ app.post("/:id/members", async (c) => {
   const user = c.get("user");
   const id = c.req.param("id");
 
-  const member = await getMember(c.env.DB, id, user.id);
-  if (!member) return c.json({ error: "Not found" }, 404);
-  if (!hasRole(member.role, "admin"))
-    return c.json({ error: "Forbidden" }, 403);
+  const eff = await getEffectiveMember(c.env.DB, id, user.id);
+  if (!eff) return c.json({ error: "Not found" }, 404);
+  if (!hasRole(eff.role, "admin")) return c.json({ error: "Forbidden" }, 403);
 
   const body = await c.req.json<{ username: string; role?: string }>();
   let role: string = "member";
   if (body.role === "admin") role = "admin";
-  if (body.role === "co-owner" && member.role === "owner") role = "co-owner";
+  if (body.role === "co-owner" && eff.role === "owner") role = "co-owner";
 
   const target = await c.env.DB.prepare(
     "SELECT id FROM users WHERE username = ? AND kind = 'user'",
@@ -634,9 +1166,9 @@ app.patch("/:id/members/:userId", async (c) => {
   const id = c.req.param("id");
   const targetUserId = c.req.param("userId");
 
-  const member = await getMember(c.env.DB, id, user.id);
-  if (!member) return c.json({ error: "Not found" }, 404);
-  if (!hasRole(member.role, "co-owner"))
+  const eff = await getEffectiveMember(c.env.DB, id, user.id);
+  if (!eff) return c.json({ error: "Not found" }, 404);
+  if (!hasRole(eff.role, "co-owner"))
     return c.json({ error: "Only owners and co-owners can change roles" }, 403);
   if (targetUserId === user.id)
     return c.json({ error: "Cannot change your own role" }, 400);
@@ -645,15 +1177,15 @@ app.patch("/:id/members/:userId", async (c) => {
   if (!["co-owner", "admin", "member"].includes(body.role))
     return c.json({ error: "Role must be co-owner, admin, or member" }, 400);
 
+  // Target must be a *direct* member of this team — inherited memberships
+  // are managed at the ancestor team they originate from.
   const target = await getMember(c.env.DB, id, targetUserId);
   if (!target) return c.json({ error: "Member not found" }, 404);
   if (target.role === "owner")
     return c.json({ error: "Cannot change owner role" }, 403);
-  // Co-owners cannot change other co-owners' roles
-  if (target.role === "co-owner" && member.role !== "owner")
+  if (target.role === "co-owner" && eff.role !== "owner")
     return c.json({ error: "Only the owner can change co-owner roles" }, 403);
-  // Only owners can assign co-owner role
-  if (body.role === "co-owner" && member.role !== "owner")
+  if (body.role === "co-owner" && eff.role !== "owner")
     return c.json({ error: "Only the owner can assign co-owner role" }, 403);
 
   await c.env.DB.prepare(
@@ -665,19 +1197,26 @@ app.patch("/:id/members/:userId", async (c) => {
   return c.json({ message: "Role updated" });
 });
 
-// Remove member (owner/admin; cannot remove an owner)
+// Remove member (owner/admin; cannot remove an owner). Self-leave requires
+// direct membership — inherited members "leave" by leaving the ancestor.
 app.delete("/:id/members/:userId", async (c) => {
   const user = c.get("user");
   const id = c.req.param("id");
   const targetUserId = c.req.param("userId");
 
-  const member = await getMember(c.env.DB, id, user.id);
-  if (!member) return c.json({ error: "Not found" }, 404);
-
-  // Allow leaving yourself (any role), otherwise need admin+
   const isSelf = targetUserId === user.id;
-  if (!isSelf && !hasRole(member.role, "admin"))
-    return c.json({ error: "Forbidden" }, 403);
+  let actorRole: string | null = null;
+  if (isSelf) {
+    const direct = await getMember(c.env.DB, id, user.id);
+    if (!direct)
+      return c.json({ error: "You are not a direct member of this team" }, 404);
+    actorRole = direct.role;
+  } else {
+    const eff = await getEffectiveMember(c.env.DB, id, user.id);
+    if (!eff) return c.json({ error: "Not found" }, 404);
+    if (!hasRole(eff.role, "admin")) return c.json({ error: "Forbidden" }, 403);
+    actorRole = eff.role;
+  }
 
   const target = await getMember(c.env.DB, id, targetUserId);
   if (!target) return c.json({ error: "Member not found" }, 404);
@@ -685,7 +1224,7 @@ app.delete("/:id/members/:userId", async (c) => {
   if (target.role === "owner" && !isSelf)
     return c.json({ error: "Cannot remove the team owner" }, 403);
   // Only owner can remove co-owners
-  if (target.role === "co-owner" && !isSelf && member.role !== "owner")
+  if (target.role === "co-owner" && !isSelf && actorRole !== "owner")
     return c.json({ error: "Only the owner can remove co-owners" }, 403);
 
   if (target.role === "owner" && isSelf) {
@@ -778,10 +1317,9 @@ app.get("/:id/invites", async (c) => {
   const user = c.get("user");
   const id = c.req.param("id");
 
-  const member = await getMember(c.env.DB, id, user.id);
-  if (!member) return c.json({ error: "Not found" }, 404);
-  if (!hasRole(member.role, "admin"))
-    return c.json({ error: "Forbidden" }, 403);
+  const eff = await getEffectiveMember(c.env.DB, id, user.id);
+  if (!eff) return c.json({ error: "Not found" }, 404);
+  if (!hasRole(eff.role, "admin")) return c.json({ error: "Forbidden" }, 403);
 
   const now = Math.floor(Date.now() / 1000);
   const { results } = await c.env.DB.prepare(
@@ -801,10 +1339,9 @@ app.post("/:id/invites", async (c) => {
   const user = c.get("user");
   const id = c.req.param("id");
 
-  const member = await getMember(c.env.DB, id, user.id);
-  if (!member) return c.json({ error: "Not found" }, 404);
-  if (!hasRole(member.role, "admin"))
-    return c.json({ error: "Forbidden" }, 403);
+  const eff = await getEffectiveMember(c.env.DB, id, user.id);
+  if (!eff) return c.json({ error: "Not found" }, 404);
+  if (!hasRole(eff.role, "admin")) return c.json({ error: "Forbidden" }, 403);
 
   const body = await c.req.json<{
     role?: string;
@@ -816,8 +1353,7 @@ app.post("/:id/invites", async (c) => {
 
   let role: string = "member";
   if (body.role === "admin") role = "admin";
-  if (body.role === "co-owner" && hasRole(member.role, "owner"))
-    role = "co-owner";
+  if (body.role === "co-owner" && hasRole(eff.role, "owner")) role = "co-owner";
   const maxUses = body.max_uses ?? 0;
   const requestedTtl = body.ttl_hours ?? body.expires_in_hours ?? 72;
   const ttlHours = Math.min(Math.max(requestedTtl, 1), 720); // max 30 days
@@ -915,10 +1451,9 @@ app.delete("/:id/invites/:token", async (c) => {
   const id = c.req.param("id");
   const token = c.req.param("token");
 
-  const member = await getMember(c.env.DB, id, user.id);
-  if (!member) return c.json({ error: "Not found" }, 404);
-  if (!hasRole(member.role, "admin"))
-    return c.json({ error: "Forbidden" }, 403);
+  const eff = await getEffectiveMember(c.env.DB, id, user.id);
+  if (!eff) return c.json({ error: "Not found" }, 404);
+  if (!hasRole(eff.role, "admin")) return c.json({ error: "Forbidden" }, 403);
 
   const tokenLookup = await hashLookupCandidate(c.env, token);
   // For revoke, missing/suspicious tokens are silently treated as a no-op
@@ -937,28 +1472,57 @@ app.delete("/:id/invites/:token", async (c) => {
 
 const DOMAIN_REGEX = /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/i;
 
-// List team domains
+// List team domains. Includes domains owned by this team plus, as read-only
+// `inherited_from`-tagged entries, every domain owned by an ancestor team
+// (sub-teams inherit ancestor domains for verification + display). Honors
+// the `inherit_team_domains` site config — when disabled the response
+// contains direct domains only.
 app.get(":id/domains", async (c) => {
   const user = c.get("user");
   const id = c.req.param("id");
-  const m = await getMember(c.env.DB, id, user.id);
-  if (!m) return c.json({ error: "Not a team member" }, 403);
+  const eff = await getEffectiveMember(c.env.DB, id, user.id);
+  if (!eff) return c.json({ error: "Not a team member" }, 403);
 
-  const rows = await c.env.DB.prepare(
+  const own = await c.env.DB.prepare(
     "SELECT * FROM domains WHERE team_id = ? ORDER BY created_at DESC",
   )
     .bind(id)
     .all<DomainRow>();
-  return c.json({ domains: rows.results });
+
+  const inheritDomains = await getConfigValue(c.env.DB, "inherit_team_domains");
+  let inherited: Array<DomainRow & { inherited_from: string }> = [];
+  if (inheritDomains) {
+    // Ancestor-owned domains, surfaced as read-only entries. We pull them
+    // in a single IN() rather than per-ancestor since depth is bounded.
+    const ancestors = await getTeamAncestors(c.env.DB, id);
+    const ancestorIds = ancestors.slice(1).map((a) => a.id);
+    if (ancestorIds.length) {
+      const placeholders = ancestorIds.map(() => "?").join(",");
+      const { results } = await c.env.DB.prepare(
+        `SELECT * FROM domains WHERE team_id IN (${placeholders})
+         ORDER BY created_at DESC`,
+      )
+        .bind(...ancestorIds)
+        .all<DomainRow>();
+      inherited = results.map((r) => ({ ...r, inherited_from: r.team_id! }));
+    }
+  }
+
+  return c.json({
+    domains: [
+      ...own.results.map((d) => ({ ...d, inherited_from: null })),
+      ...inherited,
+    ],
+  });
 });
 
 // Add team domain
 app.post(":id/domains", async (c) => {
   const user = c.get("user");
   const id = c.req.param("id");
-  const m = await getMember(c.env.DB, id, user.id);
-  if (!m) return c.json({ error: "Not a team member" }, 403);
-  if (!hasRole(m.role, "admin")) return c.json({ error: "Forbidden" }, 403);
+  const eff = await getEffectiveMember(c.env.DB, id, user.id);
+  if (!eff) return c.json({ error: "Not a team member" }, 403);
+  if (!hasRole(eff.role, "admin")) return c.json({ error: "Forbidden" }, 403);
 
   const body = await c.req.json<{ domain: string }>();
   if (!body.domain) return c.json({ error: "domain is required" }, 400);
@@ -1027,9 +1591,9 @@ app.post(":id/domains/:domainId/verify", async (c) => {
   const user = c.get("user");
   const id = c.req.param("id");
   const domainId = c.req.param("domainId");
-  const m = await getMember(c.env.DB, id, user.id);
-  if (!m) return c.json({ error: "Not a team member" }, 403);
-  if (!hasRole(m.role, "admin")) return c.json({ error: "Forbidden" }, 403);
+  const eff = await getEffectiveMember(c.env.DB, id, user.id);
+  if (!eff) return c.json({ error: "Not a team member" }, 403);
+  if (!hasRole(eff.role, "admin")) return c.json({ error: "Forbidden" }, 403);
 
   const row = await c.env.DB.prepare(
     "SELECT * FROM domains WHERE id = ? AND team_id = ?",
@@ -1104,9 +1668,9 @@ app.delete(":id/domains/:domainId", async (c) => {
   const user = c.get("user");
   const id = c.req.param("id");
   const domainId = c.req.param("domainId");
-  const m = await getMember(c.env.DB, id, user.id);
-  if (!m) return c.json({ error: "Not a team member" }, 403);
-  if (!hasRole(m.role, "admin")) return c.json({ error: "Forbidden" }, 403);
+  const eff = await getEffectiveMember(c.env.DB, id, user.id);
+  if (!eff) return c.json({ error: "Not a team member" }, 403);
+  if (!hasRole(eff.role, "admin")) return c.json({ error: "Forbidden" }, 403);
 
   const row = await c.env.DB.prepare(
     "SELECT id FROM domains WHERE id = ? AND team_id = ?",
@@ -1126,9 +1690,9 @@ app.post(":id/domains/:domainId/to-personal", async (c) => {
   const user = c.get("user");
   const id = c.req.param("id");
   const domainId = c.req.param("domainId");
-  const m = await getMember(c.env.DB, id, user.id);
-  if (!m) return c.json({ error: "Not a team member" }, 403);
-  if (!hasRole(m.role, "admin")) return c.json({ error: "Forbidden" }, 403);
+  const eff = await getEffectiveMember(c.env.DB, id, user.id);
+  if (!eff) return c.json({ error: "Not a team member" }, 403);
+  if (!hasRole(eff.role, "admin")) return c.json({ error: "Forbidden" }, 403);
 
   const row = await c.env.DB.prepare(
     "SELECT * FROM domains WHERE id = ? AND team_id = ?",
@@ -1161,9 +1725,9 @@ app.post(":id/domains/:domainId/share-to-team", async (c) => {
   const user = c.get("user");
   const id = c.req.param("id");
   const domainId = c.req.param("domainId");
-  const m = await getMember(c.env.DB, id, user.id);
-  if (!m) return c.json({ error: "Not a team member" }, 403);
-  if (!hasRole(m.role, "admin")) return c.json({ error: "Forbidden" }, 403);
+  const eff = await getEffectiveMember(c.env.DB, id, user.id);
+  if (!eff) return c.json({ error: "Not a team member" }, 403);
+  if (!hasRole(eff.role, "admin")) return c.json({ error: "Forbidden" }, 403);
 
   const row = await c.env.DB.prepare(
     "SELECT * FROM domains WHERE id = ? AND team_id = ?",
@@ -1177,9 +1741,9 @@ app.post(":id/domains/:domainId/share-to-team", async (c) => {
   if (body.team_id === id)
     return c.json({ error: "Cannot share to the same team" }, 400);
 
-  // Requester must be admin+ in the target team
-  const targetMember = await getMember(c.env.DB, body.team_id, user.id);
-  if (!targetMember || !hasRole(targetMember.role, "admin"))
+  // Requester must be admin+ in the target team (effective)
+  const targetEff = await getEffectiveMember(c.env.DB, body.team_id, user.id);
+  if (!targetEff || !hasRole(targetEff.role, "admin"))
     return c.json(
       { error: "Forbidden: must be admin or owner of target team" },
       403,
@@ -1226,9 +1790,9 @@ app.post(":id/domains/:domainId/share-to-personal", async (c) => {
   const user = c.get("user");
   const id = c.req.param("id");
   const domainId = c.req.param("domainId");
-  const m = await getMember(c.env.DB, id, user.id);
-  if (!m) return c.json({ error: "Not a team member" }, 403);
-  if (!hasRole(m.role, "admin")) return c.json({ error: "Forbidden" }, 403);
+  const eff = await getEffectiveMember(c.env.DB, id, user.id);
+  if (!eff) return c.json({ error: "Not a team member" }, 403);
+  if (!hasRole(eff.role, "admin")) return c.json({ error: "Forbidden" }, 403);
 
   const row = await c.env.DB.prepare(
     "SELECT * FROM domains WHERE id = ? AND team_id = ?",
@@ -1277,14 +1841,25 @@ async function verifiedTeamParentDomain(
   teamId: string,
   domain: string,
 ): Promise<string | null> {
+  // When `inherit_team_domains` is disabled we only consult the team's
+  // own verified domains for auto-verification, matching the listing
+  // behavior.
+  const inheritDomains = await getConfigValue(db, "inherit_team_domains");
+  const teamIds = inheritDomains
+    ? (await getTeamAncestors(db, teamId)).map((a) => a.id)
+    : [teamId];
+  if (!teamIds.length) return null;
+  const placeholders = teamIds.map(() => "?").join(",");
   const parts = domain.split(".");
   for (let i = 1; i < parts.length - 1; i++) {
     const parent = parts.slice(i).join(".");
     const row = await db
       .prepare(
-        "SELECT domain FROM domains WHERE team_id = ? AND domain = ? AND verified = 1",
+        `SELECT domain FROM domains
+         WHERE team_id IN (${placeholders}) AND domain = ? AND verified = 1
+         LIMIT 1`,
       )
-      .bind(teamId, parent)
+      .bind(...teamIds, parent)
       .first<{ domain: string }>();
     if (row) return row.domain;
   }
@@ -1298,8 +1873,8 @@ app.get("/:id/apps", async (c) => {
   const user = c.get("user");
   const id = c.req.param("id");
 
-  const member = await getMember(c.env.DB, id, user.id);
-  if (!member) return c.json({ error: "Not found" }, 404);
+  const eff = await getEffectiveMember(c.env.DB, id, user.id);
+  if (!eff) return c.json({ error: "Not found" }, 404);
 
   const rows = await c.env.DB.prepare(
     "SELECT * FROM oauth_apps WHERE team_id = ? ORDER BY created_at DESC",
@@ -1332,10 +1907,9 @@ app.post("/:id/apps", async (c) => {
     if (disabled) return c.json({ error: "App creation is disabled" }, 403);
   }
 
-  const member = await getMember(c.env.DB, id, user.id);
-  if (!member) return c.json({ error: "Not found" }, 404);
-  if (!hasRole(member.role, "admin"))
-    return c.json({ error: "Forbidden" }, 403);
+  const eff = await getEffectiveMember(c.env.DB, id, user.id);
+  if (!eff) return c.json({ error: "Not found" }, 404);
+  if (!hasRole(eff.role, "admin")) return c.json({ error: "Forbidden" }, 403);
 
   const body = await c.req.json<{
     name: string;
@@ -1420,10 +1994,9 @@ app.post("/:id/apps/transfer", async (c) => {
   const user = c.get("user");
   const id = c.req.param("id");
 
-  const member = await getMember(c.env.DB, id, user.id);
-  if (!member) return c.json({ error: "Not found" }, 404);
-  if (!hasRole(member.role, "admin"))
-    return c.json({ error: "Forbidden" }, 403);
+  const eff = await getEffectiveMember(c.env.DB, id, user.id);
+  if (!eff) return c.json({ error: "Not found" }, 404);
+  if (!hasRole(eff.role, "admin")) return c.json({ error: "Forbidden" }, 403);
 
   const body = await c.req.json<{ app_id: string }>();
   const appRow = await c.env.DB.prepare("SELECT * FROM oauth_apps WHERE id = ?")
@@ -1472,10 +2045,9 @@ app.delete("/:id/apps/:appId/transfer", async (c) => {
   const id = c.req.param("id");
   const appId = c.req.param("appId");
 
-  const member = await getMember(c.env.DB, id, user.id);
-  if (!member) return c.json({ error: "Not found" }, 404);
-  if (!hasRole(member.role, "admin"))
-    return c.json({ error: "Forbidden" }, 403);
+  const eff = await getEffectiveMember(c.env.DB, id, user.id);
+  if (!eff) return c.json({ error: "Not found" }, 404);
+  if (!hasRole(eff.role, "admin")) return c.json({ error: "Forbidden" }, 403);
 
   const appRow = await c.env.DB.prepare(
     "SELECT * FROM oauth_apps WHERE id = ? AND team_id = ?",

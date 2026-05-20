@@ -90,6 +90,14 @@ const DEFAULT_CONFIG: SiteConfig = {
   // haven't enrolled yet, so operators should opt in deliberately.
   default_team_require_2fa: false,
   default_team_require_verified_email: false,
+  // Sub-team feature. Master switch lets operators turn the whole nested-
+  // team experience off without dropping data; the parent_team_id column
+  // is still preserved but ignored for inheritance and management.
+  enable_sub_teams: true,
+  max_team_depth: 5,
+  inherit_team_membership: true,
+  inherit_team_domains: true,
+  default_team_profile_show_sub_teams: true,
   initialized: false,
 };
 

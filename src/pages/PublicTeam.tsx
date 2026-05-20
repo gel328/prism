@@ -81,6 +81,57 @@ const useStyles = makeStyles({
     background: tokens.colorNeutralBackground3,
   },
   appInfo: { flex: 1, minWidth: 0 },
+  parentTeamLink: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "6px",
+    padding: "4px 10px",
+    borderRadius: "999px",
+    border: `1px solid ${tokens.colorNeutralStroke2}`,
+    background: tokens.colorNeutralBackground3,
+    textDecoration: "none",
+    color: tokens.colorNeutralForeground2,
+    transition: "background 120ms ease, border-color 120ms ease",
+    ":hover": {
+      background: tokens.colorNeutralBackground3Hover,
+      borderColor: tokens.colorNeutralStroke1Hover,
+    },
+  },
+  subTeamsGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))",
+    gap: "8px",
+  },
+  subTeamCard: {
+    display: "flex",
+    alignItems: "center",
+    gap: "10px",
+    padding: "10px",
+    borderRadius: "6px",
+    border: `1px solid ${tokens.colorNeutralStroke2}`,
+    background: tokens.colorNeutralBackground3,
+    textDecoration: "none",
+    color: "inherit",
+    minWidth: 0,
+    transition:
+      "background 120ms ease, border-color 120ms ease, transform 120ms ease",
+    ":hover": {
+      background: tokens.colorNeutralBackground3Hover,
+      borderColor: tokens.colorNeutralStroke1Hover,
+      transform: "translateY(-1px)",
+    },
+  },
+  subTeamCardBody: {
+    display: "flex",
+    flexDirection: "column",
+    minWidth: 0,
+    flex: 1,
+  },
+  ellipsis: {
+    whiteSpace: "nowrap",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+  },
 });
 
 export function PublicTeam() {
@@ -130,7 +181,9 @@ export function PublicTeam() {
     team.member_count !== null ||
     (team.apps?.length ?? 0) > 0 ||
     (team.domains?.length ?? 0) > 0 ||
-    (team.members?.length ?? 0) > 0;
+    (team.members?.length ?? 0) > 0 ||
+    (team.sub_teams?.length ?? 0) > 0 ||
+    !!team.parent_team;
 
   return (
     <div className={styles.page}>
@@ -158,6 +211,28 @@ export function PublicTeam() {
             >
               {team.description}
             </Text>
+          )}
+          {team.parent_team && (
+            <RouterLink
+              to={`/t/${team.parent_team.id}`}
+              className={styles.parentTeamLink}
+            >
+              <Avatar
+                name={team.parent_team.name}
+                image={
+                  team.parent_team.avatar_url
+                    ? { src: team.parent_team.avatar_url }
+                    : undefined
+                }
+                size={20}
+                shape="square"
+              />
+              <Text size={200}>
+                {t("publicTeam.subTeamOf", {
+                  parent: team.parent_team.name,
+                })}
+              </Text>
+            </RouterLink>
           )}
         </div>
 
@@ -317,6 +392,51 @@ export function PublicTeam() {
                 >
                   {d.domain}
                 </Badge>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {team.sub_teams && team.sub_teams.length > 0 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <div className={styles.sectionTitle}>
+              <PeopleRegular />
+              {t("publicTeam.subTeamsHeading", {
+                count: team.sub_teams.length,
+              })}
+            </div>
+            <div className={styles.subTeamsGrid}>
+              {team.sub_teams.map((s) => (
+                <RouterLink
+                  key={s.id}
+                  to={`/t/${s.id}`}
+                  className={styles.subTeamCard}
+                >
+                  <Avatar
+                    name={s.name}
+                    image={s.avatar_url ? { src: s.avatar_url } : undefined}
+                    size={32}
+                    shape="square"
+                  />
+                  <div className={styles.subTeamCardBody}>
+                    <Text
+                      weight="semibold"
+                      size={300}
+                      className={styles.ellipsis}
+                    >
+                      {s.name}
+                    </Text>
+                    <Text
+                      size={200}
+                      className={styles.ellipsis}
+                      style={{ color: tokens.colorNeutralForeground3 }}
+                    >
+                      {t("publicTeam.subTeamMemberCount", {
+                        count: s.member_count,
+                      })}
+                    </Text>
+                  </div>
+                </RouterLink>
               ))}
             </div>
           </div>

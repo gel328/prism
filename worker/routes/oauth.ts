@@ -38,7 +38,14 @@ import {
   UNBOUND_TEAM_SCOPES,
 } from "../lib/scopes";
 import { deliverAppEvent } from "../lib/app-events";
-import { getMember, hasRole, ROLE_RANK } from "./teams";
+import {
+  getMember,
+  getEffectiveMember,
+  hasRole,
+  ROLE_RANK,
+  listEffectiveTeamMemberships,
+  dissolveTeam,
+} from "./teams";
 import {
   deliverUserEmailNotifications,
   notificationActorMetaFromHeaders,
@@ -577,23 +584,34 @@ app.get("/app-info", optionalAuth, async (c) => {
     role: string;
   }> = [];
   if (needsTeamGrant && c.get("user")) {
-    const { results } = await c.env.DB.prepare(
-      `SELECT t.id, t.name, t.avatar_url, tm.role
-       FROM team_members tm JOIN teams t ON t.id = tm.team_id
-       WHERE tm.user_id = ? AND tm.role IN ('owner','co-owner','admin')
-       ORDER BY CASE tm.role WHEN 'owner' THEN 0 WHEN 'co-owner' THEN 1 ELSE 2 END, t.name ASC`,
-    )
-      .bind(c.get("user")!.id)
-      .all<{
-        id: string;
-        name: string;
-        avatar_url: string | null;
-        role: string;
-      }>();
+    // Effective membership: include sub-teams the user can manage by way of
+    // inheritance from an ancestor team. This keeps the consent picker
+    // consistent with the session API's "what can I manage?" surface.
+    const memberships = await listEffectiveTeamMemberships(
+      c.env.DB,
+      c.get("user")!.id,
+    );
+    const admin = memberships.filter((m) =>
+      ["owner", "co-owner", "admin"].includes(m.role),
+    );
+    admin.sort((a, b) => {
+      const rank = (r: string) =>
+        r === "owner" ? 0 : r === "co-owner" ? 1 : 2;
+      const ra = rank(a.role);
+      const rb = rank(b.role);
+      if (ra !== rb) return ra - rb;
+      return a.team.name.localeCompare(b.team.name);
+    });
     userAdminTeams = await Promise.all(
-      results.map(async (t) => ({
-        ...t,
-        avatar_url: await proxyImageUrl(c.env.APP_URL, c.env.DB, t.avatar_url),
+      admin.map(async (m) => ({
+        id: m.team.id,
+        name: m.team.name,
+        avatar_url: await proxyImageUrl(
+          c.env.APP_URL,
+          c.env.DB,
+          m.team.avatar_url,
+        ),
+        role: m.role,
       })),
     );
   }
@@ -826,16 +844,14 @@ app.post("/authorize", requireAuth, async (c) => {
         400,
       );
     }
-    // Verify the user is owner/admin/co-owner of the selected team
-    const membership = await c.env.DB.prepare(
-      "SELECT role FROM team_members WHERE team_id = ? AND user_id = ?",
-    )
-      .bind(body.team_id, user.id)
-      .first<{ role: string }>();
+    // Verify the user is owner/admin/co-owner of the selected team. We use
+    // the *effective* role so an admin inherited from an ancestor team can
+    // grant single-team scopes on a sub-team, matching the session API.
+    const effective = await getEffectiveMember(c.env.DB, body.team_id, user.id);
 
     if (
-      !membership ||
-      !["owner", "co-owner", "admin"].includes(membership.role)
+      !effective ||
+      !["owner", "co-owner", "admin"].includes(effective.role)
     ) {
       return c.json(
         {
@@ -846,9 +862,9 @@ app.post("/authorize", requireAuth, async (c) => {
       );
     }
 
-    // team:delete requires owner or co-owner
+    // team:delete requires owner or co-owner (direct OR inherited).
     const requestsDelete = scopes.includes("team:delete");
-    if (requestsDelete && !["owner", "co-owner"].includes(membership.role)) {
+    if (requestsDelete && !["owner", "co-owner"].includes(effective.role)) {
       return c.json(
         {
           error: "team_scope_owner_required",
@@ -2223,36 +2239,36 @@ app.get("/me/apps", async (c) => {
   });
 });
 
-// GET /api/oauth/me/teams — list the token owner's team memberships (requires teams:read)
+// GET /api/oauth/me/teams — list the token owner's team memberships (requires
+// teams:read). Includes both direct memberships and teams visible via
+// sub-team inheritance (`inherited_from` carries the ancestor id).
 app.get("/me/teams", async (c) => {
   const resolved = await resolveBearerToken(c, "teams:read");
   if (!resolved) return c.json({ error: "insufficient_scope" }, 403);
 
-  const { results } = await c.env.DB.prepare(
-    `SELECT t.id, t.name, t.description, t.avatar_url, t.created_at,
-            tm.role, tm.joined_at
-     FROM team_members tm
-     JOIN teams t ON t.id = tm.team_id
-     WHERE tm.user_id = ?
-     ORDER BY tm.joined_at DESC`,
-  )
-    .bind(resolved.userId)
-    .all<{
-      id: string;
-      name: string;
-      description: string | null;
-      avatar_url: string | null;
-      created_at: number;
-      role: string;
-      joined_at: number;
-    }>();
+  const memberships = await listEffectiveTeamMemberships(
+    c.env.DB,
+    resolved.userId,
+  );
+  memberships.sort((a, b) => b.joined_at - a.joined_at);
 
   return c.json({
     teams: await Promise.all(
-      results.map(async (t) => ({
-        ...t,
-        avatar_url: await proxyImageUrl(c.env.APP_URL, c.env.DB, t.avatar_url),
-        unproxied_avatar_url: t.avatar_url,
+      memberships.map(async (m) => ({
+        id: m.team.id,
+        name: m.team.name,
+        description: m.team.description,
+        avatar_url: await proxyImageUrl(
+          c.env.APP_URL,
+          c.env.DB,
+          m.team.avatar_url,
+        ),
+        unproxied_avatar_url: m.team.avatar_url,
+        parent_team_id: m.team.parent_team_id,
+        created_at: m.team.created_at,
+        role: m.role,
+        joined_at: m.joined_at,
+        inherited_from: m.inherited_from,
       })),
     ),
   });
@@ -2455,13 +2471,9 @@ app.patch("/me/teams/:id", async (c) => {
   if (!resolved) return c.json({ error: "insufficient_scope" }, 403);
 
   const teamId = c.req.param("id");
-  const member = await c.env.DB.prepare(
-    "SELECT role FROM team_members WHERE team_id = ? AND user_id = ?",
-  )
-    .bind(teamId, resolved.userId)
-    .first<{ role: string }>();
+  const effective = await getEffectiveMember(c.env.DB, teamId, resolved.userId);
 
-  if (!member || !["owner", "co-owner", "admin"].includes(member.role))
+  if (!effective || !["owner", "co-owner", "admin"].includes(effective.role))
     return c.json({ error: "Forbidden" }, 403);
 
   const body = await c.req.json<{
@@ -2503,29 +2515,21 @@ app.patch("/me/teams/:id", async (c) => {
   return c.json({ team });
 });
 
-// DELETE /api/oauth/me/teams/:id — delete a team (requires teams:delete, owner only)
+// DELETE /api/oauth/me/teams/:id — delete a team (requires teams:delete, owner only).
+// Effective owner counts — an inherited owner can disband a sub-team via OAuth,
+// matching the session API. dissolveTeam handles the recursive cascade.
 app.delete("/me/teams/:id", async (c) => {
   const resolved = await resolveBearerToken(c, "teams:delete");
   if (!resolved) return c.json({ error: "insufficient_scope" }, 403);
 
   const teamId = c.req.param("id");
-  const member = await c.env.DB.prepare(
-    "SELECT role FROM team_members WHERE team_id = ? AND user_id = ?",
-  )
-    .bind(teamId, resolved.userId)
-    .first<{ role: string }>();
+  const effective = await getEffectiveMember(c.env.DB, teamId, resolved.userId);
 
-  if (!member || member.role !== "owner")
+  if (!effective || effective.role !== "owner")
     return c.json({ error: "Only the team owner can delete the team" }, 403);
 
-  // Disown team apps (hand back to creator)
-  await c.env.DB.prepare(
-    "UPDATE oauth_apps SET team_id = NULL WHERE team_id = ?",
-  )
-    .bind(teamId)
-    .run();
-
-  await c.env.DB.prepare("DELETE FROM teams WHERE id = ?").bind(teamId).run();
+  // Recursive cascade — reassigns team-owned apps per level before deletion.
+  await dissolveTeam(c.env.DB, teamId, resolved.userId);
 
   return c.json({ message: "Team deleted" });
 });
@@ -2891,11 +2895,10 @@ async function canManageAppViaToken(
     return { allowed: app.owner_id === callerUserId, app };
   }
 
-  const member = await db
-    .prepare("SELECT role FROM team_members WHERE team_id = ? AND user_id = ?")
-    .bind(app.team_id, callerUserId)
-    .first<{ role: string }>();
-  const role = member?.role ?? "";
+  // Effective role — an owner/co-owner of an ancestor team can manage the
+  // sub-team-owned app (subject to the same role gate as direct membership).
+  const effective = await getEffectiveMember(db, app.team_id, callerUserId);
+  const role = effective?.role ?? "";
   return { allowed: role === "owner" || role === "co-owner", app };
 }
 
@@ -3114,11 +3117,7 @@ app.post("/me/teams/:id/members", async (c) => {
   if (!resolved) return c.json({ error: "insufficient_scope" }, 403);
 
   const teamId = c.req.param("id");
-  const caller = await c.env.DB.prepare(
-    "SELECT role FROM team_members WHERE team_id = ? AND user_id = ?",
-  )
-    .bind(teamId, resolved.userId)
-    .first<{ role: string }>();
+  const caller = await getEffectiveMember(c.env.DB, teamId, resolved.userId);
 
   if (!caller || !["owner", "admin"].includes(caller.role))
     return c.json({ error: "Forbidden" }, 403);
@@ -3168,11 +3167,7 @@ app.delete("/me/teams/:id/members/:userId", async (c) => {
   const teamId = c.req.param("id");
   const targetUserId = c.req.param("userId");
 
-  const caller = await c.env.DB.prepare(
-    "SELECT role FROM team_members WHERE team_id = ? AND user_id = ?",
-  )
-    .bind(teamId, resolved.userId)
-    .first<{ role: string }>();
+  const caller = await getEffectiveMember(c.env.DB, teamId, resolved.userId);
 
   if (!caller || !["owner", "admin"].includes(caller.role))
     return c.json({ error: "Forbidden" }, 403);

@@ -156,6 +156,11 @@ app.patch("/config", async (c) => {
     "default_team_profile_show_members",
     "default_team_require_2fa",
     "default_team_require_verified_email",
+    "enable_sub_teams",
+    "max_team_depth",
+    "inherit_team_membership",
+    "inherit_team_domains",
+    "default_team_profile_show_sub_teams",
   ]);
 
   const updates: Record<string, unknown> = {};
@@ -211,6 +216,18 @@ app.patch("/config", async (c) => {
   // counts from the previous token.
   if (updates.github_readme_token !== undefined) {
     updates.github_readme_token_failures = 0;
+  }
+
+  // Bound sub-team nesting. Anything beyond ~20 is almost certainly a
+  // configuration mistake (and the recursive helpers walk N rows per check).
+  if (updates.max_team_depth !== undefined) {
+    const v = updates.max_team_depth;
+    if (typeof v !== "number" || !Number.isInteger(v) || v < 1 || v > 20) {
+      return c.json(
+        { error: "max_team_depth must be an integer between 1 and 20" },
+        400,
+      );
+    }
   }
 
   // Encrypt sensitive keys (captcha_secret_key, *_client_secret, etc.)

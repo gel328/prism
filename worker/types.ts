@@ -125,6 +125,11 @@ export interface TeamRow {
   name: string;
   description: string;
   avatar_url: string | null;
+  /** Sub-teams form a forest. NULL = top-level team; otherwise the parent's
+   *  id. ON DELETE CASCADE — deleting a parent removes the whole subtree
+   *  (see {@link dissolveTeam}). Cycles and depths > MAX_TEAM_DEPTH are
+   *  rejected at the API layer. */
+  parent_team_id: string | null;
   /** 0 = private (default), 1 = public — explicit owner opt-in only. */
   profile_is_public: number;
   /** NULL = follow site default; 0/1 = team-set preference. */
@@ -135,6 +140,10 @@ export interface TeamRow {
   profile_show_apps: number | null;
   profile_show_domains: number | null;
   profile_show_members: number | null;
+  /** NULL = follow site default (default_team_profile_show_sub_teams);
+   *  0/1 = explicit team-set preference. Controls whether the team's public
+   *  profile lists its sub-teams. */
+  profile_show_sub_teams: number | null;
   /** 1 = members must have at least one TOTP authenticator or passkey
    *  enrolled. Enforced at join time and again whenever a member tries
    *  to remove their last factor. */
@@ -519,6 +528,22 @@ export interface SiteConfig {
    *  the same until an admin enables them. */
   default_team_require_2fa: boolean;
   default_team_require_verified_email: boolean;
+  /** Master switch for sub-team support. When false the server rejects
+   *  every sub-team create/list/move endpoint with 403 and the existing
+   *  parent_team_id column is ignored for inheritance purposes. */
+  enable_sub_teams: boolean;
+  /** Hard cap on nesting depth (root = 0, so depth N means N parents). */
+  max_team_depth: number;
+  /** When false, sub-team membership stops cascading from ancestors —
+   *  effective role degenerates to the user's direct row only. Domain
+   *  inheritance and the hierarchy itself are unaffected. */
+  inherit_team_membership: boolean;
+  /** When false, ancestor-owned domains stop appearing on descendant
+   *  team domain lists and don't auto-verify sub-domains. */
+  inherit_team_domains: boolean;
+  /** Public team profile default — show the list of immediate sub-teams.
+   *  Per-team override lives in {@link TeamRow.profile_show_sub_teams}. */
+  default_team_profile_show_sub_teams: boolean;
   initialized: boolean;
 }
 

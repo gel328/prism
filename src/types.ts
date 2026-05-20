@@ -65,7 +65,19 @@ export interface SiteConfig {
   default_team_profile_show_apps: boolean;
   default_team_profile_show_domains: boolean;
   default_team_profile_show_members: boolean;
+  /** Site default for whether public team profiles list their sub-teams. */
+  default_team_profile_show_sub_teams: boolean;
   default_team_require_2fa: boolean;
   default_team_require_verified_email: boolean;
+  /** Master switch for the sub-team feature. When false the server rejects
+   *  every sub-team endpoint and the UI hides sub-team affordances. */
+  enable_sub_teams: boolean;
+  /** Operator-configured cap on team nesting depth (root = 0). */
+  max_team_depth: number;
+  /** When false, ancestor membership stops cascading to descendants. */
+  inherit_team_membership: boolean;
+  /** When false, ancestor-owned domains stop appearing on descendant
+   *  team domain listings. */
+  inherit_team_domains: boolean;
   initialized: boolean;
 }

@@ -130,6 +130,34 @@ factor — anyone not enrolled is locked out of team operations until they do.
 Notify members before flipping.
 :::
 
+### Sub-teams (nested teams)
+
+The whole sub-team feature is configurable from this same page. Defaults
+match how most operators want it; turn knobs off to scope the feature
+down. See [Teams → Sub-teams](teams.md#sub-teams-nested-teams) for the
+full semantics.
+
+- **Enable sub-teams** — master switch. Off = every sub-team API returns
+  403, the **Sub-teams** tab is hidden in the UI, and `parent_team_id`
+  rows in the database are ignored for inheritance (preserved but inert,
+  so you can re-enable without data loss).
+- **Maximum nesting depth** — hard cap, validated 1–20. The default of 5
+  is enough for most orgs; raising it costs an extra DB round-trip per
+  level on every authorization check.
+- **Inherit team membership** — when on (default), a member of a parent
+  team is treated as a member of every descendant with at least the same
+  role (`effective = max(direct, inherited)`). Off = direct memberships
+  only — sub-team admins must be added explicitly.
+- **Inherit verified domains** — when on (default), ancestor-owned
+  domains appear on sub-team listings as read-only entries
+  (`inherited_from = …`) and a sub-team adding a sub-domain of an
+  ancestor's verified apex is auto-verified. Off = sub-teams must
+  re-verify any domain they want to use.
+- **Show sub-teams on public profile by default** — sets the
+  `default_team_profile_show_sub_teams` site default. Each team can
+  still override via **Teams → \<team\> → Settings → Public profile →
+  Sub-teams**.
+
 ### Notifications & Telegram
 
 - **Telegram notification source** — slug of an enabled Telegram OAuth source

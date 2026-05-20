@@ -3,7 +3,13 @@
 import {
   Avatar,
   Badge,
+  Breadcrumb,
+  BreadcrumbButton,
+  BreadcrumbDivider,
+  BreadcrumbItem,
   Button,
+  Card,
+  CardHeader,
   Field,
   Input,
   Link,
@@ -28,6 +34,7 @@ import {
 import { CopyRegular } from "@fluentui/react-icons";
 import {
   AppsRegular,
+  OrganizationRegular,
   DeleteRegular,
   GlobeRegular,
   GlobeSearchRegular,
@@ -36,7 +43,7 @@ import {
   PeopleRegular,
   SettingsRegular,
 } from "@fluentui/react-icons";
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
@@ -52,6 +59,7 @@ import { ImageUrlInput } from "../../components/ImageUrlInput";
 import { useAuthStore } from "../../store/auth";
 import { InviteDialog } from "./dialogs/InviteDialog";
 import { AddMemberDialog } from "./dialogs/AddMemberDialog";
+import { CreateSubTeamDialog } from "./dialogs/CreateSubTeamDialog";
 import { MigrateAppDialog } from "./dialogs/MigrateAppDialog";
 import { NewTeamAppDialog } from "./dialogs/NewTeamAppDialog";
 import { MembersTable } from "./MembersTable";
@@ -82,6 +90,65 @@ const useStyles = makeStyles({
     flexDirection: "column",
     gap: "12px",
   },
+  breadcrumb: {
+    marginBottom: "12px",
+  },
+  breadcrumbAvatar: {
+    marginRight: "6px",
+  },
+  subTeamsToolbar: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    gap: "12px",
+  },
+  subTeamsGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
+    gap: "12px",
+  },
+  subTeamCard: {
+    cursor: "pointer",
+    transition:
+      "transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease",
+    border: `1px solid ${tokens.colorNeutralStroke2}`,
+    ":hover": {
+      transform: "translateY(-1px)",
+      borderColor: tokens.colorNeutralStroke1Hover,
+      boxShadow: tokens.shadow4,
+    },
+    ":active": {
+      transform: "translateY(0)",
+      boxShadow: tokens.shadow2,
+    },
+  },
+  subTeamCardHeader: {
+    display: "flex",
+    alignItems: "center",
+    gap: "6px",
+    minWidth: 0,
+  },
+  subTeamName: {
+    whiteSpace: "nowrap",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+  },
+  emptyState: {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: "8px",
+    padding: "32px 16px",
+    border: `1px dashed ${tokens.colorNeutralStroke2}`,
+    borderRadius: "8px",
+    color: tokens.colorNeutralForeground3,
+    textAlign: "center",
+  },
+  emptyStateIcon: {
+    fontSize: "32px",
+    color: tokens.colorNeutralForeground3,
+  },
 });
 
 const ROLE_COLORS: Record<
@@ -94,7 +161,13 @@ const ROLE_COLORS: Record<
   member: "subtle",
 };
 
-type TabType = "members" | "apps" | "domains" | "invites" | "settings";
+type TabType =
+  | "members"
+  | "apps"
+  | "domains"
+  | "sub-teams"
+  | "invites"
+  | "settings";
 
 export function TeamDetail() {
   const styles = useStyles();
@@ -150,6 +223,12 @@ export function TeamDetail() {
       (data?.team?.my_role === "owner" ||
         data?.team?.my_role === "co-owner" ||
         data?.team?.my_role === "admin"),
+  });
+
+  const { data: subTeamsData, isLoading: subTeamsLoading } = useQuery({
+    queryKey: ["sub-teams", id],
+    queryFn: () => api.listSubTeams(id!),
+    enabled: !!id && tab === "sub-teams",
   });
 
   const team = data?.team;
@@ -288,7 +367,8 @@ export function TeamDetail() {
       | "profile_show_member_count"
       | "profile_show_apps"
       | "profile_show_domains"
-      | "profile_show_members",
+      | "profile_show_members"
+      | "profile_show_sub_teams",
     value: boolean,
   ) => {
     if (!id) return;
@@ -356,6 +436,37 @@ export function TeamDetail() {
         </MessageBar>
       )}
 
+      {/* Ancestor breadcrumb (sub-teams only) */}
+      {team.ancestors && team.ancestors.length > 0 && (
+        <Breadcrumb
+          className={styles.breadcrumb}
+          aria-label={t("teams.breadcrumbLabel")}
+          size="medium"
+        >
+          {[...team.ancestors].reverse().map((a, i, arr) => (
+            <Fragment key={a.id}>
+              <BreadcrumbItem>
+                <BreadcrumbButton
+                  onClick={() => navigate(`/teams/${a.id}`)}
+                  icon={
+                    <Avatar
+                      name={a.name}
+                      image={a.avatar_url ? { src: a.avatar_url } : undefined}
+                      size={20}
+                      shape="square"
+                      className={styles.breadcrumbAvatar}
+                    />
+                  }
+                >
+                  {a.name}
+                </BreadcrumbButton>
+              </BreadcrumbItem>
+              {i < arr.length - 1 && <BreadcrumbDivider />}
+            </Fragment>
+          ))}
+        </Breadcrumb>
+      )}
+
       {/* Header */}
       <div className={styles.header}>
         {team.avatar_url ? (
@@ -374,6 +485,16 @@ export function TeamDetail() {
         <Badge color={ROLE_COLORS[myRole] ?? "subtle"} appearance="filled">
           {myRole}
         </Badge>
+        {team.inherited_from && (
+          <Tooltip
+            content={t("teams.inheritedFromAncestor")}
+            relationship="label"
+          >
+            <Badge color="informative" appearance="outline" size="small">
+              {t("teams.inheritedBadge")}
+            </Badge>
+          </Tooltip>
+        )}
       </div>
 
       <TabList
@@ -399,6 +520,13 @@ export function TeamDetail() {
         <Tab value="domains" icon={<GlobeSearchRegular />}>
           {t("teams.domainsTab")}
         </Tab>
+        {(site?.enable_sub_teams ?? true) && (
+          <Tab value="sub-teams" icon={<OrganizationRegular />}>
+            {t("teams.subTeamsTab", {
+              count: team.sub_teams?.length ?? 0,
+            })}
+          </Tab>
+        )}
         {canManage && (
           <Tab value="invites" icon={<LinkRegular />}>
             {t("teams.invitesTab")}
@@ -482,6 +610,86 @@ export function TeamDetail() {
             transferableDomains={transferableDomains}
             showMsg={showMsg}
           />
+        </div>
+      )}
+
+      {/* Sub-teams tab */}
+      {tab === "sub-teams" && (site?.enable_sub_teams ?? true) && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          <div className={styles.subTeamsToolbar}>
+            <Text style={{ color: tokens.colorNeutralForeground3 }}>
+              {t("teams.subTeamsDesc")}
+            </Text>
+            {canManage && (
+              <CreateSubTeamDialog parentTeamId={id!} showMsg={showMsg} />
+            )}
+          </div>
+          {subTeamsLoading && <SkeletonFormCard rows={3} />}
+          {!subTeamsLoading && (subTeamsData?.sub_teams ?? []).length === 0 && (
+            <div className={styles.emptyState}>
+              <OrganizationRegular className={styles.emptyStateIcon} />
+              <Text weight="semibold">{t("teams.noSubTeams")}</Text>
+              {canManage && <Text size={200}>{t("teams.noSubTeamsHint")}</Text>}
+            </div>
+          )}
+          {!subTeamsLoading && (subTeamsData?.sub_teams ?? []).length > 0 && (
+            <div className={styles.subTeamsGrid}>
+              {(subTeamsData?.sub_teams ?? []).map((sub) => (
+                <Card
+                  key={sub.id}
+                  className={styles.subTeamCard}
+                  onClick={() => navigate(`/teams/${sub.id}`)}
+                  role="link"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      navigate(`/teams/${sub.id}`);
+                    }
+                  }}
+                >
+                  <CardHeader
+                    image={
+                      sub.avatar_url ? (
+                        <Avatar
+                          image={{ src: sub.avatar_url }}
+                          name={sub.name}
+                          size={36}
+                          shape="square"
+                        />
+                      ) : (
+                        <Avatar name={sub.name} size={36} shape="square" />
+                      )
+                    }
+                    header={
+                      <div className={styles.subTeamCardHeader}>
+                        <Text weight="semibold" className={styles.subTeamName}>
+                          {sub.name}
+                        </Text>
+                        <Badge
+                          color={ROLE_COLORS[sub.my_role] ?? "subtle"}
+                          appearance="filled"
+                          size="small"
+                        >
+                          {sub.my_role}
+                        </Badge>
+                      </div>
+                    }
+                    description={
+                      <Text
+                        size={200}
+                        style={{ color: tokens.colorNeutralForeground3 }}
+                      >
+                        {t("teams.memberCountShort", {
+                          count: sub.member_count,
+                        })}
+                      </Text>
+                    }
+                  />
+                </Card>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -887,8 +1095,19 @@ export function TeamDetail() {
                         "default_team_profile_show_members",
                         "teams.publicProfileShowMembers",
                       ],
+                      [
+                        "profile_show_sub_teams",
+                        "default_team_profile_show_sub_teams",
+                        "teams.publicProfileShowSubTeams",
+                      ],
                     ] as const
                   ).map(([teamKey, siteKey, labelKey]) => {
+                    if (
+                      teamKey === "profile_show_sub_teams" &&
+                      !(site?.enable_sub_teams ?? true)
+                    ) {
+                      return null;
+                    }
                     const teamValue = team[teamKey];
                     const siteDefault = site[siteKey];
                     const effective = teamValue ?? siteDefault;

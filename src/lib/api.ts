@@ -1207,7 +1207,32 @@ export const api = {
     name: string;
     description?: string;
     avatar_url?: string;
+    parent_team_id?: string | null;
   }) => request<{ team: Team }>("POST", "/teams", body, getToken()),
+  listSubTeams: (parentTeamId: string) =>
+    request<{ sub_teams: SubTeamListItem[] }>(
+      "GET",
+      `/teams/${encodeURIComponent(parentTeamId)}/sub-teams`,
+      undefined,
+      getToken(),
+    ),
+  createSubTeam: (
+    parentTeamId: string,
+    body: { name: string; description?: string; avatar_url?: string },
+  ) =>
+    request<{ team: Team }>(
+      "POST",
+      `/teams/${encodeURIComponent(parentTeamId)}/sub-teams`,
+      body,
+      getToken(),
+    ),
+  moveTeam: (id: string, newParentTeamId: string | null) =>
+    request<{ team: Team }>(
+      "PATCH",
+      `/teams/${encodeURIComponent(id)}`,
+      { parent_team_id: newParentTeamId },
+      getToken(),
+    ),
   getTeam: (id: string) =>
     request<{ team: Team; members: TeamMember[] }>(
       "GET",
@@ -1221,6 +1246,7 @@ export const api = {
       name?: string;
       description?: string;
       avatar_url?: string;
+      parent_team_id?: string | null;
       profile_is_public?: boolean;
       profile_show_description?: boolean | null;
       profile_show_avatar?: boolean | null;
@@ -1229,6 +1255,7 @@ export const api = {
       profile_show_apps?: boolean | null;
       profile_show_domains?: boolean | null;
       profile_show_members?: boolean | null;
+      profile_show_sub_teams?: boolean | null;
       require_2fa?: boolean;
       require_verified_email?: boolean;
     },
@@ -1616,10 +1643,23 @@ export interface SitePublicConfig {
   default_team_profile_show_apps: boolean;
   default_team_profile_show_domains: boolean;
   default_team_profile_show_members: boolean;
+  /** Site default for whether public team profiles list their sub-teams. */
+  default_team_profile_show_sub_teams: boolean;
   /** Site-wide floor for team join requirements. When true, every team
    *  effectively requires the factor regardless of the per-team flag. */
   default_team_require_2fa: boolean;
   default_team_require_verified_email: boolean;
+  /** Master switch for the sub-team feature. When `false`, the UI hides
+   *  the Sub-teams tab + dialog and the server rejects every sub-team
+   *  endpoint. */
+  enable_sub_teams: boolean;
+  /** Operator-configured cap on team nesting depth (root = 0). */
+  max_team_depth: number;
+  /** When `false`, ancestor membership stops cascading to descendants. */
+  inherit_team_membership: boolean;
+  /** When `false`, ancestor-owned domains stop appearing in sub-team
+   *  domain listings. */
+  inherit_team_domains: boolean;
   enabled_providers: {
     slug: string;
     name: string;
@@ -1828,6 +1868,17 @@ export interface Team {
   unproxied_avatar_url: string | null;
   role: string; // current user's role
   my_role?: string;
+  /** Immediate parent team id when this team is a sub-team, `null` for
+   *  top-level teams. */
+  parent_team_id?: string | null;
+  /** When this listing entry surfaced via inheritance from an ancestor
+   *  team, carries that ancestor's id. `null` for direct memberships. */
+  inherited_from?: string | null;
+  /** Set on the team detail response — chain of ancestor teams, immediate
+   *  parent first → root last. */
+  ancestors?: TeamAncestor[];
+  /** Set on the team detail response — immediate sub-teams + member count. */
+  sub_teams?: SubTeamSummary[];
   profile_is_public: boolean;
   /** Per-section overrides — null means "follow the site default". */
   profile_show_description: boolean | null;
@@ -1837,6 +1888,10 @@ export interface Team {
   profile_show_apps: boolean | null;
   profile_show_domains: boolean | null;
   profile_show_members: boolean | null;
+  /** Per-team override for whether the public profile lists sub-teams.
+   *  `null` follows the site default
+   *  (default_team_profile_show_sub_teams). */
+  profile_show_sub_teams: boolean | null;
   /** Per-team override of the user's profile_show_joined_teams toggle —
    *  surfaced from the user's own membership row (`team_members` join). */
   show_on_profile?: boolean | null;
@@ -1846,6 +1901,36 @@ export interface Team {
   require_verified_email: boolean;
   created_at: number;
   updated_at: number;
+}
+
+/** Compact ancestor reference on the team detail response. */
+export interface TeamAncestor {
+  id: string;
+  name: string;
+  avatar_url: string | null;
+}
+
+/** Immediate sub-team summary on the team detail response. */
+export interface SubTeamSummary {
+  id: string;
+  name: string;
+  avatar_url: string | null;
+  member_count: number;
+}
+
+/** Item returned by `GET /api/teams/:id/sub-teams`. Carries the caller's
+ *  effective role + the ancestor team that grants it. */
+export interface SubTeamListItem {
+  id: string;
+  name: string;
+  description: string;
+  avatar_url: string | null;
+  unproxied_avatar_url: string | null;
+  parent_team_id: string | null;
+  member_count: number;
+  my_role: "owner" | "co-owner" | "admin" | "member";
+  inherited_from: string;
+  created_at: number;
 }
 
 export interface PublicTeamProfile {
@@ -1880,6 +1965,16 @@ export interface PublicTeamProfile {
     avatar_url: string | null;
     role: "owner" | "co-owner" | "admin" | "member";
   }> | null;
+  /** Immediate sub-teams that themselves have a public profile. `null` if
+   *  the sub-team section is hidden or the feature is off site-wide. */
+  sub_teams: Array<{
+    id: string;
+    name: string;
+    avatar_url: string | null;
+    member_count: number;
+  }> | null;
+  /** Parent team breadcrumb — only set when the parent is itself public. */
+  parent_team: { id: string; name: string; avatar_url: string | null } | null;
 }
 
 export interface TeamMember {
