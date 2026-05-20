@@ -93,8 +93,11 @@ const useStyles = makeStyles({
     color: tokens.colorNeutralForeground2,
     transition: "background 120ms ease, border-color 120ms ease",
     ":hover": {
-      background: tokens.colorNeutralBackground3Hover,
-      borderColor: tokens.colorNeutralStroke1Hover,
+      backgroundColor: tokens.colorNeutralBackground3Hover,
+      borderTopColor: tokens.colorNeutralStroke1Hover,
+      borderRightColor: tokens.colorNeutralStroke1Hover,
+      borderBottomColor: tokens.colorNeutralStroke1Hover,
+      borderLeftColor: tokens.colorNeutralStroke1Hover,
     },
   },
   subTeamsGrid: {
@@ -116,8 +119,11 @@ const useStyles = makeStyles({
     transition:
       "background 120ms ease, border-color 120ms ease, transform 120ms ease",
     ":hover": {
-      background: tokens.colorNeutralBackground3Hover,
-      borderColor: tokens.colorNeutralStroke1Hover,
+      backgroundColor: tokens.colorNeutralBackground3Hover,
+      borderTopColor: tokens.colorNeutralStroke1Hover,
+      borderRightColor: tokens.colorNeutralStroke1Hover,
+      borderBottomColor: tokens.colorNeutralStroke1Hover,
+      borderLeftColor: tokens.colorNeutralStroke1Hover,
       transform: "translateY(-1px)",
     },
   },

@@ -114,7 +114,10 @@ const useStyles = makeStyles({
     border: `1px solid ${tokens.colorNeutralStroke2}`,
     ":hover": {
       transform: "translateY(-1px)",
-      borderColor: tokens.colorNeutralStroke1Hover,
+      borderTopColor: tokens.colorNeutralStroke1Hover,
+      borderRightColor: tokens.colorNeutralStroke1Hover,
+      borderBottomColor: tokens.colorNeutralStroke1Hover,
+      borderLeftColor: tokens.colorNeutralStroke1Hover,
       boxShadow: tokens.shadow4,
     },
     ":active": {
