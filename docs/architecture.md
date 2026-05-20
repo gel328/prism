@@ -64,7 +64,7 @@ worker/
 ├── types.ts                # D1 row types, Variables, SiteConfig
 │
 ├── db/migrations/
-│   └── 0001_init.sql … 0045_team_join_requirements.sql
+│   └── 0001_init.sql … 0046_oauth_source_icon.sql
 │
 ├── lib/
 │   ├── config.ts           # getConfig(), setConfigValues(), JWT secret, RSA keypair (KV)
@@ -147,15 +147,20 @@ The `users` row also carries the public-profile flags (`profile_is_public`,
 
 ### `sessions`
 
-Stores a SHA-256 hash of the JWT's `sessionId` claim. On logout or admin
-revocation, the row is deleted — the JWT becomes invalid even though it hasn't
-expired, because the middleware checks session existence on every request.
+`id` matches the `sessionId` claim in the issued JWT and is what the auth
+middleware looks up on every request. `token_hash` is `SHA-256(token)` — stored
+so a leaked DB row alone cannot be replayed as a token. On logout or admin
+revocation the row is deleted, invalidating any still-unexpired JWT because the
+middleware always cross-checks D1.
 
-### `totp_authenticators` / `totp_recovery`
+### `totp_authenticators` / `user_totp_recovery`
 
-`totp_authenticators` is one row **per device** (renamed from `totp_secrets` in
-migration 0004 to support multiple authenticators per user). `totp_recovery`
-holds the user's keyed-HMAC-hashed backup codes.
+`totp_authenticators` holds one row per registered authenticator (renamed from
+`totp_secrets` in migration 0004 to support multiple authenticators per user);
+`enabled = 0` while setup is in progress. `user_totp_recovery` holds one row
+per user with `backup_codes` — a JSON array where each entry is either a
+SHA-256 hash prefixed `$sha256$…` (consumed on use) or a legacy plaintext code
+from before hashing was introduced.
 
 ### `passkeys`
 
@@ -188,9 +193,14 @@ challenge creation rather than the redirect URL.
 
 ### `oauth_tokens`
 
-Access and refresh tokens. Token strings are HMAC-hashed at rest (legacy plaintext
-rows continue working until migrated). Per-user TTL overrides on `users` win
-over the site default.
+Access and refresh tokens. By default `access_token` is a random opaque string
+that is looked up in this table on every API request; the stored value is
+keyed-HMAC-hashed at rest (legacy plaintext rows continue working until
+migrated). Apps can opt into post-quantum **ML-DSA-65** signed JWT access
+tokens (RFC 9068 `at+JWT`) by setting `oauth_apps.use_jwt_tokens = 1`; the
+`oauth_tokens` row is still kept so revocation works in both modes (`jti`
+matches `oauth_tokens.id`). Per-user TTL overrides on `users` win over the
+site default.
 
 ### `oauth_consents`
 
@@ -343,14 +353,16 @@ single binding addition and a migration click.
 
 ## Security notes
 
-- All cryptography uses the **Web Crypto API** — no Node.js `crypto` module
+- All cryptography uses the **Web Crypto API** plus `@noble/post-quantum` — no Node.js `crypto` module
 - Passwords are hashed with **PBKDF2** (100,000 iterations, SHA-256, 16-byte random salt)
-- Session JWTs are signed with **HMAC-SHA256**; OAuth ID tokens with **RS256** (JWKS at `/.well-known/jwks.json`)
-- TOTP uses **HMAC-SHA1** per RFC 6238, with a ±1 step window
+- Session JWTs are signed with **HMAC-SHA256**; the signing secret lives in KV
+- OIDC ID tokens default to **ML-DSA-65** (post-quantum, FIPS 204); RS256 remains available for legacy clients (JWKS at `/.well-known/jwks.json`)
+- OAuth access tokens are opaque random strings by default; apps can opt into **ML-DSA-65** signed JWTs (RFC 9068 `at+JWT`)
+- TOTP uses **HMAC-SHA1** per RFC 6238, with a ±1 step window; backup codes are stored SHA-256 hashed
 - PKCE uses **S256** (plain is also accepted for backward compatibility)
 - Rate limiting uses a KV-backed sliding window with IPv6 prefix bucketing
   (`ipv6_rate_limit_prefix`, default `/64`)
-- Session `sessionId` is stored as a hash — a compromised DB cannot derive valid tokens
+- Sessions are revalidated against D1 on every authenticated request, so deleting the row immediately invalidates still-unexpired JWTs
 - All redirect URIs are checked against the app's registered list and the
   domain's verified-ownership state before issuing a code
 - Image proxy is closed: only registered URL → opaque-id mappings are served,
