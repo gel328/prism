@@ -54,7 +54,7 @@ Teams have their own visibility flags, controlled by **team owners and admins** 
 | Sub-teams | Immediate sub-teams that have *themselves* opted into a public profile | Public |
 
 When a team is a sub-team, its public page also surfaces a small "Sub-team
-of <parent>" breadcrumb at the top — but **only when the parent is itself
+of `<parent>`" breadcrumb at the top — but **only when the parent is itself
 public**. If the parent is private, the breadcrumb is omitted so the
 parent's existence isn't leaked via the child. The breadcrumb is always
 on; there's no per-team toggle to hide it (it's just inherent to the
