@@ -1,6 +1,7 @@
 // /.well-known/* endpoints
 
 import { Hono } from "hono";
+import { cors } from "hono/cors";
 import { getRsaKeyPair } from "../lib/config";
 import type { Variables } from "../types";
 
@@ -38,6 +39,8 @@ const SCOPES_SUPPORTED = [
 ];
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
+
+app.use("*", cors());
 
 app.get("/openid-configuration", (c) => {
   const base = c.env.APP_URL;
