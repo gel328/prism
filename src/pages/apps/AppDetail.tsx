@@ -1705,7 +1705,7 @@ export function AppDetail() {
                       )}
                       selectedOptions={[accessRuleMinRole]}
                       onOptionSelect={(_, d) =>
-                        setAccessRuleMinRole(d.optionValue ?? "member")
+                        setAccessRuleMinRole((d.optionValue ?? "member") as "owner" | "co-owner" | "admin" | "member")
                       }
                     >
                       <Option value="owner">
