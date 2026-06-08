@@ -157,6 +157,10 @@ export function createRoutes(ctx: RouteContext): RouteObject[] {
     // ── OAuth consent ───────────────────────────────────────────────────────
     {
       path: "/oauth/authorize",
+      loader: ({ request }) => {
+        requireAuthLoader(request);
+        return null;
+      },
       lazy: () =>
         import("./pages/oauth/Authorize").then((m) => ({
           Component: m.Authorize,
@@ -164,6 +168,10 @@ export function createRoutes(ctx: RouteContext): RouteObject[] {
     },
     {
       path: "/oauth/2fa",
+      loader: ({ request }) => {
+        requireAuthLoader(request);
+        return null;
+      },
       lazy: () =>
         import("./pages/oauth/Verify2FA").then((m) => ({
           Component: m.Verify2FA,

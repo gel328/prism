@@ -23,7 +23,7 @@ import {
   WarningRegular,
 } from "@fluentui/react-icons";
 import { startAuthentication } from "@simplewebauthn/browser";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
@@ -277,10 +277,22 @@ export function Verify2FA() {
     }
   };
 
+  // If not logged in, redirect to login (client-side safety net; the route
+  // loader handles the SSR redirect).
+  useEffect(() => {
+    if (!user || !token) {
+      const loginUrl = `/login?redirect=${encodeURIComponent(window.location.pathname + window.location.search)}`;
+      navigate(loginUrl, { replace: true });
+    }
+  }, [user, token, navigate]);
+
+  // While waiting for the auth-redirect effect to fire, show a spinner.
   if (!user || !token) {
-    const loginUrl = `/login?redirect=${encodeURIComponent(window.location.pathname + window.location.search)}`;
-    navigate(loginUrl, { replace: true });
-    return null;
+    return (
+      <div className={styles.page}>
+        <Spinner size="large" />
+      </div>
+    );
   }
 
   if (!challengeId) {

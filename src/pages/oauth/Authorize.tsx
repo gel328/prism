@@ -335,6 +335,8 @@ export function Authorize() {
   // Auto-approve first-party apps — but never skip consent for site/team-level scopes
   useEffect(() => {
     if (
+      user &&
+      token &&
       data?.app.is_first_party &&
       !data.requires_site_grant &&
       !data.requires_team_grant &&
@@ -344,13 +346,26 @@ export function Authorize() {
       handleDecision("approve");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- handleDecision is intentionally not a dep; the autoApproved ref guards against double-fire
-  }, [data]);
+  }, [data, user, token]);
 
-  // If not logged in, redirect to login
+  // If not logged in, redirect to login (client-side safety net; the route
+  // loader handles the SSR redirect). Guarded against window-less SSR.
+  useEffect(() => {
+    if (!user || !token) {
+      const loginUrl = `/login?redirect=${encodeURIComponent(window.location.pathname + window.location.search)}`;
+      navigate(loginUrl, { replace: true });
+    }
+  }, [user, token, navigate]);
+
+  // While waiting for the auth-redirect effect to fire, show a spinner.
+  // The route loader handles the SSR redirect (302), so this only runs on
+  // the client as a safety net when the store is momentarily out of sync.
   if (!user || !token) {
-    const loginUrl = `/login?redirect=${encodeURIComponent(window.location.pathname + window.location.search)}`;
-    navigate(loginUrl, { replace: true });
-    return null;
+    return (
+      <div className={styles.page}>
+        <Spinner size="large" />
+      </div>
+    );
   }
 
   if (isLoading) {
