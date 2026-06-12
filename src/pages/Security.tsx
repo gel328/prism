@@ -12,6 +12,7 @@ import {
   DialogTrigger,
   Field,
   Input,
+  Link as FluentLink,
   MessageBar,
   Spinner,
   Table,
@@ -22,7 +23,6 @@ import {
   TableRow,
   Text,
   Textarea,
-  Title2,
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
@@ -32,6 +32,7 @@ import {
   ArrowSyncRegular,
   CopyRegular,
   DeleteRegular,
+  DesktopRegular,
   KeyRegular,
 } from "@fluentui/react-icons";
 import { useEffect, useState } from "react";
@@ -41,6 +42,9 @@ import { useTranslation } from "react-i18next";
 import QRCode from "qrcode";
 import { api, ApiError } from "../lib/api";
 import type { GpgKeyInfo, PasskeyInfo, SessionInfo } from "../lib/api";
+import { useAuthStore } from "../store/auth";
+import { EmptyState } from "../components/EmptyState";
+import { PageHeader } from "../components/PageHeader";
 import { SkeletonSecurityCard } from "../components/Skeletons";
 import { DurationInput } from "../components/DurationInput";
 import { LabeledLine } from "../components/LabeledLine";
@@ -63,6 +67,9 @@ const useStyles = makeStyles({
     justifyContent: "space-between",
   },
   actions: { display: "flex", gap: "8px" },
+  // Let the table scroll sideways on narrow screens instead of
+  // overflowing the page
+  tableScroll: { overflowX: "auto" },
   qrSection: {
     display: "flex",
     flexDirection: "column",
@@ -94,6 +101,7 @@ export function Security() {
   const styles = useStyles();
   const qc = useQueryClient();
   const { t } = useTranslation();
+  const { user } = useAuthStore();
 
   const { data: me, isLoading: meLoading } = useQuery({
     queryKey: ["me"],
@@ -228,7 +236,7 @@ export function Security() {
   const handleSetupTotp = async () => {
     setTotpLoading(true);
     try {
-      const res = await api.totpSetup(totpName || undefined);
+      const res = await api.totpSetup(totpName.trim() || undefined);
       setTotpSetup(res);
       setTotpCode("");
     } catch (err) {
@@ -315,7 +323,7 @@ export function Security() {
           typeof startRegistration
         >[0]["optionsJSON"],
       });
-      await api.passkeyRegFinish(response, passkeyName || undefined);
+      await api.passkeyRegFinish(response, passkeyName.trim() || undefined);
       setPasskeyName("");
       await refetchPasskeys();
       showMsg("success", t("security.passkeyRegistered"));
@@ -356,11 +364,22 @@ export function Security() {
   const handleAddGpgKey = async () => {
     setGpgLoading(true);
     try {
-      await api.addGpgKey(gpgKeyText, gpgKeyName || undefined);
+      const res = await api.addGpgKey(
+        gpgKeyText,
+        gpgKeyName.trim() || undefined,
+      );
       setGpgKeyText("");
       setGpgKeyName("");
       await refetchGpg();
-      showMsg("success", t("security.gpgKeyAdded"));
+      const parts = [
+        res.added > 1
+          ? t("security.gpgKeysAdded", { count: res.added })
+          : t("security.gpgKeyAdded"),
+      ];
+      if (res.skipped > 0) {
+        parts.push(t("security.gpgKeysSkipped", { count: res.skipped }));
+      }
+      showMsg("success", parts.join(" "));
     } catch (err) {
       showMsg(
         "error",
@@ -418,7 +437,7 @@ export function Security() {
 
   return (
     <div className={styles.page}>
-      <Title2>{t("security.title")}</Title2>
+      <PageHeader title={t("security.title")} style={{ marginBottom: 0 }} />
 
       {message && (
         <MessageBar intent={message.type === "success" ? "success" : "error"}>
@@ -461,45 +480,49 @@ export function Security() {
         <>
           {(totpData?.authenticators.filter((a) => a.enabled).length ?? 0) >
             0 && (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHeaderCell>{t("security.nameHeader")}</TableHeaderCell>
-                  <TableHeaderCell className={styles.hiddenOnMobile}>
-                    {t("security.addedHeader")}
-                  </TableHeaderCell>
-                  <TableHeaderCell className={styles.hiddenOnMobile} />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {totpData!.authenticators
-                  .filter((a) => a.enabled)
-                  .map((a) => (
-                    <TableRow
-                      key={a.id}
-                      className={styles.row}
-                      onClick={() => setSelectedTotp(a)}
-                    >
-                      <TableCell>{a.name}</TableCell>
-                      <TableCell className={styles.hiddenOnMobile}>
-                        {new Date(a.created_at * 1000).toLocaleDateString()}
-                      </TableCell>
-                      <TableCell className={styles.hiddenOnMobile}>
-                        <div onClick={(e) => e.stopPropagation()}>
-                          <Button
-                            icon={<DeleteRegular />}
-                            appearance="subtle"
-                            onClick={() => {
-                              setRemoveId(a.id);
-                              setRemoveCode("");
-                            }}
-                          />
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-              </TableBody>
-            </Table>
+            <div className={styles.tableScroll}>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHeaderCell>
+                      {t("security.nameHeader")}
+                    </TableHeaderCell>
+                    <TableHeaderCell className={styles.hiddenOnMobile}>
+                      {t("security.addedHeader")}
+                    </TableHeaderCell>
+                    <TableHeaderCell className={styles.hiddenOnMobile} />
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {totpData!.authenticators
+                    .filter((a) => a.enabled)
+                    .map((a) => (
+                      <TableRow
+                        key={a.id}
+                        className={styles.row}
+                        onClick={() => setSelectedTotp(a)}
+                      >
+                        <TableCell>{a.name}</TableCell>
+                        <TableCell className={styles.hiddenOnMobile}>
+                          {new Date(a.created_at * 1000).toLocaleDateString()}
+                        </TableCell>
+                        <TableCell className={styles.hiddenOnMobile}>
+                          <div onClick={(e) => e.stopPropagation()}>
+                            <Button
+                              icon={<DeleteRegular />}
+                              appearance="subtle"
+                              onClick={() => {
+                                setRemoveId(a.id);
+                                setRemoveCode("");
+                              }}
+                            />
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                </TableBody>
+              </Table>
+            </div>
           )}
 
           {/* TOTP detail dialog (mobile) */}
@@ -794,54 +817,58 @@ export function Security() {
 
         <>
           {(passkeysData?.passkeys.length ?? 0) > 0 && (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHeaderCell>{t("security.nameHeader")}</TableHeaderCell>
-                  <TableHeaderCell className={styles.hiddenOnMobile}>
-                    {t("security.typeHeader")}
-                  </TableHeaderCell>
-                  <TableHeaderCell className={styles.hiddenOnMobile}>
-                    {t("security.addedHeader")}
-                  </TableHeaderCell>
-                  <TableHeaderCell className={styles.hiddenOnMobile}>
-                    {t("security.lastUsedHeader")}
-                  </TableHeaderCell>
-                  <TableHeaderCell className={styles.hiddenOnMobile} />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {passkeysData!.passkeys.map((p) => (
-                  <TableRow
-                    key={p.id}
-                    className={styles.row}
-                    onClick={() => setSelectedPasskey(p)}
-                  >
-                    <TableCell>{p.name ?? "Passkey"}</TableCell>
-                    <TableCell className={styles.hiddenOnMobile}>
-                      {p.device_type}
-                    </TableCell>
-                    <TableCell className={styles.hiddenOnMobile}>
-                      {new Date(p.created_at * 1000).toLocaleDateString()}
-                    </TableCell>
-                    <TableCell className={styles.hiddenOnMobile}>
-                      {p.last_used_at
-                        ? new Date(p.last_used_at * 1000).toLocaleDateString()
-                        : "—"}
-                    </TableCell>
-                    <TableCell className={styles.hiddenOnMobile}>
-                      <div onClick={(e) => e.stopPropagation()}>
-                        <Button
-                          icon={<DeleteRegular />}
-                          appearance="subtle"
-                          onClick={() => handleDeletePasskey(p.id)}
-                        />
-                      </div>
-                    </TableCell>
+            <div className={styles.tableScroll}>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHeaderCell>
+                      {t("security.nameHeader")}
+                    </TableHeaderCell>
+                    <TableHeaderCell className={styles.hiddenOnMobile}>
+                      {t("security.typeHeader")}
+                    </TableHeaderCell>
+                    <TableHeaderCell className={styles.hiddenOnMobile}>
+                      {t("security.addedHeader")}
+                    </TableHeaderCell>
+                    <TableHeaderCell className={styles.hiddenOnMobile}>
+                      {t("security.lastUsedHeader")}
+                    </TableHeaderCell>
+                    <TableHeaderCell className={styles.hiddenOnMobile} />
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {passkeysData!.passkeys.map((p) => (
+                    <TableRow
+                      key={p.id}
+                      className={styles.row}
+                      onClick={() => setSelectedPasskey(p)}
+                    >
+                      <TableCell>{p.name ?? "Passkey"}</TableCell>
+                      <TableCell className={styles.hiddenOnMobile}>
+                        {p.device_type}
+                      </TableCell>
+                      <TableCell className={styles.hiddenOnMobile}>
+                        {new Date(p.created_at * 1000).toLocaleDateString()}
+                      </TableCell>
+                      <TableCell className={styles.hiddenOnMobile}>
+                        {p.last_used_at
+                          ? new Date(p.last_used_at * 1000).toLocaleDateString()
+                          : "—"}
+                      </TableCell>
+                      <TableCell className={styles.hiddenOnMobile}>
+                        <div onClick={(e) => e.stopPropagation()}>
+                          <Button
+                            icon={<DeleteRegular />}
+                            appearance="subtle"
+                            onClick={() => handleDeletePasskey(p.id)}
+                          />
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
           )}
 
           {/* Passkey detail dialog (mobile) */}
@@ -933,60 +960,81 @@ export function Security() {
             <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
               {t("security.gpgKeysDesc")}
             </Text>
+            {(gpgData?.keys.length ?? 0) > 0 && user?.username && (
+              <Text
+                size={200}
+                block
+                style={{ color: tokens.colorNeutralForeground3 }}
+              >
+                <FluentLink
+                  href={`/users/${encodeURIComponent(user.username)}.gpg`}
+                  target="_blank"
+                  rel="noopener"
+                >
+                  {t("publicProfile.gpgKeysDownload")}
+                </FluentLink>
+                {" · "}
+                <span style={{ fontFamily: "monospace" }}>
+                  /users/{user.username}.gpg
+                </span>
+              </Text>
+            )}
           </div>
         </div>
 
         {(gpgData?.keys.length ?? 0) > 0 && (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHeaderCell>{t("security.nameHeader")}</TableHeaderCell>
-                <TableHeaderCell className={styles.hiddenOnMobile}>
-                  {t("security.gpgFingerprintHeader")}
-                </TableHeaderCell>
-                <TableHeaderCell className={styles.hiddenOnMobile}>
-                  {t("security.addedHeader")}
-                </TableHeaderCell>
-                <TableHeaderCell className={styles.hiddenOnMobile}>
-                  {t("security.lastUsedHeader")}
-                </TableHeaderCell>
-                <TableHeaderCell className={styles.hiddenOnMobile} />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {gpgData!.keys.map((k) => (
-                <TableRow
-                  key={k.id}
-                  className={styles.row}
-                  onClick={() => setSelectedGpg(k)}
-                >
-                  <TableCell>{k.name}</TableCell>
-                  <TableCell className={styles.hiddenOnMobile}>
-                    <Text font="monospace" size={200}>
-                      {k.fingerprint.slice(-16).toUpperCase()}
-                    </Text>
-                  </TableCell>
-                  <TableCell className={styles.hiddenOnMobile}>
-                    {new Date(k.created_at * 1000).toLocaleDateString()}
-                  </TableCell>
-                  <TableCell className={styles.hiddenOnMobile}>
-                    {k.last_used_at
-                      ? new Date(k.last_used_at * 1000).toLocaleDateString()
-                      : "—"}
-                  </TableCell>
-                  <TableCell className={styles.hiddenOnMobile}>
-                    <div onClick={(e) => e.stopPropagation()}>
-                      <Button
-                        icon={<DeleteRegular />}
-                        appearance="subtle"
-                        onClick={() => handleDeleteGpgKey(k.id)}
-                      />
-                    </div>
-                  </TableCell>
+          <div className={styles.tableScroll}>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHeaderCell>{t("security.nameHeader")}</TableHeaderCell>
+                  <TableHeaderCell className={styles.hiddenOnMobile}>
+                    {t("security.gpgFingerprintHeader")}
+                  </TableHeaderCell>
+                  <TableHeaderCell className={styles.hiddenOnMobile}>
+                    {t("security.addedHeader")}
+                  </TableHeaderCell>
+                  <TableHeaderCell className={styles.hiddenOnMobile}>
+                    {t("security.lastUsedHeader")}
+                  </TableHeaderCell>
+                  <TableHeaderCell className={styles.hiddenOnMobile} />
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {gpgData!.keys.map((k) => (
+                  <TableRow
+                    key={k.id}
+                    className={styles.row}
+                    onClick={() => setSelectedGpg(k)}
+                  >
+                    <TableCell>{k.name}</TableCell>
+                    <TableCell className={styles.hiddenOnMobile}>
+                      <Text font="monospace" size={200}>
+                        {k.fingerprint.slice(-16).toUpperCase()}
+                      </Text>
+                    </TableCell>
+                    <TableCell className={styles.hiddenOnMobile}>
+                      {new Date(k.created_at * 1000).toLocaleDateString()}
+                    </TableCell>
+                    <TableCell className={styles.hiddenOnMobile}>
+                      {k.last_used_at
+                        ? new Date(k.last_used_at * 1000).toLocaleDateString()
+                        : "—"}
+                    </TableCell>
+                    <TableCell className={styles.hiddenOnMobile}>
+                      <div onClick={(e) => e.stopPropagation()}>
+                        <Button
+                          icon={<DeleteRegular />}
+                          appearance="subtle"
+                          onClick={() => handleDeleteGpgKey(k.id)}
+                        />
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
         )}
 
         {/* GPG key detail dialog (mobile) */}
@@ -1049,7 +1097,10 @@ export function Security() {
               placeholder={t("security.gpgKeyNamePlaceholder")}
             />
           </Field>
-          <Field label={t("security.gpgPublicKey")}>
+          <Field
+            label={t("security.gpgPublicKey")}
+            hint={t("security.gpgMultiKeyHint")}
+          >
             <Textarea
               value={gpgKeyText}
               onChange={(e) => setGpgKeyText(e.target.value)}
@@ -1079,83 +1130,86 @@ export function Security() {
         </Text>
         <>
           {(sessionsData?.sessions.length ?? 0) === 0 ? (
-            <Text style={{ color: tokens.colorNeutralForeground3 }}>
-              {t("security.noActiveSessions")}
-            </Text>
+            <EmptyState
+              icon={<DesktopRegular />}
+              title={t("security.noActiveSessions")}
+            />
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHeaderCell>
-                    {t("security.deviceHeader")}
-                  </TableHeaderCell>
-                  <TableHeaderCell className={styles.hiddenOnMobile}>
-                    {t("security.ipHeader")}
-                  </TableHeaderCell>
-                  <TableHeaderCell className={styles.hiddenOnMobile}>
-                    {t("security.createdHeader")}
-                  </TableHeaderCell>
-                  <TableHeaderCell className={styles.hiddenOnMobile}>
-                    {t("security.expiresHeader")}
-                  </TableHeaderCell>
-                  <TableHeaderCell className={styles.hiddenOnMobile} />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {sessionsData!.sessions.map((s) => (
-                  <TableRow
-                    key={s.id}
-                    className={styles.row}
-                    onClick={() => setSelectedSession(s)}
-                  >
-                    <TableCell
-                      style={{
-                        maxWidth: 200,
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                      }}
+            <div className={styles.tableScroll}>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHeaderCell>
+                      {t("security.deviceHeader")}
+                    </TableHeaderCell>
+                    <TableHeaderCell className={styles.hiddenOnMobile}>
+                      {t("security.ipHeader")}
+                    </TableHeaderCell>
+                    <TableHeaderCell className={styles.hiddenOnMobile}>
+                      {t("security.createdHeader")}
+                    </TableHeaderCell>
+                    <TableHeaderCell className={styles.hiddenOnMobile}>
+                      {t("security.expiresHeader")}
+                    </TableHeaderCell>
+                    <TableHeaderCell className={styles.hiddenOnMobile} />
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {sessionsData!.sessions.map((s) => (
+                    <TableRow
+                      key={s.id}
+                      className={styles.row}
+                      onClick={() => setSelectedSession(s)}
                     >
-                      <div
+                      <TableCell
                         style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 8,
+                          maxWidth: 200,
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
                         }}
                       >
-                        {s.user_agent ?? t("security.unknown")}
-                        {s.is_current && (
-                          <Badge
-                            color="informative"
-                            appearance="filled"
-                            size="small"
-                          >
-                            {t("security.currentSession")}
-                          </Badge>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell className={styles.hiddenOnMobile}>
-                      {s.ip_address ?? "—"}
-                    </TableCell>
-                    <TableCell className={styles.hiddenOnMobile}>
-                      {new Date(s.created_at * 1000).toLocaleDateString()}
-                    </TableCell>
-                    <TableCell className={styles.hiddenOnMobile}>
-                      {new Date(s.expires_at * 1000).toLocaleDateString()}
-                    </TableCell>
-                    <TableCell className={styles.hiddenOnMobile}>
-                      <div onClick={(e) => e.stopPropagation()}>
-                        <Button
-                          icon={<DeleteRegular />}
-                          appearance="subtle"
-                          onClick={() => handleRevokeSession(s.id)}
-                        />
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 8,
+                          }}
+                        >
+                          {s.user_agent ?? t("security.unknown")}
+                          {s.is_current && (
+                            <Badge
+                              color="informative"
+                              appearance="filled"
+                              size="small"
+                            >
+                              {t("security.currentSession")}
+                            </Badge>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell className={styles.hiddenOnMobile}>
+                        {s.ip_address ?? "—"}
+                      </TableCell>
+                      <TableCell className={styles.hiddenOnMobile}>
+                        {new Date(s.created_at * 1000).toLocaleDateString()}
+                      </TableCell>
+                      <TableCell className={styles.hiddenOnMobile}>
+                        {new Date(s.expires_at * 1000).toLocaleDateString()}
+                      </TableCell>
+                      <TableCell className={styles.hiddenOnMobile}>
+                        <div onClick={(e) => e.stopPropagation()}>
+                          <Button
+                            icon={<DeleteRegular />}
+                            appearance="subtle"
+                            onClick={() => handleRevokeSession(s.id)}
+                          />
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
           )}
 
           {/* Session detail dialog (mobile) */}

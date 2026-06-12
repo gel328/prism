@@ -12,15 +12,15 @@ import {
   TableHeader,
   TableHeaderCell,
   TableRow,
-  Text,
   Tooltip,
-  tokens,
+  makeStyles,
 } from "@fluentui/react-components";
 import {
   AddRegular,
   ArrowClockwiseRegular,
   CheckmarkCircleRegular,
   CopyRegular,
+  GlobeRegular,
 } from "@fluentui/react-icons";
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -35,8 +35,15 @@ import {
 import { TransferFromPersonalDialog } from "./dialogs/TransferFromPersonalDialog";
 import { TeamDomainDetailDialog } from "./dialogs/TeamDomainDetailDialog";
 import { DeleteTeamDomainDialog } from "./dialogs/DeleteTeamDomainDialog";
+import { EmptyState } from "../../components/EmptyState";
 import { SkeletonTableRows } from "../../components/Skeletons";
 import { DnsAddedInfo } from "../domains/components";
+
+const useStyles = makeStyles({
+  // Let the table scroll sideways on narrow screens instead of
+  // overflowing the page
+  tableScroll: { overflowX: "auto" },
+});
 
 interface DomainsTableProps {
   teamId: string;
@@ -57,6 +64,7 @@ export function DomainsTable({
   transferableDomains,
   showMsg,
 }: DomainsTableProps) {
+  const styles = useStyles();
   const { t } = useTranslation();
   const qc = useQueryClient();
 
@@ -201,108 +209,106 @@ export function DomainsTable({
 
       {loading && <SkeletonTableRows rows={5} cols={4} />}
       {!loading && domains.length === 0 && (
-        <Text
-          style={{
-            color: tokens.colorNeutralForeground3,
-            textAlign: "center",
-            padding: "32px 0",
-          }}
-        >
-          {t("domains.noDomainsYet")}
-        </Text>
+        <EmptyState icon={<GlobeRegular />} title={t("domains.noDomainsYet")} />
       )}
 
       {domains.length > 0 && (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHeaderCell>{t("domains.domainHeader")}</TableHeaderCell>
-              <TableHeaderCell>{t("domains.statusHeader")}</TableHeaderCell>
-              <TableHeaderCell>{t("domains.verifiedAtHeader")}</TableHeaderCell>
-              {canManage && (
-                <TableHeaderCell>{t("domains.actionsHeader")}</TableHeaderCell>
-              )}
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {domains.map((d) => (
-              <TableRow
-                key={d.id}
-                style={{ cursor: "pointer" }}
-                onClick={() => setSelectedDomain(d)}
-              >
-                <TableCell style={{ fontFamily: "monospace" }}>
-                  {d.domain}
-                </TableCell>
-                <TableCell>
-                  <Badge
-                    color={d.verified ? "success" : "subtle"}
-                    appearance="filled"
-                    icon={d.verified ? <CheckmarkCircleRegular /> : undefined}
-                  >
-                    {d.verified
-                      ? t("domains.verifiedBadge")
-                      : t("domains.pending")}
-                  </Badge>
-                </TableCell>
-                <TableCell>
-                  {d.verified_at
-                    ? new Date(d.verified_at * 1000).toLocaleDateString()
-                    : "—"}
-                </TableCell>
+        <div className={styles.tableScroll}>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHeaderCell>{t("domains.domainHeader")}</TableHeaderCell>
+                <TableHeaderCell>{t("domains.statusHeader")}</TableHeaderCell>
+                <TableHeaderCell>
+                  {t("domains.verifiedAtHeader")}
+                </TableHeaderCell>
                 {canManage && (
-                  <TableCell>
-                    <div
-                      style={{ display: "flex", gap: 4 }}
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <Button
-                        icon={<ArrowClockwiseRegular />}
-                        size="small"
-                        appearance="subtle"
-                        disabled={verifyingDomain === d.id}
-                        onClick={() => handleVerifyDomain(d.id)}
-                      >
-                        {verifyingDomain === d.id ? (
-                          <Spinner size="tiny" />
-                        ) : (
-                          t("common.verify")
-                        )}
-                      </Button>
-                      <DeleteTeamDomainDialog
-                        domain={d}
-                        onDelete={handleDeleteDomain}
-                      />
-                      <Tooltip
-                        content={t("domains.returnToPersonalTooltip")}
-                        relationship="label"
-                      >
-                        <Button
-                          size="small"
-                          appearance="subtle"
-                          onClick={() => handleReturnToPersonal(d.id)}
-                        >
-                          {t("domains.returnToPersonal")}
-                        </Button>
-                      </Tooltip>
-                      <Tooltip
-                        content={t("domains.shareToPersonalTooltip")}
-                        relationship="label"
-                      >
-                        <Button
-                          size="small"
-                          appearance="subtle"
-                          icon={<CopyRegular />}
-                          onClick={() => handleShareToPersonal(d.id)}
-                        />
-                      </Tooltip>
-                    </div>
-                  </TableCell>
+                  <TableHeaderCell>
+                    {t("domains.actionsHeader")}
+                  </TableHeaderCell>
                 )}
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+            </TableHeader>
+            <TableBody>
+              {domains.map((d) => (
+                <TableRow
+                  key={d.id}
+                  style={{ cursor: "pointer" }}
+                  onClick={() => setSelectedDomain(d)}
+                >
+                  <TableCell style={{ fontFamily: "monospace" }}>
+                    {d.domain}
+                  </TableCell>
+                  <TableCell>
+                    <Badge
+                      color={d.verified ? "success" : "subtle"}
+                      appearance="filled"
+                      icon={d.verified ? <CheckmarkCircleRegular /> : undefined}
+                    >
+                      {d.verified
+                        ? t("domains.verifiedBadge")
+                        : t("domains.pending")}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    {d.verified_at
+                      ? new Date(d.verified_at * 1000).toLocaleDateString()
+                      : "—"}
+                  </TableCell>
+                  {canManage && (
+                    <TableCell>
+                      <div
+                        style={{ display: "flex", gap: 4 }}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <Button
+                          icon={<ArrowClockwiseRegular />}
+                          size="small"
+                          appearance="subtle"
+                          disabled={verifyingDomain === d.id}
+                          onClick={() => handleVerifyDomain(d.id)}
+                        >
+                          {verifyingDomain === d.id ? (
+                            <Spinner size="tiny" />
+                          ) : (
+                            t("common.verify")
+                          )}
+                        </Button>
+                        <DeleteTeamDomainDialog
+                          domain={d}
+                          onDelete={handleDeleteDomain}
+                        />
+                        <Tooltip
+                          content={t("domains.returnToPersonalTooltip")}
+                          relationship="label"
+                        >
+                          <Button
+                            size="small"
+                            appearance="subtle"
+                            onClick={() => handleReturnToPersonal(d.id)}
+                          >
+                            {t("domains.returnToPersonal")}
+                          </Button>
+                        </Tooltip>
+                        <Tooltip
+                          content={t("domains.shareToPersonalTooltip")}
+                          relationship="label"
+                        >
+                          <Button
+                            size="small"
+                            appearance="subtle"
+                            icon={<CopyRegular />}
+                            onClick={() => handleShareToPersonal(d.id)}
+                          />
+                        </Tooltip>
+                      </div>
+                    </TableCell>
+                  )}
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
       )}
 
       <TeamDomainDetailDialog

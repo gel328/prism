@@ -16,11 +16,18 @@ import {
   TableHeaderCell,
   TableRow,
   Text,
+  makeStyles,
   tokens,
 } from "@fluentui/react-components";
 import { DeleteRegular, MoreHorizontalRegular } from "@fluentui/react-icons";
 import { useTranslation } from "react-i18next";
 import type { TeamMember } from "../../lib/api";
+
+const useStyles = makeStyles({
+  // Let the table scroll sideways on narrow screens instead of
+  // overflowing the page
+  tableScroll: { overflowX: "auto" },
+});
 
 const ROLE_COLORS: Record<
   string,
@@ -55,10 +62,11 @@ export function MembersTable({
   onRemoveMember,
   onTransferOwnership,
 }: MembersTableProps) {
+  const styles = useStyles();
   const { t } = useTranslation();
 
   return (
-    <>
+    <div className={styles.tableScroll}>
       <Table>
         <TableHeader>
           <TableRow>
@@ -189,6 +197,6 @@ export function MembersTable({
           ))}
         </TableBody>
       </Table>
-    </>
+    </div>
   );
 }

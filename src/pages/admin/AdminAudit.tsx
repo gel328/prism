@@ -9,6 +9,7 @@ import {
   TableHeaderCell,
   TableRow,
   Text,
+  makeStyles,
   tokens,
 } from "@fluentui/react-components";
 import { useState } from "react";
@@ -17,7 +18,14 @@ import { useTranslation } from "react-i18next";
 import { api } from "../../lib/api";
 import { SkeletonTableRows } from "../../components/Skeletons";
 
+const useStyles = makeStyles({
+  // Let the table scroll sideways on narrow screens instead of
+  // overflowing the page
+  tableScroll: { overflowX: "auto" },
+});
+
 export function AdminAudit() {
+  const styles = useStyles();
   const [page, setPage] = useState(1);
   const { t } = useTranslation();
 
@@ -43,61 +51,65 @@ export function AdminAudit() {
       {isLoading ? (
         <SkeletonTableRows rows={8} cols={5} />
       ) : (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHeaderCell>{t("admin.auditTimeHeader")}</TableHeaderCell>
-              <TableHeaderCell>{t("admin.auditUserHeader")}</TableHeaderCell>
-              <TableHeaderCell>{t("admin.auditActionHeader")}</TableHeaderCell>
-              <TableHeaderCell>
-                {t("admin.auditResourceHeader")}
-              </TableHeaderCell>
-              <TableHeaderCell>{t("admin.auditIpHeader")}</TableHeaderCell>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {logs.map((log) => (
-              <TableRow key={log.id}>
-                <TableCell style={{ whiteSpace: "nowrap", fontSize: 12 }}>
-                  {new Date(log.created_at * 1000).toLocaleString()}
-                </TableCell>
-                <TableCell>
-                  <Text style={{ fontFamily: "monospace", fontSize: 12 }}>
-                    {log.username ? `@${log.username}` : "—"}
-                  </Text>
-                </TableCell>
-                <TableCell>
-                  <Text
+        <div className={styles.tableScroll}>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHeaderCell>{t("admin.auditTimeHeader")}</TableHeaderCell>
+                <TableHeaderCell>{t("admin.auditUserHeader")}</TableHeaderCell>
+                <TableHeaderCell>
+                  {t("admin.auditActionHeader")}
+                </TableHeaderCell>
+                <TableHeaderCell>
+                  {t("admin.auditResourceHeader")}
+                </TableHeaderCell>
+                <TableHeaderCell>{t("admin.auditIpHeader")}</TableHeaderCell>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {logs.map((log) => (
+                <TableRow key={log.id}>
+                  <TableCell style={{ whiteSpace: "nowrap", fontSize: 12 }}>
+                    {new Date(log.created_at * 1000).toLocaleString()}
+                  </TableCell>
+                  <TableCell>
+                    <Text style={{ fontFamily: "monospace", fontSize: 12 }}>
+                      {log.username ? `@${log.username}` : "—"}
+                    </Text>
+                  </TableCell>
+                  <TableCell>
+                    <Text
+                      style={{
+                        fontFamily: "monospace",
+                        fontSize: 12,
+                        color: tokens.colorBrandForeground1,
+                      }}
+                    >
+                      {log.action}
+                    </Text>
+                  </TableCell>
+                  <TableCell style={{ fontSize: 12 }}>
+                    {log.resource_type && (
+                      <Text style={{ color: tokens.colorNeutralForeground3 }}>
+                        {log.resource_type}/
+                      </Text>
+                    )}
+                    {log.resource_id?.slice(0, 12) ?? "—"}
+                  </TableCell>
+                  <TableCell
                     style={{
                       fontFamily: "monospace",
                       fontSize: 12,
-                      color: tokens.colorBrandForeground1,
+                      wordBreak: "break-all",
                     }}
                   >
-                    {log.action}
-                  </Text>
-                </TableCell>
-                <TableCell style={{ fontSize: 12 }}>
-                  {log.resource_type && (
-                    <Text style={{ color: tokens.colorNeutralForeground3 }}>
-                      {log.resource_type}/
-                    </Text>
-                  )}
-                  {log.resource_id?.slice(0, 12) ?? "—"}
-                </TableCell>
-                <TableCell
-                  style={{
-                    fontFamily: "monospace",
-                    fontSize: 12,
-                    wordBreak: "break-all",
-                  }}
-                >
-                  {log.ip_address ?? "—"}
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+                    {log.ip_address ?? "—"}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
       )}
 
       {totalPages > 1 && (

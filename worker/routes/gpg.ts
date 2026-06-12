@@ -3,7 +3,7 @@
 import { Hono } from "hono";
 import { requireAuth } from "../middleware/auth";
 import { randomId } from "../lib/crypto";
-import { parseArmoredPublicKey } from "../lib/gpg";
+import { parseArmoredPublicKeys } from "../lib/gpg";
 import type { GpgKeyRow, Variables } from "../types";
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -22,7 +22,11 @@ app.get("/", async (c) => {
   return c.json({ keys: results });
 });
 
-// ─── Add key ──────────────────────────────────────────────────────────────────
+// ─── Add key(s) ───────────────────────────────────────────────────────────────
+// A single paste may contain several public keys (multiple armored blocks
+// and/or one block exporting several keys). Each parsed key is stored as
+// its own row; duplicates (within the paste or already registered) are
+// skipped and reported.
 
 app.post("/", async (c) => {
   const user = c.get("user");
@@ -32,49 +36,71 @@ app.post("/", async (c) => {
     return c.json({ error: "public_key is required" }, 400);
   }
 
-  let parsed: Awaited<ReturnType<typeof parseArmoredPublicKey>>;
+  let parsed: Awaited<ReturnType<typeof parseArmoredPublicKeys>>;
   try {
-    parsed = await parseArmoredPublicKey(body.public_key);
+    parsed = await parseArmoredPublicKeys(body.public_key);
   } catch {
     return c.json({ error: "Invalid PGP public key" }, 400);
   }
+  if (parsed.length === 0) {
+    return c.json({ error: "Invalid PGP public key" }, 400);
+  }
 
-  const name = (body.name?.trim() || parsed.uids[0] || parsed.keyId).slice(
-    0,
-    128,
-  );
-
-  const existing = await c.env.DB.prepare(
-    "SELECT id FROM user_gpg_keys WHERE user_id = ? AND fingerprint = ?",
-  )
-    .bind(user.id, parsed.fingerprint)
-    .first();
-  if (existing) return c.json({ error: "Key already added" }, 409);
-
-  const id = randomId(16);
-  const now = Math.floor(Date.now() / 1000);
-  await c.env.DB.prepare(
-    "INSERT INTO user_gpg_keys (id, user_id, fingerprint, key_id, name, public_key, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-  )
-    .bind(
-      id,
-      user.id,
-      parsed.fingerprint,
-      parsed.keyId,
-      name,
-      body.public_key.trim(),
-      now,
-    )
-    .run();
-
-  return c.json({
-    id,
-    fingerprint: parsed.fingerprint,
-    key_id: parsed.keyId,
-    name,
-    created_at: now,
-    last_used_at: null,
+  // Dedupe within the submission by fingerprint
+  const seen = new Set<string>();
+  const unique = parsed.filter((k) => {
+    if (seen.has(k.fingerprint)) return false;
+    seen.add(k.fingerprint);
+    return true;
   });
+
+  const { results: existingRows } = await c.env.DB.prepare(
+    "SELECT fingerprint FROM user_gpg_keys WHERE user_id = ?",
+  )
+    .bind(user.id)
+    .all<{ fingerprint: string }>();
+  const existing = new Set(existingRows.map((r) => r.fingerprint));
+
+  const toAdd = unique.filter((k) => !existing.has(k.fingerprint));
+  const skipped = unique.length - toAdd.length;
+  if (toAdd.length === 0) return c.json({ error: "Key already added" }, 409);
+
+  const now = Math.floor(Date.now() / 1000);
+  const baseName = body.name?.trim();
+  const added: Array<{
+    id: string;
+    fingerprint: string;
+    key_id: string;
+    name: string;
+    created_at: number;
+    last_used_at: null;
+  }> = [];
+  const stmts = toAdd.map((k, i) => {
+    // A user-supplied name applies as-is to a single key; with several
+    // keys it gets a #n suffix so rows stay distinguishable.
+    const name = (
+      baseName
+        ? toAdd.length === 1
+          ? baseName
+          : `${baseName} #${i + 1}`
+        : k.uids[0] || k.keyId
+    ).slice(0, 128);
+    const id = randomId(16);
+    added.push({
+      id,
+      fingerprint: k.fingerprint,
+      key_id: k.keyId,
+      name,
+      created_at: now,
+      last_used_at: null,
+    });
+    return c.env.DB.prepare(
+      "INSERT INTO user_gpg_keys (id, user_id, fingerprint, key_id, name, public_key, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    ).bind(id, user.id, k.fingerprint, k.keyId, name, k.armored, now);
+  });
+  await c.env.DB.batch(stmts);
+
+  return c.json({ keys: added, added: added.length, skipped });
 });
 
 // ─── Delete key ───────────────────────────────────────────────────────────────

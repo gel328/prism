@@ -16,7 +16,6 @@ import {
   Switch,
   Text,
   Textarea,
-  Title2,
   Tooltip,
   makeStyles,
   tokens,
@@ -36,6 +35,8 @@ import { api, ApiError } from "../lib/api";
 import { useToastMessage } from "../lib/useToastMessage";
 import { useAuthStore } from "../store/auth";
 import { ImageUrlInput } from "../components/ImageUrlInput";
+import { PageHeader } from "../components/PageHeader";
+import { PasswordInput } from "../components/PasswordInput";
 import {
   SkeletonProfileCard,
   SkeletonEmailCard,
@@ -170,9 +171,9 @@ export function Profile() {
     setSaveLoading(true);
     try {
       const body: Parameters<typeof api.updateMe>[0] = {
-        display_name: displayName,
+        display_name: displayName.trim(),
       };
-      if (!r2Enabled) body.avatar_url = avatarUrl || undefined;
+      if (!r2Enabled) body.avatar_url = avatarUrl.trim() || undefined;
       const res = await api.updateMe(body);
       if (token && res.user) setAuth(token, res.user);
       await qc.invalidateQueries({ queryKey: ["me"] });
@@ -364,7 +365,7 @@ export function Profile() {
 
   return (
     <div className={styles.page}>
-      <Title2>{t("profile.title")}</Title2>
+      <PageHeader title={t("profile.title")} style={{ marginBottom: 0 }} />
 
       {message && (
         <MessageBar intent={message.type === "success" ? "success" : "error"}>
@@ -862,8 +863,7 @@ export function Profile() {
                       : t("profile.readmeGithubTokenOptionalNoSite")
                 }
               >
-                <Input
-                  type="password"
+                <PasswordInput
                   value={ghTokenInput}
                   placeholder={
                     me.user.github_readme_token_set ? "••••••••" : "ghp_…"
@@ -1140,8 +1140,7 @@ export function Profile() {
         </Text>
         <form onSubmit={handlePasswordChange} className={styles.form}>
           <Field label={t("profile.currentPassword")}>
-            <Input
-              type="password"
+            <PasswordInput
               value={pwForm.current}
               onChange={(e) =>
                 setPwForm((f) => ({ ...f, current: e.target.value }))
@@ -1149,8 +1148,7 @@ export function Profile() {
             />
           </Field>
           <Field label={t("profile.newPassword")}>
-            <Input
-              type="password"
+            <PasswordInput
               value={pwForm.next}
               onChange={(e) =>
                 setPwForm((f) => ({ ...f, next: e.target.value }))
@@ -1159,8 +1157,7 @@ export function Profile() {
             />
           </Field>
           <Field label={t("profile.confirmNewPassword")}>
-            <Input
-              type="password"
+            <PasswordInput
               value={pwForm.confirm}
               onChange={(e) =>
                 setPwForm((f) => ({ ...f, confirm: e.target.value }))

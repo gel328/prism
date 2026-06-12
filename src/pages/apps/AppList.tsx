@@ -18,7 +18,6 @@ import {
   MessageBar,
   Spinner,
   Text,
-  Title2,
   Textarea,
   makeStyles,
   tokens,
@@ -29,15 +28,11 @@ import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api, ApiError } from "../../lib/api";
+import { EmptyState } from "../../components/EmptyState";
+import { PageHeader } from "../../components/PageHeader";
 import { SkeletonAppCards } from "../../components/Skeletons";
 
 const useStyles = makeStyles({
-  header: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: "16px",
-  },
   grid: {
     display: "grid",
     gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
@@ -115,102 +110,96 @@ export function AppList() {
     }
   };
 
+  const createDialog = (
+    <Dialog>
+      <DialogTrigger disableButtonEnhancement>
+        <Button appearance="primary" icon={<AddRegular />}>
+          {t("apps.newApp")}
+        </Button>
+      </DialogTrigger>
+      <DialogSurface>
+        <DialogBody>
+          <DialogTitle>{t("apps.createOAuthApp")}</DialogTitle>
+          <DialogContent>
+            {message && (
+              <MessageBar
+                intent={message.type === "success" ? "success" : "error"}
+                style={{ marginBottom: 12 }}
+              >
+                {message.text}
+              </MessageBar>
+            )}
+            <div className={styles.form}>
+              <Field label={t("apps.appName")} required>
+                <Input
+                  value={form.name}
+                  onChange={update("name")}
+                  placeholder={t("apps.appNamePlaceholder")}
+                />
+              </Field>
+              <Field label={t("apps.description")}>
+                <Input
+                  value={form.description}
+                  onChange={update("description")}
+                />
+              </Field>
+              <Field label={t("apps.appIconUrl")}>
+                <Input
+                  value={form.icon_url}
+                  onChange={update("icon_url")}
+                  placeholder={t("apps.appIconPlaceholder")}
+                />
+              </Field>
+              <Field label={t("apps.websiteUrl")}>
+                <Input
+                  value={form.website_url}
+                  onChange={update("website_url")}
+                  placeholder={t("apps.websiteUrlPlaceholder")}
+                />
+              </Field>
+              <Field
+                label={t("apps.redirectUris")}
+                hint={t("apps.redirectUrisHint")}
+                required
+              >
+                <Textarea
+                  value={form.redirect_uris}
+                  onChange={update("redirect_uris")}
+                  placeholder={t("apps.redirectUrisPlaceholder")}
+                  rows={3}
+                />
+              </Field>
+            </div>
+          </DialogContent>
+          <DialogActions>
+            <DialogTrigger>
+              <Button>{t("common.cancel")}</Button>
+            </DialogTrigger>
+            <Button
+              appearance="primary"
+              onClick={handleCreate}
+              disabled={creating}
+            >
+              {creating ? <Spinner size="tiny" /> : t("common.create")}
+            </Button>
+          </DialogActions>
+        </DialogBody>
+      </DialogSurface>
+    </Dialog>
+  );
+
   return (
     <div>
-      <div className={styles.header}>
-        <Title2>{t("apps.myApplications")}</Title2>
-        <Dialog>
-          <DialogTrigger disableButtonEnhancement>
-            <Button appearance="primary" icon={<AddRegular />}>
-              {t("apps.newApp")}
-            </Button>
-          </DialogTrigger>
-          <DialogSurface>
-            <DialogBody>
-              <DialogTitle>{t("apps.createOAuthApp")}</DialogTitle>
-              <DialogContent>
-                {message && (
-                  <MessageBar
-                    intent={message.type === "success" ? "success" : "error"}
-                    style={{ marginBottom: 12 }}
-                  >
-                    {message.text}
-                  </MessageBar>
-                )}
-                <div className={styles.form}>
-                  <Field label={t("apps.appName")} required>
-                    <Input
-                      value={form.name}
-                      onChange={update("name")}
-                      placeholder={t("apps.appNamePlaceholder")}
-                    />
-                  </Field>
-                  <Field label={t("apps.description")}>
-                    <Input
-                      value={form.description}
-                      onChange={update("description")}
-                    />
-                  </Field>
-                  <Field label={t("apps.appIconUrl")}>
-                    <Input
-                      value={form.icon_url}
-                      onChange={update("icon_url")}
-                      placeholder={t("apps.appIconPlaceholder")}
-                    />
-                  </Field>
-                  <Field label={t("apps.websiteUrl")}>
-                    <Input
-                      value={form.website_url}
-                      onChange={update("website_url")}
-                      placeholder={t("apps.websiteUrlPlaceholder")}
-                    />
-                  </Field>
-                  <Field
-                    label={t("apps.redirectUris")}
-                    hint={t("apps.redirectUrisHint")}
-                    required
-                  >
-                    <Textarea
-                      value={form.redirect_uris}
-                      onChange={update("redirect_uris")}
-                      placeholder={t("apps.redirectUrisPlaceholder")}
-                      rows={3}
-                    />
-                  </Field>
-                </div>
-              </DialogContent>
-              <DialogActions>
-                <DialogTrigger>
-                  <Button>{t("common.cancel")}</Button>
-                </DialogTrigger>
-                <Button
-                  appearance="primary"
-                  onClick={handleCreate}
-                  disabled={creating}
-                >
-                  {creating ? <Spinner size="tiny" /> : t("common.create")}
-                </Button>
-              </DialogActions>
-            </DialogBody>
-          </DialogSurface>
-        </Dialog>
-      </div>
+      <PageHeader title={t("apps.myApplications")} actions={createDialog} />
 
       {isLoading && <SkeletonAppCards count={6} />}
 
       {!isLoading && data?.apps.length === 0 && (
-        <div style={{ textAlign: "center", padding: "60px 0" }}>
-          <GlobeRegular
-            fontSize={48}
-            style={{ color: tokens.colorNeutralForeground3 }}
-          />
-          <Text block size={500} style={{ marginTop: 16 }}>
-            {t("apps.noAppsYet")}
-          </Text>
-          <Text block style={{ color: tokens.colorNeutralForeground3 }}>
-            {t("apps.noAppsDesc")}
-          </Text>
-        </div>
+        <EmptyState
+          icon={<GlobeRegular />}
+          title={t("apps.noAppsYet")}
+          description={t("apps.noAppsDesc")}
+        />
       )}
 
       <div className={styles.grid}>

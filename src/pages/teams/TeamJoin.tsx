@@ -16,6 +16,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api, ApiError } from "../../lib/api";
+import { EmptyState } from "../../components/EmptyState";
 import { useAuthStore } from "../../store/auth";
 
 const ROLE_COLORS: Record<
@@ -77,25 +78,16 @@ export function TeamJoin() {
 
   if (error || !data) {
     return (
-      <div style={{ textAlign: "center", padding: "80px 0" }}>
-        <PeopleRegular
-          fontSize={48}
-          style={{ color: tokens.colorNeutralForeground3 }}
-        />
-        <Title2 block style={{ marginTop: 16 }}>
-          {t("teams.invalidInvite")}
-        </Title2>
-        <Text block style={{ color: tokens.colorNeutralForeground3 }}>
-          {t("teams.invalidInviteDesc")}
-        </Text>
-        <Button
-          appearance="primary"
-          style={{ marginTop: 24 }}
-          onClick={() => navigate("/")}
-        >
-          {t("teams.goHome")}
-        </Button>
-      </div>
+      <EmptyState
+        icon={<PeopleRegular />}
+        title={t("teams.invalidInvite")}
+        description={t("teams.invalidInviteDesc")}
+        action={
+          <Button appearance="primary" onClick={() => navigate("/")}>
+            {t("teams.goHome")}
+          </Button>
+        }
+      />
     );
   }
 

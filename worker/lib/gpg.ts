@@ -18,6 +18,42 @@ export async function parseArmoredPublicKey(
   return { fingerprint, keyId, uids };
 }
 
+export interface ParsedKeyWithArmor extends ParsedKey {
+  /** The individual key re-armored on its own, suitable for storage. */
+  armored: string;
+}
+
+/**
+ * Parse a paste that may contain several public keys: multiple armored
+ * blocks concatenated, a single block holding multiple keys (e.g.
+ * `gpg --export --armor key1 key2`), or both. Each key is re-armored
+ * individually so callers can store/verify them independently.
+ */
+export async function parseArmoredPublicKeys(
+  armored: string,
+): Promise<ParsedKeyWithArmor[]> {
+  const blocks = armored.match(
+    /-----BEGIN PGP PUBLIC KEY BLOCK-----[\s\S]+?-----END PGP PUBLIC KEY BLOCK-----/g,
+  );
+  if (!blocks || blocks.length === 0) {
+    throw new Error("No PGP public key block found");
+  }
+  const out: ParsedKeyWithArmor[] = [];
+  for (const block of blocks) {
+    const keys = await openpgp.readKeys({ armoredKeys: block });
+    for (const key of keys) {
+      const fingerprint = key.getFingerprint().toLowerCase();
+      out.push({
+        fingerprint,
+        keyId: fingerprint.slice(-16),
+        uids: key.getUserIDs(),
+        armored: key.armor(),
+      });
+    }
+  }
+  return out;
+}
+
 export interface VerifyResult {
   valid: boolean;
   signerKeyId: string | null; // 16-char hex key ID of the signing key

@@ -5,6 +5,7 @@
 import {
   Avatar,
   Badge,
+  Link as FluentLink,
   Spinner,
   Text,
   Title2,
@@ -29,6 +30,7 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { api, ApiError } from "../lib/api";
 import { renderMarkdown } from "../lib/markdown";
+import { CopyIdButton } from "../components/CopyIdButton";
 
 const useStyles = makeStyles({
   page: {
@@ -272,11 +274,29 @@ export function PublicProfile() {
               })}
             </div>
             <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-              {t("publicProfile.gpgKeysHint", { username: p.username })}
+              <FluentLink
+                href={`/users/${encodeURIComponent(p.username)}.gpg`}
+                target="_blank"
+                rel="noopener"
+              >
+                {t("publicProfile.gpgKeysDownload")}
+              </FluentLink>
+              {" · "}
+              <span className={styles.fingerprint}>
+                /users/{p.username}.gpg
+              </span>
             </Text>
             {p.gpg_keys.map((k) => (
               <div key={k.fingerprint} className={styles.gpgRow}>
-                <Text weight="semibold">{k.name}</Text>
+                <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                  <Text weight="semibold" style={{ flex: 1, minWidth: 0 }}>
+                    {k.name}
+                  </Text>
+                  <CopyIdButton
+                    id={k.fingerprint}
+                    label={t("publicProfile.copyFingerprint")}
+                  />
+                </div>
                 <Text className={styles.fingerprint}>{k.fingerprint}</Text>
               </div>
             ))}

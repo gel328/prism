@@ -24,17 +24,27 @@
     />
 
     <!-- Resolve color scheme synchronously before paint and refresh the
-         prism_color_scheme cookie from matchMedia. The cookie is what the
-         server reads on the *next* request to SSR with the right theme;
-         refreshing it on every load means an OS theme change is picked up
-         by the next navigation, not the one after. -->
+         prism_color_scheme cookie. An explicit user choice saved by the
+         in-app theme switcher (localStorage prism_theme_mode) wins over
+         matchMedia. The cookie is what the server reads on the *next*
+         request to SSR with the right theme; refreshing it on every load
+         means an OS theme change is picked up by the next navigation, not
+         the one after. -->
     <script>
       (function () {
+        var mode = null;
+        try {
+          mode = localStorage.getItem("prism_theme_mode");
+        } catch (e) {
+          /* storage may be blocked; fall through to matchMedia */
+        }
         var scheme =
-          window.matchMedia &&
-          window.matchMedia("(prefers-color-scheme: dark)").matches
-            ? "dark"
-            : "light";
+          mode === "dark" || mode === "light"
+            ? mode
+            : window.matchMedia &&
+                window.matchMedia("(prefers-color-scheme: dark)").matches
+              ? "dark"
+              : "light";
         document.cookie =
           "prism_color_scheme=" +
           scheme +

@@ -18,7 +18,6 @@ import {
   MessageBar,
   Spinner,
   Text,
-  Title2,
   Textarea,
   makeStyles,
   tokens,
@@ -29,15 +28,11 @@ import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api, ApiError } from "../../lib/api";
+import { EmptyState } from "../../components/EmptyState";
+import { PageHeader } from "../../components/PageHeader";
 import { SkeletonAppCards } from "../../components/Skeletons";
 
 const useStyles = makeStyles({
-  header: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: "16px",
-  },
   grid: {
     display: "grid",
     gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
@@ -117,84 +112,78 @@ export function TeamList() {
     }
   };
 
+  const createDialog = (
+    <Dialog open={open} onOpenChange={(_, d) => setOpen(d.open)}>
+      <DialogTrigger disableButtonEnhancement>
+        <Button appearance="primary" icon={<AddRegular />}>
+          {t("teams.newTeam")}
+        </Button>
+      </DialogTrigger>
+      <DialogSurface>
+        <DialogBody>
+          <DialogTitle>{t("teams.createTeam")}</DialogTitle>
+          <DialogContent>
+            {message && (
+              <MessageBar
+                intent={message.type === "success" ? "success" : "error"}
+                style={{ marginBottom: 12 }}
+              >
+                {message.text}
+              </MessageBar>
+            )}
+            <div className={styles.form}>
+              <Field label={t("teams.teamName")} required>
+                <Input
+                  value={form.name}
+                  onChange={update("name")}
+                  placeholder={t("teams.teamNamePlaceholder")}
+                />
+              </Field>
+              <Field label={t("teams.description")}>
+                <Textarea
+                  value={form.description}
+                  onChange={update("description")}
+                  rows={2}
+                />
+              </Field>
+              <Field label={t("teams.avatarUrl")}>
+                <Input
+                  value={form.avatar_url}
+                  onChange={update("avatar_url")}
+                  placeholder={t("teams.avatarUrlPlaceholder")}
+                />
+              </Field>
+            </div>
+          </DialogContent>
+          <DialogActions>
+            <DialogTrigger>
+              <Button>{t("common.cancel")}</Button>
+            </DialogTrigger>
+            <Button
+              appearance="primary"
+              onClick={handleCreate}
+              disabled={creating}
+            >
+              {creating ? <Spinner size="tiny" /> : t("common.create")}
+            </Button>
+          </DialogActions>
+        </DialogBody>
+      </DialogSurface>
+    </Dialog>
+  );
+
   return (
     <div>
-      <div className={styles.header}>
-        <Title2>{t("teams.title")}</Title2>
-        <Dialog open={open} onOpenChange={(_, d) => setOpen(d.open)}>
-          <DialogTrigger disableButtonEnhancement>
-            <Button appearance="primary" icon={<AddRegular />}>
-              {t("teams.newTeam")}
-            </Button>
-          </DialogTrigger>
-          <DialogSurface>
-            <DialogBody>
-              <DialogTitle>{t("teams.createTeam")}</DialogTitle>
-              <DialogContent>
-                {message && (
-                  <MessageBar
-                    intent={message.type === "success" ? "success" : "error"}
-                    style={{ marginBottom: 12 }}
-                  >
-                    {message.text}
-                  </MessageBar>
-                )}
-                <div className={styles.form}>
-                  <Field label={t("teams.teamName")} required>
-                    <Input
-                      value={form.name}
-                      onChange={update("name")}
-                      placeholder={t("teams.teamNamePlaceholder")}
-                    />
-                  </Field>
-                  <Field label={t("teams.description")}>
-                    <Textarea
-                      value={form.description}
-                      onChange={update("description")}
-                      rows={2}
-                    />
-                  </Field>
-                  <Field label={t("teams.avatarUrl")}>
-                    <Input
-                      value={form.avatar_url}
-                      onChange={update("avatar_url")}
-                      placeholder={t("teams.avatarUrlPlaceholder")}
-                    />
-                  </Field>
-                </div>
-              </DialogContent>
-              <DialogActions>
-                <DialogTrigger>
-                  <Button>{t("common.cancel")}</Button>
-                </DialogTrigger>
-                <Button
-                  appearance="primary"
-                  onClick={handleCreate}
-                  disabled={creating}
-                >
-                  {creating ? <Spinner size="tiny" /> : t("common.create")}
-                </Button>
-              </DialogActions>
-            </DialogBody>
-          </DialogSurface>
-        </Dialog>
-      </div>
+      <PageHeader title={t("teams.title")} actions={createDialog} />
 
       {isLoading && <SkeletonAppCards count={4} />}
 
       {!isLoading && data?.teams.length === 0 && (
-        <div style={{ textAlign: "center", padding: "60px 0" }}>
-          <PeopleRegular
-            fontSize={48}
-            style={{ color: tokens.colorNeutralForeground3 }}
-          />
-          <Text block size={500} style={{ marginTop: 16 }}>
-            {t("teams.noTeamsYet")}
-          </Text>
-          <Text block style={{ color: tokens.colorNeutralForeground3 }}>
-            {t("teams.noTeamsDesc")}
-          </Text>
-        </div>
+        <EmptyState
+          icon={<PeopleRegular />}
+          title={t("teams.noTeamsYet")}
+          description={t("teams.noTeamsDesc")}
+        />
       )}
 
       <div className={styles.grid}>

@@ -14,7 +14,6 @@ import {
   Image,
   MessageBar,
   Text,
-  Title2,
   Tooltip,
   makeStyles,
   Spinner,
@@ -30,6 +29,7 @@ import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api, ApiError } from "../lib/api";
+import { PageHeader } from "../components/PageHeader";
 import { SkeletonAppCards } from "../components/Skeletons";
 import { useToastMessage } from "../lib/useToastMessage";
 import { PROVIDER_COLORS } from "../lib/providerIcons";
@@ -328,10 +328,11 @@ export function Connections() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-      <Title2>{t("connections.title")}</Title2>
-      <Text style={{ color: tokens.colorNeutralForeground3 }}>
-        {t("connections.description")}
-      </Text>
+      <PageHeader
+        title={t("connections.title")}
+        subtitle={t("connections.description")}
+        style={{ marginBottom: 0 }}
+      />
 
       {message && (
         <MessageBar intent={message.type === "success" ? "success" : "error"}>

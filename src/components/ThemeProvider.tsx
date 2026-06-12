@@ -11,6 +11,7 @@ import type { BrandVariants } from "@fluentui/react-components";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../lib/api";
+import { useThemeStore } from "../store/theme";
 
 interface ThemeProviderProps {
   children: ReactNode;
@@ -94,6 +95,7 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
     staleTime: 60_000,
   });
   const styleRef = useRef<HTMLStyleElement | null>(null);
+  const mode = useThemeStore((s) => s.mode);
 
   // Seed from the same source the server used so the SSR'd FluentProvider
   // classnames match the client's first paint (no light→dark flash).
@@ -137,27 +139,28 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Persist the current preference so the next SSR pass renders the same
+  // Resolve the effective scheme: an explicit user choice (light/dark)
+  // overrides the OS preference; "system" follows it.
+  const resolvedDark = mode === "system" ? prefersDark : mode === "dark";
+
+  // Persist the resolved scheme so the next SSR pass renders the same
   // theme the client will hydrate to. 1-year max-age; samesite=lax is fine
   // since the cookie only encodes a UI preference.
   useEffect(() => {
-    const value = prefersDark ? "dark" : "light";
+    const value = resolvedDark ? "dark" : "light";
     document.cookie = `prism_color_scheme=${value}; path=/; max-age=31536000; samesite=lax`;
-    document.documentElement.setAttribute(
-      "data-theme",
-      prefersDark ? "dark" : "light",
-    );
-  }, [prefersDark]);
+    document.documentElement.setAttribute("data-theme", value);
+  }, [resolvedDark]);
 
   const theme = useMemo(() => {
     const accent = siteConfig?.accent_color ?? "#0078d4";
     try {
       const brand = buildBrandVariants(accent);
-      return prefersDark ? createDarkTheme(brand) : createLightTheme(brand);
+      return resolvedDark ? createDarkTheme(brand) : createLightTheme(brand);
     } catch {
-      return prefersDark ? webDarkTheme : webLightTheme;
+      return resolvedDark ? webDarkTheme : webLightTheme;
     }
-  }, [siteConfig?.accent_color, prefersDark]);
+  }, [siteConfig?.accent_color, resolvedDark]);
 
   // Inject custom CSS, set document title/icon, and update Safari theme color
   useEffect(() => {

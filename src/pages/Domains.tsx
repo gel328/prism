@@ -6,9 +6,6 @@ import {
   Input,
   MessageBar,
   Spinner,
-  Text,
-  Title2,
-  tokens,
 } from "@fluentui/react-components";
 import { AddRegular } from "@fluentui/react-icons";
 import { useState } from "react";
@@ -21,6 +18,7 @@ import { TransferDomainDialog } from "./domains/dialogs/TransferDomainDialog";
 import { ShareDomainDialog } from "./domains/dialogs/ShareDomainDialog";
 import { DomainsTable } from "./domains/DomainsTable";
 import { DnsAddedInfo } from "./domains/components";
+import { PageHeader } from "../components/PageHeader";
 import { useToastMessage } from "../lib/useToastMessage";
 
 export function Domains() {
@@ -133,10 +131,11 @@ export function Domains() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-      <Title2>{t("domains.title")}</Title2>
-      <Text style={{ color: tokens.colorNeutralForeground3 }}>
-        {t("domains.description")}
-      </Text>
+      <PageHeader
+        title={t("domains.title")}
+        subtitle={t("domains.description")}
+        style={{ marginBottom: 0 }}
+      />
 
       {message && (
         <MessageBar intent={message.type === "success" ? "success" : "error"}>

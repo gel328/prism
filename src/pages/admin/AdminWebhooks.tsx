@@ -25,6 +25,7 @@ import {
   TableRow,
   Text,
   Tooltip,
+  makeStyles,
   tokens,
 } from "@fluentui/react-components";
 import {
@@ -42,7 +43,16 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api } from "../../lib/api";
+import { EmptyState } from "../../components/EmptyState";
+import { PageHeader } from "../../components/PageHeader";
+import { PasswordInput } from "../../components/PasswordInput";
 import { SkeletonTableRows } from "../../components/Skeletons";
+
+const useStyles = makeStyles({
+  // Let the table scroll sideways on narrow screens instead of
+  // overflowing the page
+  tableScroll: { overflowX: "auto" },
+});
 
 // ─── Event catalogue ─────────────────────────────────────────────────────────
 
@@ -189,12 +199,17 @@ function WebhookDialog({
       existing
         ? api.updateWebhook(existing.id, {
             name,
-            url,
-            secret: secret || undefined,
+            url: url.trim(),
+            secret: secret.trim() || undefined,
             events,
             is_active: isActive,
           })
-        : api.createWebhook({ name, url, secret: secret || undefined, events }),
+        : api.createWebhook({
+            name,
+            url: url.trim(),
+            secret: secret.trim() || undefined,
+            events,
+          }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["admin-webhooks"] });
       onClose();
@@ -238,11 +253,10 @@ function WebhookDialog({
               />
             </Field>
             <Field label={t("webhooks.secret")} hint={t("webhooks.secretHint")}>
-              <Input
+              <PasswordInput
                 value={secret}
                 onChange={(_, d) => setSecret(d.value)}
                 placeholder={t("webhooks.secretPlaceholder")}
-                type="password"
               />
             </Field>
             <Field label={t("webhooks.events")}>
@@ -522,6 +536,7 @@ function WebhookRow({ wh }: { wh: Webhook }) {
 // ─── Main page ───────────────────────────────────────────────────────────────
 
 export function AdminWebhooks() {
+  const styles = useStyles();
   const { t } = useTranslation();
   const [creating, setCreating] = useState(false);
 
@@ -532,29 +547,20 @@ export function AdminWebhooks() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-        }}
-      >
-        <div>
-          <Text size={500} weight="semibold" block>
-            {t("webhooks.title")}
-          </Text>
-          <Text size={300} style={{ color: tokens.colorNeutralForeground3 }}>
-            {t("webhooks.subtitle")}
-          </Text>
-        </div>
-        <Button
-          appearance="primary"
-          icon={<AddRegular />}
-          onClick={() => setCreating(true)}
-        >
-          {t("webhooks.createBtn")}
-        </Button>
-      </div>
+      <PageHeader
+        title={t("webhooks.title")}
+        subtitle={t("webhooks.subtitle")}
+        style={{ marginBottom: 0 }}
+        actions={
+          <Button
+            appearance="primary"
+            icon={<AddRegular />}
+            onClick={() => setCreating(true)}
+          >
+            {t("webhooks.createBtn")}
+          </Button>
+        }
+      />
 
       {creating && (
         <Dialog
@@ -570,36 +576,27 @@ export function AdminWebhooks() {
       {isLoading ? (
         <SkeletonTableRows rows={5} cols={4} />
       ) : !data?.webhooks.length ? (
-        <div
-          style={{
-            padding: 32,
-            textAlign: "center",
-            borderRadius: tokens.borderRadiusMedium,
-            border: `1px dashed ${tokens.colorNeutralStroke1}`,
-          }}
-        >
-          <Text style={{ color: tokens.colorNeutralForeground3 }}>
-            {t("webhooks.empty")}
-          </Text>
-        </div>
+        <EmptyState icon={<LinkRegular />} title={t("webhooks.empty")} />
       ) : (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHeaderCell style={{ width: 240 }}>
-                {t("webhooks.colName")}
-              </TableHeaderCell>
-              <TableHeaderCell>{t("webhooks.colUrl")}</TableHeaderCell>
-              <TableHeaderCell>{t("webhooks.colEvents")}</TableHeaderCell>
-              <TableHeaderCell style={{ width: 140 }} />
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {(data.webhooks as Webhook[]).map((wh) => (
-              <WebhookRow key={wh.id} wh={wh} />
-            ))}
-          </TableBody>
-        </Table>
+        <div className={styles.tableScroll}>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHeaderCell style={{ width: 240 }}>
+                  {t("webhooks.colName")}
+                </TableHeaderCell>
+                <TableHeaderCell>{t("webhooks.colUrl")}</TableHeaderCell>
+                <TableHeaderCell>{t("webhooks.colEvents")}</TableHeaderCell>
+                <TableHeaderCell style={{ width: 140 }} />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {(data.webhooks as Webhook[]).map((wh) => (
+                <WebhookRow key={wh.id} wh={wh} />
+              ))}
+            </TableBody>
+          </Table>
+        </div>
       )}
     </div>
   );

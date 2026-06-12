@@ -3,7 +3,7 @@ import { CheckmarkRegular, CopyRegular } from "@fluentui/react-icons";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
-export function CopyIdButton({ id }: { id: string }) {
+export function CopyIdButton({ id, label }: { id: string; label?: string }) {
   const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
 
@@ -16,7 +16,7 @@ export function CopyIdButton({ id }: { id: string }) {
 
   return (
     <Tooltip
-      content={copied ? t("common.copied") : t("common.copyId")}
+      content={copied ? t("common.copied") : (label ?? t("common.copyId"))}
       relationship="label"
     >
       <Button

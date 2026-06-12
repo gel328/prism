@@ -15,6 +15,7 @@ import {
   DialogTrigger,
   Input,
   Link,
+  MessageBar,
   Table,
   TableBody,
   TableCell,
@@ -23,6 +24,7 @@ import {
   TableRow,
   Text,
   Tooltip,
+  makeStyles,
   tokens,
 } from "@fluentui/react-components";
 import { useState } from "react";
@@ -33,7 +35,14 @@ import { SkeletonTableRows } from "../../components/Skeletons";
 
 const PAGE_SIZE = 50;
 
+const useStyles = makeStyles({
+  // Let the table scroll sideways on narrow screens instead of
+  // overflowing the page
+  tableScroll: { overflowX: "auto" },
+});
+
 export function AdminImageProxy() {
+  const styles = useStyles();
   const { t } = useTranslation();
   const qc = useQueryClient();
   const [page, setPage] = useState(1);
@@ -175,11 +184,7 @@ export function AdminImageProxy() {
         </Text>
       )}
 
-      {error && (
-        <Text size={200} style={{ color: tokens.colorPaletteRedForeground1 }}>
-          {error}
-        </Text>
-      )}
+      {error && <MessageBar intent="error">{error}</MessageBar>}
 
       {data && (
         <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
@@ -190,115 +195,119 @@ export function AdminImageProxy() {
       {isLoading ? (
         <SkeletonTableRows rows={8} cols={5} />
       ) : (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHeaderCell>{t("admin.imageProxyIdHeader")}</TableHeaderCell>
-              <TableHeaderCell>
-                {t("admin.imageProxyUrlHeader")}
-              </TableHeaderCell>
-              <TableHeaderCell>
-                {t("admin.imageProxyCreatorHeader")}
-              </TableHeaderCell>
-              <TableHeaderCell>
-                {t("admin.imageProxyCreatedAtHeader")}
-              </TableHeaderCell>
-              <TableHeaderCell>
-                {t("admin.imageProxyActionsHeader")}
-              </TableHeaderCell>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {mappings.length === 0 ? (
+        <div className={styles.tableScroll}>
+          <Table>
+            <TableHeader>
               <TableRow>
-                <TableCell
-                  colSpan={5}
-                  style={{
-                    textAlign: "center",
-                    color: tokens.colorNeutralForeground3,
-                  }}
-                >
-                  {t("admin.imageProxyNoResults")}
-                </TableCell>
+                <TableHeaderCell>
+                  {t("admin.imageProxyIdHeader")}
+                </TableHeaderCell>
+                <TableHeaderCell>
+                  {t("admin.imageProxyUrlHeader")}
+                </TableHeaderCell>
+                <TableHeaderCell>
+                  {t("admin.imageProxyCreatorHeader")}
+                </TableHeaderCell>
+                <TableHeaderCell>
+                  {t("admin.imageProxyCreatedAtHeader")}
+                </TableHeaderCell>
+                <TableHeaderCell>
+                  {t("admin.imageProxyActionsHeader")}
+                </TableHeaderCell>
               </TableRow>
-            ) : (
-              mappings.map((m) => (
-                <TableRow key={m.id}>
+            </TableHeader>
+            <TableBody>
+              {mappings.length === 0 ? (
+                <TableRow>
                   <TableCell
+                    colSpan={5}
                     style={{
-                      fontFamily: "monospace",
-                      fontSize: 11,
+                      textAlign: "center",
                       color: tokens.colorNeutralForeground3,
                     }}
                   >
-                    <Tooltip content={m.id} relationship="description">
-                      <Text>{m.id.slice(0, 12)}…</Text>
-                    </Tooltip>
-                  </TableCell>
-                  <TableCell
-                    style={{
-                      fontSize: 12,
-                      maxWidth: 420,
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    <Tooltip content={m.url} relationship="description">
-                      <Link
-                        href={`/api/proxy/image/${m.id}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        {m.url}
-                      </Link>
-                    </Tooltip>
-                  </TableCell>
-                  <TableCell style={{ fontSize: 12 }}>
-                    {m.created_by ? (
-                      <Tooltip
-                        content={m.created_by}
-                        relationship="description"
-                      >
-                        <Text font="monospace">
-                          {m.created_by_username ??
-                            m.created_by_display_name ??
-                            m.created_by.slice(0, 8) + "…"}
-                        </Text>
-                      </Tooltip>
-                    ) : (
-                      <Text
-                        size={200}
-                        style={{
-                          color: tokens.colorNeutralForeground3,
-                          fontStyle: "italic",
-                        }}
-                      >
-                        {t("admin.imageProxySystemRow")}
-                      </Text>
-                    )}
-                  </TableCell>
-                  <TableCell style={{ fontSize: 12, whiteSpace: "nowrap" }}>
-                    {new Date(m.created_at * 1000).toLocaleString()}
-                  </TableCell>
-                  <TableCell>
-                    <Button
-                      size="small"
-                      appearance="subtle"
-                      disabled={
-                        deleteMut.isPending && deleteMut.variables === m.id
-                      }
-                      onClick={() => setPendingDeleteId(m.id)}
-                      style={{ color: tokens.colorPaletteRedForeground1 }}
-                    >
-                      {t("admin.imageProxyDelete")}
-                    </Button>
+                    {t("admin.imageProxyNoResults")}
                   </TableCell>
                 </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
+              ) : (
+                mappings.map((m) => (
+                  <TableRow key={m.id}>
+                    <TableCell
+                      style={{
+                        fontFamily: "monospace",
+                        fontSize: 11,
+                        color: tokens.colorNeutralForeground3,
+                      }}
+                    >
+                      <Tooltip content={m.id} relationship="description">
+                        <Text>{m.id.slice(0, 12)}…</Text>
+                      </Tooltip>
+                    </TableCell>
+                    <TableCell
+                      style={{
+                        fontSize: 12,
+                        maxWidth: 420,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      <Tooltip content={m.url} relationship="description">
+                        <Link
+                          href={`/api/proxy/image/${m.id}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          {m.url}
+                        </Link>
+                      </Tooltip>
+                    </TableCell>
+                    <TableCell style={{ fontSize: 12 }}>
+                      {m.created_by ? (
+                        <Tooltip
+                          content={m.created_by}
+                          relationship="description"
+                        >
+                          <Text font="monospace">
+                            {m.created_by_username ??
+                              m.created_by_display_name ??
+                              m.created_by.slice(0, 8) + "…"}
+                          </Text>
+                        </Tooltip>
+                      ) : (
+                        <Text
+                          size={200}
+                          style={{
+                            color: tokens.colorNeutralForeground3,
+                            fontStyle: "italic",
+                          }}
+                        >
+                          {t("admin.imageProxySystemRow")}
+                        </Text>
+                      )}
+                    </TableCell>
+                    <TableCell style={{ fontSize: 12, whiteSpace: "nowrap" }}>
+                      {new Date(m.created_at * 1000).toLocaleString()}
+                    </TableCell>
+                    <TableCell>
+                      <Button
+                        size="small"
+                        appearance="subtle"
+                        disabled={
+                          deleteMut.isPending && deleteMut.variables === m.id
+                        }
+                        onClick={() => setPendingDeleteId(m.id)}
+                        style={{ color: tokens.colorPaletteRedForeground1 }}
+                      >
+                        {t("admin.imageProxyDelete")}
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </div>
       )}
 
       {totalPages > 1 && (

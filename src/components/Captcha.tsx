@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { Button, Spinner, Text, ProgressBar } from "@fluentui/react-components";
+import { useTranslation } from "react-i18next";
 import { api } from "../lib/api";
 import { solvePoW } from "../lib/pow";
 
@@ -24,6 +25,7 @@ export function Captcha({
   onVerified,
   onError,
 }: CaptchaProps) {
+  const { t } = useTranslation();
   const containerRef = useRef<HTMLDivElement>(null);
   const widgetIdRef = useRef<string | null>(null);
   const [powState, setPowState] = useState<
@@ -45,14 +47,14 @@ export function Captcha({
       ).turnstile.render(containerRef.current, {
         sitekey: siteKey,
         callback: (token: string) => onVerified({ captcha_token: token }),
-        "error-callback": () => onError?.("Turnstile failed"),
+        "error-callback": () => onError?.(t("captcha.turnstileFailed")),
       });
     };
     document.body.appendChild(script);
     return () => {
       document.body.removeChild(script);
     };
-  }, [provider, siteKey, onVerified, onError]);
+  }, [provider, siteKey, onVerified, onError, t]);
 
   // ─── hCaptcha ───────────────────────────────────────────────────────────
   useEffect(() => {
@@ -91,7 +93,7 @@ export function Captcha({
           ).grecaptcha.execute(siteKey, { action: "login" });
           onVerified({ captcha_token: token });
         } catch {
-          onError?.("reCAPTCHA failed");
+          onError?.(t("captcha.recaptchaFailed"));
         }
       });
     };
@@ -99,7 +101,7 @@ export function Captcha({
     return () => {
       document.body.removeChild(script);
     };
-  }, [provider, siteKey, onVerified, onError]);
+  }, [provider, siteKey, onVerified, onError, t]);
 
   // ─── Proof of Work ──────────────────────────────────────────────────────
   const solveChallenge = useCallback(async () => {
@@ -111,9 +113,9 @@ export function Captcha({
       setPowState("done");
     } catch {
       setPowState("error");
-      onError?.("PoW solving failed");
+      onError?.(t("captcha.powFailed"));
     }
-  }, [onVerified, onError]);
+  }, [onVerified, onError, t]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- triggering an async task on provider change; setState happens inside the async flow, not synchronously
@@ -131,25 +133,25 @@ export function Captcha({
           borderRadius: "4px",
         }}
       >
-        {powState === "idle" && <Text>Preparing challenge…</Text>}
+        {powState === "idle" && <Text>{t("captcha.powPreparing")}</Text>}
         {powState === "solving" && (
           <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
             <Spinner size="tiny" />
-            <Text>Solving proof-of-work challenge…</Text>
+            <Text>{t("captcha.powSolving")}</Text>
           </div>
         )}
         {powState === "done" && (
           <Text style={{ color: "var(--colorPaletteLightGreenForeground1)" }}>
-            ✓ Challenge solved
+            ✓ {t("captcha.powSolved")}
           </Text>
         )}
         {powState === "error" && (
           <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
             <Text style={{ color: "var(--colorPaletteRedForeground1)" }}>
-              Challenge failed.
+              {t("captcha.powFailedShort")}
             </Text>
             <Button size="small" onClick={solveChallenge}>
-              Retry
+              {t("captcha.retry")}
             </Button>
           </div>
         )}

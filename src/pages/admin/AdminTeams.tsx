@@ -33,6 +33,9 @@ import { CopyIdButton } from "../../components/CopyIdButton";
 import { SkeletonTableRows } from "../../components/Skeletons";
 
 const useStyles = makeStyles({
+  // Let the table scroll sideways on narrow screens instead of
+  // overflowing the page
+  tableScroll: { overflowX: "auto" },
   detailGrid: {
     display: "grid",
     gridTemplateColumns: "1fr 1fr",
@@ -81,109 +84,111 @@ export function AdminTeams() {
       {isLoading ? (
         <SkeletonTableRows rows={8} cols={4} />
       ) : (
-        <Table style={{ tableLayout: "auto" }}>
-          <TableHeader>
-            <TableRow>
-              <TableHeaderCell>{t("admin.teamHeader")}</TableHeaderCell>
-              <TableHeaderCell>{t("admin.ownerHeader")}</TableHeaderCell>
-              <TableHeaderCell>{t("admin.membersHeader")}</TableHeaderCell>
-              <TableHeaderCell style={{ width: 1 }} />
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {data?.teams.map((team) => (
-              <TableRow key={team.id}>
-                <TableCell>
-                  <div
-                    style={{ display: "flex", alignItems: "center", gap: 8 }}
-                  >
-                    {team.avatar_url ? (
-                      <Avatar
-                        image={{ src: team.avatar_url }}
-                        name={team.name}
-                        size={24}
-                      />
-                    ) : (
-                      <Avatar name={team.name} size={24} />
-                    )}
-                    <div>
-                      <Text weight="semibold" block>
-                        {team.name}
-                      </Text>
-                      {team.description && (
-                        <Text
-                          size={200}
-                          style={{ color: tokens.colorNeutralForeground3 }}
-                        >
-                          {team.description.slice(0, 40)}
-                        </Text>
-                      )}
-                    </div>
-                  </div>
-                </TableCell>
-                <TableCell>
-                  <Text size={200}>
-                    {team.owner_username ? `@${team.owner_username}` : "—"}
-                  </Text>
-                </TableCell>
-                <TableCell>
-                  <Text size={200}>{team.member_count}</Text>
-                </TableCell>
-                <TableCell>
-                  <div
-                    style={{
-                      display: "flex",
-                      gap: 4,
-                      justifyContent: "flex-end",
-                    }}
-                  >
-                    <CopyIdButton id={team.id} />
-                    <Button
-                      size="small"
-                      appearance="subtle"
-                      icon={<EditRegular />}
-                      onClick={() =>
-                        setViewing(team as unknown as Record<string, unknown>)
-                      }
-                    />
-                    <Dialog>
-                      <DialogTrigger disableButtonEnhancement>
-                        <Button
-                          size="small"
-                          appearance="subtle"
-                          icon={<DeleteRegular />}
-                        />
-                      </DialogTrigger>
-                      <DialogSurface>
-                        <DialogBody>
-                          <DialogTitle>
-                            {t("admin.deleteTeamConfirm", {
-                              name: team.name,
-                            })}
-                          </DialogTitle>
-                          <DialogActions>
-                            <DialogTrigger>
-                              <Button>{t("common.cancel")}</Button>
-                            </DialogTrigger>
-                            <Button
-                              appearance="primary"
-                              style={{
-                                background: tokens.colorPaletteRedBackground3,
-                              }}
-                              onClick={() => handleDelete(team.id)}
-                            >
-                              {t("common.delete")}
-                            </Button>
-                          </DialogActions>
-                        </DialogBody>
-                      </DialogSurface>
-                    </Dialog>
-                  </div>
-                </TableCell>
+        <div className={styles.tableScroll}>
+          <Table style={{ tableLayout: "auto" }}>
+            <TableHeader>
+              <TableRow>
+                <TableHeaderCell>{t("admin.teamHeader")}</TableHeaderCell>
+                <TableHeaderCell>{t("admin.ownerHeader")}</TableHeaderCell>
+                <TableHeaderCell>{t("admin.membersHeader")}</TableHeaderCell>
+                <TableHeaderCell style={{ width: 1 }} />
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+            </TableHeader>
+            <TableBody>
+              {data?.teams.map((team) => (
+                <TableRow key={team.id}>
+                  <TableCell>
+                    <div
+                      style={{ display: "flex", alignItems: "center", gap: 8 }}
+                    >
+                      {team.avatar_url ? (
+                        <Avatar
+                          image={{ src: team.avatar_url }}
+                          name={team.name}
+                          size={24}
+                        />
+                      ) : (
+                        <Avatar name={team.name} size={24} />
+                      )}
+                      <div>
+                        <Text weight="semibold" block>
+                          {team.name}
+                        </Text>
+                        {team.description && (
+                          <Text
+                            size={200}
+                            style={{ color: tokens.colorNeutralForeground3 }}
+                          >
+                            {team.description.slice(0, 40)}
+                          </Text>
+                        )}
+                      </div>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <Text size={200}>
+                      {team.owner_username ? `@${team.owner_username}` : "—"}
+                    </Text>
+                  </TableCell>
+                  <TableCell>
+                    <Text size={200}>{team.member_count}</Text>
+                  </TableCell>
+                  <TableCell>
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: 4,
+                        justifyContent: "flex-end",
+                      }}
+                    >
+                      <CopyIdButton id={team.id} />
+                      <Button
+                        size="small"
+                        appearance="subtle"
+                        icon={<EditRegular />}
+                        onClick={() =>
+                          setViewing(team as unknown as Record<string, unknown>)
+                        }
+                      />
+                      <Dialog>
+                        <DialogTrigger disableButtonEnhancement>
+                          <Button
+                            size="small"
+                            appearance="subtle"
+                            icon={<DeleteRegular />}
+                          />
+                        </DialogTrigger>
+                        <DialogSurface>
+                          <DialogBody>
+                            <DialogTitle>
+                              {t("admin.deleteTeamConfirm", {
+                                name: team.name,
+                              })}
+                            </DialogTitle>
+                            <DialogActions>
+                              <DialogTrigger>
+                                <Button>{t("common.cancel")}</Button>
+                              </DialogTrigger>
+                              <Button
+                                appearance="primary"
+                                style={{
+                                  background: tokens.colorPaletteRedBackground3,
+                                }}
+                                onClick={() => handleDelete(team.id)}
+                              >
+                                {t("common.delete")}
+                              </Button>
+                            </DialogActions>
+                          </DialogBody>
+                        </DialogSurface>
+                      </Dialog>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
       )}
 
       {totalPages > 1 && (

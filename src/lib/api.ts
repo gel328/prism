@@ -331,7 +331,12 @@ export const api = {
   listGpgKeys: () =>
     request<{ keys: GpgKeyInfo[] }>("GET", "/user/gpg", undefined, getToken()),
   addGpgKey: (public_key: string, name?: string) =>
-    request<GpgKeyInfo>("POST", "/user/gpg", { public_key, name }, getToken()),
+    request<{ keys: GpgKeyInfo[]; added: number; skipped: number }>(
+      "POST",
+      "/user/gpg",
+      { public_key, name },
+      getToken(),
+    ),
   deleteGpgKey: (id: string) =>
     request<{ message: string }>(
       "DELETE",
@@ -1723,6 +1728,7 @@ export interface RegisterBody {
   username: string;
   password: string;
   display_name?: string;
+  invite_token?: string;
   captcha_token?: string;
   pow_challenge?: string;
   pow_nonce?: number;

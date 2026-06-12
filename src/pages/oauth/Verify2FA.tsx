@@ -28,6 +28,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api, ApiError } from "../../lib/api";
+import { AuthShell } from "../../components/AuthShell";
 import { useAuthStore } from "../../store/auth";
 import { Captcha, type CaptchaValue } from "../../components/Captcha";
 
@@ -41,17 +42,6 @@ const useStyles = makeStyles({
     padding: "16px",
     boxSizing: "border-box",
   },
-  card: {
-    width: "100%",
-    maxWidth: "440px",
-    padding: "40px",
-    borderRadius: "8px",
-    border: `1px solid ${tokens.colorNeutralStroke1}`,
-    background: tokens.colorNeutralBackground2,
-    display: "flex",
-    flexDirection: "column",
-    gap: "24px",
-  },
   appRow: {
     display: "flex",
     alignItems: "center",
@@ -62,7 +52,8 @@ const useStyles = makeStyles({
   },
   divider: {
     borderTop: `1px solid ${tokens.colorNeutralStroke1}`,
-    margin: "0 -40px",
+    // Full-bleed across the AuthShell card regardless of its padding
+    margin: "0 calc(-1 * var(--auth-card-pad, 40px))",
   },
   actionBox: {
     padding: "16px",
@@ -297,14 +288,12 @@ export function Verify2FA() {
 
   if (!challengeId) {
     return (
-      <div className={styles.page}>
-        <div className={styles.card}>
-          <Title2>{t("oauth.authorizationError")}</Title2>
-          <Text style={{ color: tokens.colorPaletteRedForeground1 }}>
-            {t("oauth.invalidRequest")}
-          </Text>
-        </div>
-      </div>
+      <AuthShell maxWidth={440} cardGap={24}>
+        <Title2>{t("oauth.authorizationError")}</Title2>
+        <Text style={{ color: tokens.colorPaletteRedForeground1 }}>
+          {t("oauth.invalidRequest")}
+        </Text>
+      </AuthShell>
     );
   }
 
@@ -318,22 +307,20 @@ export function Verify2FA() {
 
   if (error || !data) {
     return (
-      <div className={styles.page}>
-        <div className={styles.card}>
-          <Title2>{t("oauth.authorizationError")}</Title2>
-          <Text style={{ color: tokens.colorPaletteRedForeground1 }}>
-            {error instanceof ApiError
-              ? error.message
-              : t("oauth.invalidRequest")}
-          </Text>
-        </div>
-      </div>
+      <AuthShell maxWidth={440} cardGap={24}>
+        <Title2>{t("oauth.authorizationError")}</Title2>
+        <Text style={{ color: tokens.colorPaletteRedForeground1 }}>
+          {error instanceof ApiError
+            ? error.message
+            : t("oauth.invalidRequest")}
+        </Text>
+      </AuthShell>
     );
   }
 
   return (
-    <div className={styles.page}>
-      <div className={styles.card}>
+    <AuthShell maxWidth={440} cardGap={24}>
+      <>
         <Title2>{t("oauth.twoFa.title")}</Title2>
 
         <div className={styles.appRow}>
@@ -526,6 +513,7 @@ export function Verify2FA() {
                   }}
                   placeholder="000000"
                   maxLength={16}
+                  autoComplete="one-time-code"
                   style={{ fontFamily: "monospace", letterSpacing: 4 }}
                 />
                 {data.passkey_enrolled && (
@@ -669,7 +657,7 @@ export function Verify2FA() {
         >
           {t("oauth.twoFa.footerNote", { appName: data.app.name })}
         </Text>
-      </div>
-    </div>
+      </>
+    </AuthShell>
   );
 }

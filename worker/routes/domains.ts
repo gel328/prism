@@ -16,6 +16,7 @@ import {
   tryAnyMethod,
   type VerificationMethod,
 } from "../lib/domainOwnership";
+import { normalizeDomainInput } from "../lib/domainVerify";
 import type { DomainRow, Variables } from "../types";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
@@ -41,12 +42,11 @@ app.post("/", async (c) => {
 
   if (!body.domain) return c.json({ error: "domain is required" }, 400);
 
-  // Basic domain validation
+  // Tolerate pasted URLs / whitespace / trailing dots, then validate
+  const domain = normalizeDomainInput(body.domain);
   const domainRegex = /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/i;
-  if (!domainRegex.test(body.domain))
+  if (!domainRegex.test(domain))
     return c.json({ error: "Invalid domain format" }, 400);
-
-  const domain = body.domain.toLowerCase().trim();
 
   const existing = await c.env.DB.prepare(
     "SELECT id FROM domains WHERE user_id = ? AND domain = ?",

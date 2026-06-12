@@ -55,6 +55,7 @@ import {
   type TeamInvite,
 } from "../../lib/api";
 import { useToastMessage } from "../../lib/useToastMessage";
+import { EmptyState } from "../../components/EmptyState";
 import { ImageUrlInput } from "../../components/ImageUrlInput";
 import { useAuthStore } from "../../store/auth";
 import { InviteDialog } from "./dialogs/InviteDialog";
@@ -136,22 +137,9 @@ const useStyles = makeStyles({
     overflow: "hidden",
     textOverflow: "ellipsis",
   },
-  emptyState: {
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: "8px",
-    padding: "32px 16px",
-    border: `1px dashed ${tokens.colorNeutralStroke2}`,
-    borderRadius: "8px",
-    color: tokens.colorNeutralForeground3,
-    textAlign: "center",
-  },
-  emptyStateIcon: {
-    fontSize: "32px",
-    color: tokens.colorNeutralForeground3,
-  },
+  // Let wide tables scroll sideways on narrow screens instead of
+  // overflowing the page
+  tableScroll: { overflowX: "auto" },
 });
 
 const ROLE_COLORS: Record<
@@ -629,11 +617,11 @@ export function TeamDetail() {
           </div>
           {subTeamsLoading && <SkeletonFormCard rows={3} />}
           {!subTeamsLoading && (subTeamsData?.sub_teams ?? []).length === 0 && (
-            <div className={styles.emptyState}>
-              <OrganizationRegular className={styles.emptyStateIcon} />
-              <Text weight="semibold">{t("teams.noSubTeams")}</Text>
-              {canManage && <Text size={200}>{t("teams.noSubTeamsHint")}</Text>}
-            </div>
+            <EmptyState
+              icon={<OrganizationRegular />}
+              title={t("teams.noSubTeams")}
+              description={canManage ? t("teams.noSubTeamsHint") : undefined}
+            />
           )}
           {!subTeamsLoading && (subTeamsData?.sub_teams ?? []).length > 0 && (
             <div className={styles.subTeamsGrid}>
@@ -712,56 +700,84 @@ export function TeamDetail() {
           {invitesLoading && <SkeletonTableRows rows={3} cols={4} />}
 
           {!invitesLoading && (invitesData?.invites ?? []).length === 0 && (
-            <Text style={{ color: tokens.colorNeutralForeground3 }}>
-              {t("teams.noActiveInvites")}
-            </Text>
+            <EmptyState
+              icon={<LinkRegular />}
+              title={t("teams.noActiveInvites")}
+            />
           )}
 
           {!invitesLoading && (invitesData?.invites ?? []).length > 0 && (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHeaderCell>
-                    {t("teams.inviteTypeHeader")}
-                  </TableHeaderCell>
-                  <TableHeaderCell>{t("teams.roleHeader")}</TableHeaderCell>
-                  <TableHeaderCell>
-                    {t("teams.inviteUsesHeader")}
-                  </TableHeaderCell>
-                  <TableHeaderCell>
-                    {t("teams.inviteExpiresHeader")}
-                  </TableHeaderCell>
-                  <TableHeaderCell>
-                    {t("teams.inviteCreatedByHeader")}
-                  </TableHeaderCell>
-                  <TableHeaderCell />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {(invitesData?.invites ?? []).map((inv: TeamInvite) => {
-                  const isHashed = inv.token.startsWith("__HASH_v1__");
-                  const inviteUrl = `${window.location.origin}/teams/join/${inv.token}`;
-                  const hashPreview = isHashed
-                    ? `${inv.token.slice(11, 19)}…`
-                    : null;
-                  return (
-                    <TableRow key={inv.token}>
-                      <TableCell>
-                        {inv.email ? (
-                          <div
-                            style={{
-                              display: "flex",
-                              alignItems: "center",
-                              gap: 6,
-                            }}
-                          >
-                            <MailRegular
-                              style={{ color: tokens.colorNeutralForeground3 }}
-                            />
-                            <Text size={300}>{inv.email}</Text>
-                          </div>
-                        ) : isHashed ? (
-                          <Tooltip content={inv.token} relationship="label">
+            <div className={styles.tableScroll}>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHeaderCell>
+                      {t("teams.inviteTypeHeader")}
+                    </TableHeaderCell>
+                    <TableHeaderCell>{t("teams.roleHeader")}</TableHeaderCell>
+                    <TableHeaderCell>
+                      {t("teams.inviteUsesHeader")}
+                    </TableHeaderCell>
+                    <TableHeaderCell>
+                      {t("teams.inviteExpiresHeader")}
+                    </TableHeaderCell>
+                    <TableHeaderCell>
+                      {t("teams.inviteCreatedByHeader")}
+                    </TableHeaderCell>
+                    <TableHeaderCell />
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {(invitesData?.invites ?? []).map((inv: TeamInvite) => {
+                    const isHashed = inv.token.startsWith("__HASH_v1__");
+                    const inviteUrl = `${window.location.origin}/teams/join/${inv.token}`;
+                    const hashPreview = isHashed
+                      ? `${inv.token.slice(11, 19)}…`
+                      : null;
+                    return (
+                      <TableRow key={inv.token}>
+                        <TableCell>
+                          {inv.email ? (
+                            <div
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 6,
+                              }}
+                            >
+                              <MailRegular
+                                style={{
+                                  color: tokens.colorNeutralForeground3,
+                                }}
+                              />
+                              <Text size={300}>{inv.email}</Text>
+                            </div>
+                          ) : isHashed ? (
+                            <Tooltip content={inv.token} relationship="label">
+                              <div
+                                style={{
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: 6,
+                                }}
+                              >
+                                <LinkRegular
+                                  style={{
+                                    color: tokens.colorNeutralForeground3,
+                                  }}
+                                />
+                                <Text
+                                  size={200}
+                                  style={{
+                                    color: tokens.colorNeutralForeground3,
+                                    fontFamily: "monospace",
+                                  }}
+                                >
+                                  {hashPreview}
+                                </Text>
+                              </div>
+                            </Tooltip>
+                          ) : (
                             <div
                               style={{
                                 display: "flex",
@@ -779,98 +795,82 @@ export function TeamDetail() {
                                 style={{
                                   color: tokens.colorNeutralForeground3,
                                   fontFamily: "monospace",
+                                  wordBreak: "break-all",
                                 }}
                               >
-                                {hashPreview}
+                                {inviteUrl}
                               </Text>
                             </div>
-                          </Tooltip>
-                        ) : (
-                          <div
-                            style={{
-                              display: "flex",
-                              alignItems: "center",
-                              gap: 6,
-                            }}
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <Badge
+                            color={ROLE_COLORS[inv.role] ?? "subtle"}
+                            appearance="filled"
+                            size="small"
                           >
-                            <LinkRegular
-                              style={{ color: tokens.colorNeutralForeground3 }}
-                            />
-                            <Text
-                              size={200}
-                              style={{
-                                color: tokens.colorNeutralForeground3,
-                                fontFamily: "monospace",
-                                wordBreak: "break-all",
-                              }}
-                            >
-                              {inviteUrl}
-                            </Text>
-                          </div>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <Badge
-                          color={ROLE_COLORS[inv.role] ?? "subtle"}
-                          appearance="filled"
-                          size="small"
-                        >
-                          {inv.role}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <Text size={300}>
-                          {inv.uses} / {inv.max_uses === 0 ? "∞" : inv.max_uses}
-                        </Text>
-                      </TableCell>
-                      <TableCell>
-                        <Text size={300}>
-                          {new Date(inv.expires_at * 1000).toLocaleDateString()}
-                        </Text>
-                      </TableCell>
-                      <TableCell>
-                        <Text size={300}>@{inv.created_by_username}</Text>
-                      </TableCell>
-                      <TableCell>
-                        <div style={{ display: "flex", gap: 4 }}>
-                          {!inv.email && !isHashed && (
+                            {inv.role}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Text size={300}>
+                            {inv.uses} /{" "}
+                            {inv.max_uses === 0 ? "∞" : inv.max_uses}
+                          </Text>
+                        </TableCell>
+                        <TableCell>
+                          <Text size={300}>
+                            {new Date(
+                              inv.expires_at * 1000,
+                            ).toLocaleDateString()}
+                          </Text>
+                        </TableCell>
+                        <TableCell>
+                          <Text size={300}>@{inv.created_by_username}</Text>
+                        </TableCell>
+                        <TableCell>
+                          <div style={{ display: "flex", gap: 4 }}>
+                            {!inv.email && !isHashed && (
+                              <Tooltip
+                                content={
+                                  copiedToken === inv.token
+                                    ? t("teams.copiedExclamation")
+                                    : t("teams.copyLink")
+                                }
+                                relationship="label"
+                              >
+                                <Button
+                                  appearance="subtle"
+                                  icon={<CopyRegular />}
+                                  size="small"
+                                  onClick={() =>
+                                    handleCopyInviteLink(inv.token)
+                                  }
+                                />
+                              </Tooltip>
+                            )}
                             <Tooltip
-                              content={
-                                copiedToken === inv.token
-                                  ? t("teams.copiedExclamation")
-                                  : t("teams.copyLink")
-                              }
+                              content={t("teams.revokeInvite")}
                               relationship="label"
                             >
                               <Button
                                 appearance="subtle"
-                                icon={<CopyRegular />}
+                                icon={<DeleteRegular />}
                                 size="small"
-                                onClick={() => handleCopyInviteLink(inv.token)}
+                                style={{
+                                  color: tokens.colorPaletteRedForeground1,
+                                }}
+                                onClick={() => handleRevokeInvite(inv.token)}
                               />
                             </Tooltip>
-                          )}
-                          <Tooltip
-                            content={t("teams.revokeInvite")}
-                            relationship="label"
-                          >
-                            <Button
-                              appearance="subtle"
-                              icon={<DeleteRegular />}
-                              size="small"
-                              style={{
-                                color: tokens.colorPaletteRedForeground1,
-                              }}
-                              onClick={() => handleRevokeInvite(inv.token)}
-                            />
-                          </Tooltip>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
           )}
         </div>
       )}

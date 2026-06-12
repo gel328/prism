@@ -14,6 +14,7 @@ import {
   TableRow,
   Text,
   Tooltip,
+  makeStyles,
   tokens,
 } from "@fluentui/react-components";
 import { useState } from "react";
@@ -21,6 +22,12 @@ import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api } from "../../lib/api";
 import { SkeletonTableRows } from "../../components/Skeletons";
+
+const useStyles = makeStyles({
+  // Let the table scroll sideways on narrow screens instead of
+  // overflowing the page
+  tableScroll: { overflowX: "auto" },
+});
 
 type LoginError = {
   id: string;
@@ -55,6 +62,7 @@ function errorBadgeColor(
 }
 
 export function AdminLoginErrors() {
+  const styles = useStyles();
   const { t } = useTranslation();
   const [page, setPage] = useState(1);
   const [filterCode, setFilterCode] = useState("");
@@ -186,108 +194,112 @@ export function AdminLoginErrors() {
       {isLoading ? (
         <SkeletonTableRows rows={8} cols={6} />
       ) : (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHeaderCell>
-                {t("admin.loginErrors.timeHeader")}
-              </TableHeaderCell>
-              <TableHeaderCell>
-                {t("admin.loginErrors.errorCodeHeader")}
-              </TableHeaderCell>
-              <TableHeaderCell>
-                {t("admin.loginErrors.identifierHeader")}
-              </TableHeaderCell>
-              <TableHeaderCell>
-                {t("admin.loginErrors.ipHeader")}
-              </TableHeaderCell>
-              <TableHeaderCell>
-                {t("admin.loginErrors.userAgentHeader")}
-              </TableHeaderCell>
-              <TableHeaderCell>
-                {t("admin.loginErrors.idHeader")}
-              </TableHeaderCell>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {errors.length === 0 ? (
+        <div className={styles.tableScroll}>
+          <Table>
+            <TableHeader>
               <TableRow>
-                <TableCell
-                  colSpan={6}
-                  style={{
-                    textAlign: "center",
-                    color: tokens.colorNeutralForeground3,
-                  }}
-                >
-                  {t("admin.loginErrors.noResults")}
-                </TableCell>
+                <TableHeaderCell>
+                  {t("admin.loginErrors.timeHeader")}
+                </TableHeaderCell>
+                <TableHeaderCell>
+                  {t("admin.loginErrors.errorCodeHeader")}
+                </TableHeaderCell>
+                <TableHeaderCell>
+                  {t("admin.loginErrors.identifierHeader")}
+                </TableHeaderCell>
+                <TableHeaderCell>
+                  {t("admin.loginErrors.ipHeader")}
+                </TableHeaderCell>
+                <TableHeaderCell>
+                  {t("admin.loginErrors.userAgentHeader")}
+                </TableHeaderCell>
+                <TableHeaderCell>
+                  {t("admin.loginErrors.idHeader")}
+                </TableHeaderCell>
               </TableRow>
-            ) : (
-              errors.map((err) => (
-                <TableRow key={err.id}>
-                  <TableCell style={{ whiteSpace: "nowrap", fontSize: 12 }}>
-                    {new Date(err.created_at * 1000).toLocaleString()}
-                  </TableCell>
-                  <TableCell>
-                    <Badge
-                      color={errorBadgeColor(err.error_code)}
-                      appearance="filled"
-                      style={{ fontSize: 11 }}
-                    >
-                      {t(`admin.loginErrors.error_${err.error_code}`, {
-                        defaultValue: err.error_code,
-                      })}
-                    </Badge>
-                  </TableCell>
-                  <TableCell style={{ fontFamily: "monospace", fontSize: 12 }}>
-                    {err.identifier ?? "—"}
-                  </TableCell>
+            </TableHeader>
+            <TableBody>
+              {errors.length === 0 ? (
+                <TableRow>
                   <TableCell
+                    colSpan={6}
                     style={{
-                      fontFamily: "monospace",
-                      fontSize: 12,
-                      wordBreak: "break-all",
-                    }}
-                  >
-                    {err.ip_address ?? "—"}
-                  </TableCell>
-                  <TableCell
-                    style={{
-                      fontSize: 11,
+                      textAlign: "center",
                       color: tokens.colorNeutralForeground3,
-                      maxWidth: 240,
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
                     }}
                   >
-                    {err.user_agent ? (
-                      <Tooltip
-                        content={err.user_agent}
-                        relationship="description"
-                      >
-                        <Text>{err.user_agent}</Text>
-                      </Tooltip>
-                    ) : (
-                      "—"
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <Text
-                      style={{
-                        fontFamily: "monospace",
-                        fontSize: 11,
-                        color: tokens.colorNeutralForeground3,
-                      }}
-                    >
-                      {err.id.slice(0, 12)}
-                    </Text>
+                    {t("admin.loginErrors.noResults")}
                   </TableCell>
                 </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
+              ) : (
+                errors.map((err) => (
+                  <TableRow key={err.id}>
+                    <TableCell style={{ whiteSpace: "nowrap", fontSize: 12 }}>
+                      {new Date(err.created_at * 1000).toLocaleString()}
+                    </TableCell>
+                    <TableCell>
+                      <Badge
+                        color={errorBadgeColor(err.error_code)}
+                        appearance="filled"
+                        style={{ fontSize: 11 }}
+                      >
+                        {t(`admin.loginErrors.error_${err.error_code}`, {
+                          defaultValue: err.error_code,
+                        })}
+                      </Badge>
+                    </TableCell>
+                    <TableCell
+                      style={{ fontFamily: "monospace", fontSize: 12 }}
+                    >
+                      {err.identifier ?? "—"}
+                    </TableCell>
+                    <TableCell
+                      style={{
+                        fontFamily: "monospace",
+                        fontSize: 12,
+                        wordBreak: "break-all",
+                      }}
+                    >
+                      {err.ip_address ?? "—"}
+                    </TableCell>
+                    <TableCell
+                      style={{
+                        fontSize: 11,
+                        color: tokens.colorNeutralForeground3,
+                        maxWidth: 240,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {err.user_agent ? (
+                        <Tooltip
+                          content={err.user_agent}
+                          relationship="description"
+                        >
+                          <Text>{err.user_agent}</Text>
+                        </Tooltip>
+                      ) : (
+                        "—"
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <Text
+                        style={{
+                          fontFamily: "monospace",
+                          fontSize: 11,
+                          color: tokens.colorNeutralForeground3,
+                        }}
+                      >
+                        {err.id.slice(0, 12)}
+                      </Text>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </div>
       )}
 
       {totalPages > 1 && (

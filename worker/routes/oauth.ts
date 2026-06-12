@@ -22,6 +22,7 @@ import {
   buildVerifiedDomainsMap,
   buildVerifiedTeamDomainsMap,
   computeVerified,
+  normalizeDomainInput,
 } from "../lib/domainVerify";
 import { hmacSign } from "../lib/webhooks";
 import { proxyImageUrl } from "../lib/proxyImage";
@@ -530,9 +531,10 @@ async function checkAccessWhitelist(
 ): Promise<string | null> {
   if (!app.access_whitelist_enabled) return null;
 
-  const { results } = await db.prepare(
-    "SELECT rule_type, target_id, min_role FROM app_access_rules WHERE app_id = ?",
-  )
+  const { results } = await db
+    .prepare(
+      "SELECT rule_type, target_id, min_role FROM app_access_rules WHERE app_id = ?",
+    )
     .bind(app.id)
     .all<AppAccessRuleRow>();
 
@@ -603,10 +605,13 @@ app.get("/app-info", optionalAuth, async (c) => {
       currentUser.id,
     );
     if (denied) {
-      return c.json({
-        error: "unauthorized_whitelist",
-        app_name: oauthApp.name,
-      }, 403);
+      return c.json(
+        {
+          error: "unauthorized_whitelist",
+          app_name: oauthApp.name,
+        },
+        403,
+      );
     }
   }
 
@@ -815,7 +820,10 @@ app.post("/authorize", requireAuth, async (c) => {
     user.id,
   );
   if (whitelistDenied) {
-    return c.json({ error: "unauthorized_whitelist", app_name: oauthApp.name }, 403);
+    return c.json(
+      { error: "unauthorized_whitelist", app_name: oauthApp.name },
+      403,
+    );
   }
 
   if (body.action === "deny") {
@@ -2605,11 +2613,11 @@ app.post("/me/domains", async (c) => {
   const body = await c.req.json<{ domain: string }>();
   if (!body.domain) return c.json({ error: "domain is required" }, 400);
 
+  // Tolerate pasted URLs / whitespace / trailing dots, then validate
+  const domain = normalizeDomainInput(body.domain);
   const domainRegex = /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/i;
-  if (!domainRegex.test(body.domain))
+  if (!domainRegex.test(domain))
     return c.json({ error: "Invalid domain format" }, 400);
-
-  const domain = body.domain.toLowerCase().trim();
 
   const existing = await c.env.DB.prepare(
     "SELECT id FROM domains WHERE user_id = ? AND domain = ?",

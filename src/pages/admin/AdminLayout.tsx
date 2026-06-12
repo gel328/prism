@@ -1,15 +1,9 @@
 // Admin section layout with sub-navigation
 
-import {
-  Tab,
-  TabList,
-  Text,
-  Title2,
-  makeStyles,
-  tokens,
-} from "@fluentui/react-components";
+import { Tab, TabList, makeStyles } from "@fluentui/react-components";
 import { useNavigate, useLocation, Outlet } from "react-router-dom";
 import { useTranslation } from "react-i18next";
+import { PageHeader } from "../../components/PageHeader";
 
 const useStyles = makeStyles({
   root: {
@@ -59,13 +53,11 @@ export function AdminLayout() {
 
   return (
     <div className={styles.root}>
-      <div>
-        <Title2>{t("admin.title")}</Title2>
-        <br />
-        <Text style={{ color: tokens.colorNeutralForeground3 }}>
-          {t("admin.subtitle")}
-        </Text>
-      </div>
+      <PageHeader
+        title={t("admin.title")}
+        subtitle={t("admin.subtitle")}
+        style={{ marginBottom: 0 }}
+      />
 
       <div className={styles.tabsWrap}>
         <TabList

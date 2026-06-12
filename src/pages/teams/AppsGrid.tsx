@@ -8,6 +8,7 @@ import {
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
+import { EmptyState } from "../../components/EmptyState";
 import { SkeletonAppCards } from "../../components/Skeletons";
 import { GlobeRegular } from "@fluentui/react-icons";
 import { useNavigate } from "react-router-dom";
@@ -42,18 +43,7 @@ export function AppsGrid({ apps, loading }: AppsGridProps) {
 
   if (apps.length === 0) {
     return (
-      <div style={{ textAlign: "center", padding: "40px 0" }}>
-        <GlobeRegular
-          fontSize={40}
-          style={{ color: tokens.colorNeutralForeground3 }}
-        />
-        <Text
-          block
-          style={{ marginTop: 12, color: tokens.colorNeutralForeground3 }}
-        >
-          {t("teams.noAppsInTeam")}
-        </Text>
-      </div>
+      <EmptyState icon={<GlobeRegular />} title={t("teams.noAppsInTeam")} />
     );
   }
 

@@ -45,6 +45,9 @@ type AdminUser = UserProfile & { app_count: number; is_active: boolean };
 
 const useStyles = makeStyles({
   toolbar: { display: "flex", gap: "8px", marginBottom: "16px" },
+  // Let the table scroll sideways on narrow screens instead of
+  // overflowing the page
+  tableScroll: { overflowX: "auto" },
   pagination: {
     display: "flex",
     gap: "8px",
@@ -160,93 +163,96 @@ export function AdminUsers() {
       {isLoading ? (
         <SkeletonTableRows rows={8} cols={3} />
       ) : (
-        <Table style={{ tableLayout: "auto" }}>
-          <TableHeader>
-            <TableRow>
-              <TableHeaderCell>{t("admin.userHeader")}</TableHeaderCell>
-              <TableHeaderCell>{t("admin.emailHeader")}</TableHeaderCell>
-              <TableHeaderCell style={{ width: 1 }} />
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {data?.users.map((u) => {
-              const au = u as unknown as AdminUser;
-              return (
-                <TableRow key={u.id}>
-                  <TableCell>
-                    <div>
-                      <Text weight="semibold" block>
-                        {u.display_name}
-                      </Text>
-                      <Text
-                        size={200}
-                        style={{ color: tokens.colorNeutralForeground3 }}
+        <div className={styles.tableScroll}>
+          <Table style={{ tableLayout: "auto" }}>
+            <TableHeader>
+              <TableRow>
+                <TableHeaderCell>{t("admin.userHeader")}</TableHeaderCell>
+                <TableHeaderCell>{t("admin.emailHeader")}</TableHeaderCell>
+                <TableHeaderCell style={{ width: 1 }} />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {data?.users.map((u) => {
+                const au = u as unknown as AdminUser;
+                return (
+                  <TableRow key={u.id}>
+                    <TableCell>
+                      <div>
+                        <Text weight="semibold" block>
+                          {u.display_name}
+                        </Text>
+                        <Text
+                          size={200}
+                          style={{ color: tokens.colorNeutralForeground3 }}
+                        >
+                          @{u.username}
+                        </Text>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Text size={200}>{u.email}</Text>
+                    </TableCell>
+                    <TableCell>
+                      <div
+                        style={{
+                          display: "flex",
+                          gap: 4,
+                          justifyContent: "flex-end",
+                        }}
                       >
-                        @{u.username}
-                      </Text>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <Text size={200}>{u.email}</Text>
-                  </TableCell>
-                  <TableCell>
-                    <div
-                      style={{
-                        display: "flex",
-                        gap: 4,
-                        justifyContent: "flex-end",
-                      }}
-                    >
-                      <CopyIdButton id={u.id} />
-                      <Button
-                        size="small"
-                        appearance="subtle"
-                        icon={<EditRegular />}
-                        onClick={() => openEdit(au)}
-                      />
-                      <Dialog>
-                        <DialogTrigger disableButtonEnhancement>
-                          <Button
-                            size="small"
-                            appearance="subtle"
-                            icon={<DeleteRegular />}
-                            disabled={u.id === user?.id}
-                          />
-                        </DialogTrigger>
-                        <DialogSurface>
-                          <DialogBody>
-                            <DialogTitle>
-                              {t("admin.deleteUserTitle")}
-                            </DialogTitle>
-                            <DialogContent>
-                              {t("admin.deleteUserDesc", {
-                                username: u.username,
-                              })}
-                            </DialogContent>
-                            <DialogActions>
-                              <DialogTrigger>
-                                <Button>{t("common.cancel")}</Button>
-                              </DialogTrigger>
-                              <Button
-                                appearance="primary"
-                                style={{
-                                  background: tokens.colorPaletteRedBackground3,
-                                }}
-                                onClick={() => handleDelete(u.id)}
-                              >
-                                {t("common.delete")}
-                              </Button>
-                            </DialogActions>
-                          </DialogBody>
-                        </DialogSurface>
-                      </Dialog>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              );
-            })}
-          </TableBody>
-        </Table>
+                        <CopyIdButton id={u.id} />
+                        <Button
+                          size="small"
+                          appearance="subtle"
+                          icon={<EditRegular />}
+                          onClick={() => openEdit(au)}
+                        />
+                        <Dialog>
+                          <DialogTrigger disableButtonEnhancement>
+                            <Button
+                              size="small"
+                              appearance="subtle"
+                              icon={<DeleteRegular />}
+                              disabled={u.id === user?.id}
+                            />
+                          </DialogTrigger>
+                          <DialogSurface>
+                            <DialogBody>
+                              <DialogTitle>
+                                {t("admin.deleteUserTitle")}
+                              </DialogTitle>
+                              <DialogContent>
+                                {t("admin.deleteUserDesc", {
+                                  username: u.username,
+                                })}
+                              </DialogContent>
+                              <DialogActions>
+                                <DialogTrigger>
+                                  <Button>{t("common.cancel")}</Button>
+                                </DialogTrigger>
+                                <Button
+                                  appearance="primary"
+                                  style={{
+                                    background:
+                                      tokens.colorPaletteRedBackground3,
+                                  }}
+                                  onClick={() => handleDelete(u.id)}
+                                >
+                                  {t("common.delete")}
+                                </Button>
+                              </DialogActions>
+                            </DialogBody>
+                          </DialogSurface>
+                        </Dialog>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </div>
       )}
 
       {totalPages > 1 && (

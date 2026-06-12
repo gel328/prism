@@ -33,6 +33,7 @@ import { useToastMessage } from "../../lib/useToastMessage";
 import { useAuthStore } from "../../store/auth";
 import type { SiteConfig } from "../../types";
 import { ImageUrlInput } from "../../components/ImageUrlInput";
+import { PasswordInput } from "../../components/PasswordInput";
 import { SkeletonFormCard } from "../../components/Skeletons";
 
 const useStyles = makeStyles({
@@ -677,8 +678,7 @@ export function AdminSettings() {
               label={t("admin.githubReadmeToken")}
               hint={t("admin.githubReadmeTokenHint")}
             >
-              <Input
-                type="password"
+              <PasswordInput
                 value={String(get("github_readme_token") ?? "")}
                 disabled={!(get("enable_public_profiles") ?? true)}
                 placeholder="ghp_… (optional)"
@@ -905,8 +905,7 @@ export function AdminSettings() {
                     />
                   </Field>
                   <Field label={t("admin.captchaSecretKey")}>
-                    <Input
-                      type="password"
+                    <PasswordInput
                       value={get("captcha_secret_key") ?? ""}
                       onChange={(e) =>
                         set("captcha_secret_key", e.target.value)
@@ -965,8 +964,7 @@ export function AdminSettings() {
               {(get("email_provider") === "resend" ||
                 get("email_provider") === "mailchannels") && (
                 <Field label={t("admin.emailApiKey")}>
-                  <Input
-                    type="password"
+                  <PasswordInput
                     value={get("email_api_key") ?? ""}
                     onChange={(e) => set("email_api_key", e.target.value)}
                     placeholder={t("admin.unchanged")}
@@ -1013,8 +1011,7 @@ export function AdminSettings() {
                     />
                   </Field>
                   <Field label={t("admin.smtpPassword")}>
-                    <Input
-                      type="password"
+                    <PasswordInput
                       value={get("smtp_password") ?? ""}
                       onChange={(e) => set("smtp_password", e.target.value)}
                       placeholder={t("admin.unchanged")}
@@ -1146,8 +1143,7 @@ export function AdminSettings() {
                     />
                   </Field>
                   <Field label={t("admin.imapPassword")}>
-                    <Input
-                      type="password"
+                    <PasswordInput
                       value={get("imap_password") ?? ""}
                       onChange={(e) => set("imap_password", e.target.value)}
                       placeholder={t("admin.unchanged")}

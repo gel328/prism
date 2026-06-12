@@ -18,32 +18,15 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api, ApiError } from "../lib/api";
+import { AuthShell } from "../components/AuthShell";
 import { Captcha } from "../components/Captcha";
+import { PasswordInput } from "../components/PasswordInput";
 import type { CaptchaValue } from "../components/Captcha";
+import { ProviderButton } from "../components/ProviderButton";
 import { useAuthStore } from "../store/auth";
 import type { UserProfile } from "../lib/api";
 
 const useStyles = makeStyles({
-  page: {
-    minHeight: "100vh",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    background: tokens.colorNeutralBackground1,
-    padding: "16px",
-    boxSizing: "border-box",
-  },
-  card: {
-    width: "100%",
-    maxWidth: "420px",
-    padding: "40px",
-    borderRadius: "8px",
-    border: `1px solid ${tokens.colorNeutralStroke1}`,
-    background: tokens.colorNeutralBackground2,
-    display: "flex",
-    flexDirection: "column",
-    gap: "20px",
-  },
   form: { display: "flex", flexDirection: "column", gap: "12px" },
   row: {
     display: "grid",
@@ -89,7 +72,14 @@ export function Register() {
     setSuccess("");
     setLoading(true);
     try {
-      const res = await api.register({ ...form, ...captcha });
+      const res = await api.register({
+        ...form,
+        email: form.email.trim(),
+        username: form.username.trim(),
+        display_name: form.display_name.trim(),
+        invite_token: form.invite_token.trim(),
+        ...captcha,
+      });
       if ("token" in res && res.token) {
         setAuth(res.token as string, res.user as UserProfile);
         if (site?.require_email_verification) {
@@ -98,12 +88,12 @@ export function Register() {
           navigate("/");
         }
       } else {
-        setSuccess(
-          "Registration successful! Please check your email to verify your account.",
-        );
+        setSuccess(t("auth.registrationSuccessEmail"));
       }
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Registration failed");
+      setError(
+        err instanceof ApiError ? err.message : t("auth.registrationFailed"),
+      );
     } finally {
       setLoading(false);
     }
@@ -111,21 +101,19 @@ export function Register() {
 
   if (!site?.allow_registration) {
     return (
-      <div className={styles.page}>
-        <div className={styles.card}>
-          <Title2>{t("auth.registrationDisabled")}</Title2>
-          <Text>{t("auth.registrationDisabledText")}</Text>
-          <Link href="/login">{t("auth.backToSignIn")}</Link>
-        </div>
-      </div>
+      <AuthShell maxWidth={420}>
+        <Title2>{t("auth.registrationDisabled")}</Title2>
+        <Text>{t("auth.registrationDisabledText")}</Text>
+        <Link href="/login">{t("auth.backToSignIn")}</Link>
+      </AuthShell>
     );
   }
 
   const showInviteField = site?.invite_only || !!form.invite_token;
 
   return (
-    <div className={styles.page}>
-      <div className={styles.card}>
+    <AuthShell maxWidth={420}>
+      <>
         <Title2>{t("auth.createAccount")}</Title2>
         <Text style={{ color: tokens.colorNeutralForeground3 }}>
           {t("auth.join", { siteName: site?.site_name ?? "Prism" })}
@@ -164,11 +152,11 @@ export function Register() {
             </Field>
 
             <Field label="Password" required>
-              <Input
-                type="password"
+              <PasswordInput
                 value={form.password}
                 onChange={update("password")}
                 placeholder={t("init.passwordPlaceholder")}
+                autoComplete="new-password"
               />
             </Field>
 
@@ -195,11 +183,7 @@ export function Register() {
               />
             )}
 
-            {error && (
-              <Text style={{ color: tokens.colorPaletteRedForeground1 }}>
-                {error}
-              </Text>
-            )}
+            {error && <MessageBar intent="error">{error}</MessageBar>}
 
             <Button
               appearance="primary"
@@ -219,17 +203,15 @@ export function Register() {
             <Divider>{t("auth.orSignUpWith")}</Divider>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {site!.enabled_providers.map((p) => (
-                <Button
+                <ProviderButton
                   key={p.slug}
-                  appearance="outline"
+                  provider={p}
                   onClick={() =>
                     api
                       .connectionBegin(p.slug, { mode: "login" })
                       .then(({ redirect }) => (window.location.href = redirect))
                   }
-                >
-                  {p.name}
-                </Button>
+                />
               ))}
             </div>
           </>
@@ -239,7 +221,7 @@ export function Register() {
           <Text>{t("auth.alreadyHaveAccount")} </Text>
           <Link href="/login">{t("auth.signIn")}</Link>
         </div>
-      </div>
-    </div>
+      </>
+    </AuthShell>
   );
 }

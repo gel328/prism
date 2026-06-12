@@ -15,6 +15,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api } from "../lib/api";
+import { AuthShell } from "../components/AuthShell";
 import { useAuthStore } from "../store/auth";
 
 const useStyles = makeStyles({
@@ -26,17 +27,6 @@ const useStyles = makeStyles({
     background: tokens.colorNeutralBackground1,
     padding: "16px",
     boxSizing: "border-box",
-  },
-  card: {
-    width: "100%",
-    maxWidth: "420px",
-    padding: "40px",
-    borderRadius: "8px",
-    border: `1px solid ${tokens.colorNeutralStroke1}`,
-    background: tokens.colorNeutralBackground2,
-    display: "flex",
-    flexDirection: "column",
-    gap: "24px",
   },
   accountList: { display: "flex", flexDirection: "column", gap: "8px" },
   accountRow: {
@@ -104,17 +94,15 @@ export function SocialSelect() {
 
   if (error || !data.users?.length) {
     return (
-      <div className={styles.page}>
-        <div className={styles.card}>
-          <Title2>{t("auth.sessionExpired")}</Title2>
-          <Text style={{ color: tokens.colorNeutralForeground3 }}>
-            {t("auth.sessionExpiredText")}
-          </Text>
-          <Button appearance="primary" onClick={() => navigate("/login")}>
-            {t("auth.backToLogin")}
-          </Button>
-        </div>
-      </div>
+      <AuthShell maxWidth={420} cardGap={24}>
+        <Title2>{t("auth.sessionExpired")}</Title2>
+        <Text style={{ color: tokens.colorNeutralForeground3 }}>
+          {t("auth.sessionExpiredText")}
+        </Text>
+        <Button appearance="primary" onClick={() => navigate("/login")}>
+          {t("auth.backToLogin")}
+        </Button>
+      </AuthShell>
     );
   }
 
@@ -122,8 +110,8 @@ export function SocialSelect() {
   const profileSuffix = data.profile_name ? ` (${data.profile_name})` : "";
 
   return (
-    <div className={styles.page}>
-      <div className={styles.card}>
+    <AuthShell maxWidth={420} cardGap={24}>
+      <>
         <div>
           <Title2>{t("auth.whichAccount")}</Title2>
           <Text
@@ -167,7 +155,7 @@ export function SocialSelect() {
         <Button appearance="subtle" onClick={() => navigate("/login")}>
           {t("auth.backToLogin")}
         </Button>
-      </div>
-    </div>
+      </>
+    </AuthShell>
   );
 }

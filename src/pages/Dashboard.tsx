@@ -6,7 +6,6 @@ import {
   Card,
   CardHeader,
   Text,
-  Title2,
   Title3,
   makeStyles,
   tokens,
@@ -24,6 +23,7 @@ import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { api } from "../lib/api";
 import { useAuthStore } from "../store/auth";
+import { PageHeader } from "../components/PageHeader";
 import { SkeletonStatCards } from "../components/Skeletons";
 
 const useStyles = makeStyles({
@@ -31,7 +31,6 @@ const useStyles = makeStyles({
     display: "grid",
     gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))",
     gap: "16px",
-    marginTop: "24px",
   },
   statCard: {
     display: "flex",
@@ -48,12 +47,6 @@ const useStyles = makeStyles({
     color: tokens.colorBrandForeground1,
     fontSize: "20px",
   },
-  welcome: {
-    display: "flex",
-    flexDirection: "column",
-    gap: "4px",
-    marginBottom: "8px",
-  },
   securityBanner: {
     padding: "16px",
     borderRadius: "8px",
@@ -63,7 +56,7 @@ const useStyles = makeStyles({
     alignItems: "center",
     justifyContent: "space-between",
     gap: "16px",
-    marginTop: "24px",
+    marginBottom: "16px",
     flexWrap: "wrap",
   },
 });
@@ -102,14 +95,10 @@ export function Dashboard() {
 
   return (
     <div>
-      <div className={styles.welcome}>
-        <Title2>
-          {t("dashboard.welcomeBack", { name: user?.display_name })}
-        </Title2>
-        <Text style={{ color: tokens.colorNeutralForeground3 }}>
-          {t("dashboard.manageDesc")}
-        </Text>
-      </div>
+      <PageHeader
+        title={t("dashboard.welcomeBack", { name: user?.display_name })}
+        subtitle={t("dashboard.manageDesc")}
+      />
 
       {showEmailBanner && (
         <div className={styles.securityBanner}>

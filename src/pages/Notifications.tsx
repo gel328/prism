@@ -26,11 +26,11 @@ import {
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
-import { AlertRegular } from "@fluentui/react-icons";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api, ApiError } from "../lib/api";
+import { PageHeader } from "../components/PageHeader";
 import type {
   NotificationRules,
   NotificationEmailRule,
@@ -284,15 +284,6 @@ const useStyles = makeStyles({
     display: "flex",
     flexDirection: "column",
     gap: tokens.spacingVerticalL,
-  },
-  header: {
-    display: "flex",
-    alignItems: "center",
-    gap: tokens.spacingHorizontalS,
-  },
-  icon: {
-    fontSize: "24px",
-    color: tokens.colorBrandForeground1,
   },
   group: {
     display: "flex",
@@ -775,17 +766,9 @@ function RulesetSection(props: {
       </div>
 
       {rulesetMessage && (
-        <Text
-          size={200}
-          style={{
-            color:
-              rulesetMessage.intent === "error"
-                ? tokens.colorPaletteRedForeground1
-                : tokens.colorPaletteGreenForeground1,
-          }}
-        >
-          {rulesetMessage.text}
-        </Text>
+        <MessageBar intent={rulesetMessage.intent}>
+          <MessageBarBody>{rulesetMessage.text}</MessageBarBody>
+        </MessageBar>
       )}
 
       {editingRuleset && (
@@ -1625,17 +1608,11 @@ export function Notifications() {
 
   return (
     <div className={styles.root}>
-      <div className={styles.header}>
-        <AlertRegular className={styles.icon} />
-        <div>
-          <Text as="h1" size={500} weight="semibold" block>
-            {t("notifications.title")}
-          </Text>
-          <Text size={300} style={{ color: tokens.colorNeutralForeground3 }}>
-            {t("notifications.subtitle")}
-          </Text>
-        </div>
-      </div>
+      <PageHeader
+        title={t("notifications.title")}
+        subtitle={t("notifications.subtitle")}
+        style={{ marginBottom: 0 }}
+      />
 
       {emails.length > 0 && (
         <div

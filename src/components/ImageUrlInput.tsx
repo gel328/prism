@@ -55,7 +55,9 @@ export function ImageUrlInput({ label, value, onChange, placeholder }: Props) {
         value={normalizedValue}
         onChange={(e) => {
           setLoadError(false);
-          onChange(e.target.value);
+          // URLs never contain leading/trailing whitespace — drop it so a
+          // sloppy paste doesn't fail the HTTPS validation below.
+          onChange(e.target.value.trim());
         }}
         placeholder={placeholder ?? "https://example.com/image.png"}
       />

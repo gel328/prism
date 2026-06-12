@@ -8,10 +8,12 @@ import {
   MenuButton,
   MenuDivider,
   MenuItem,
+  MenuItemRadio,
   MenuList,
   MenuPopover,
   MenuTrigger,
   Text,
+  Tooltip,
   makeStyles,
   mergeClasses,
   tokens,
@@ -19,6 +21,7 @@ import {
 import {
   AlertRegular,
   AppsRegular,
+  DesktopRegular,
   DismissRegular,
   GlobeRegular,
   HomeRegular,
@@ -33,6 +36,8 @@ import {
   ShieldPersonRegular,
   SignOutRegular,
   LocalLanguageRegular,
+  WeatherMoonRegular,
+  WeatherSunnyRegular,
 } from "@fluentui/react-icons";
 import { useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
@@ -40,6 +45,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api } from "../lib/api";
 import { useAuthStore } from "../store/auth";
+import { useThemeStore, type ThemeMode } from "../store/theme";
 
 const useStyles = makeStyles({
   shell: {
@@ -118,6 +124,7 @@ const useStyles = makeStyles({
     gap: "2px",
   },
   navItem: {
+    position: "relative",
     display: "flex",
     alignItems: "center",
     gap: "10px",
@@ -126,6 +133,8 @@ const useStyles = makeStyles({
     textDecoration: "none",
     color: tokens.colorNeutralForeground2,
     fontSize: tokens.fontSizeBase300,
+    transitionProperty: "background, color",
+    transitionDuration: "0.1s",
     ":hover": {
       background: tokens.colorNeutralBackground3,
       color: tokens.colorNeutralForeground1,
@@ -137,6 +146,17 @@ const useStyles = makeStyles({
     fontWeight: tokens.fontWeightSemibold,
     ":hover": {
       background: tokens.colorNeutralBackground3Hover,
+    },
+    // Fluent-style accent rail marking the active item
+    "::before": {
+      content: '""',
+      position: "absolute",
+      left: "0",
+      top: "8px",
+      bottom: "8px",
+      width: "3px",
+      borderRadius: "2px",
+      background: tokens.colorCompoundBrandForeground1,
     },
   },
   navSection: {
@@ -203,6 +223,14 @@ export function Layout() {
   const { user, clearAuth } = useAuthStore();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { t, i18n } = useTranslation();
+  const themeMode = useThemeStore((s) => s.mode);
+  const setThemeMode = useThemeStore((s) => s.setMode);
+
+  const themeIcons: Record<ThemeMode, React.ReactElement> = {
+    system: <DesktopRegular />,
+    light: <WeatherSunnyRegular />,
+    dark: <WeatherMoonRegular />,
+  };
 
   // Close sidebar on route change (mobile)
   useEffect(() => {
@@ -353,19 +381,59 @@ export function Layout() {
       </nav>
 
       <div className={styles.userArea}>
-        <Button
-          appearance="subtle"
-          icon={<LocalLanguageRegular />}
-          size="small"
-          onClick={toggleLanguage}
-          style={{
-            width: "100%",
-            justifyContent: "flex-start",
-            marginBottom: 8,
-          }}
-        >
-          {langLabel}
-        </Button>
+        <div style={{ display: "flex", gap: 4, marginBottom: 8 }}>
+          <Button
+            appearance="subtle"
+            icon={<LocalLanguageRegular />}
+            size="small"
+            onClick={toggleLanguage}
+            style={{ flex: 1, justifyContent: "flex-start" }}
+          >
+            {langLabel}
+          </Button>
+          <Menu
+            checkedValues={{ theme: [themeMode] }}
+            onCheckedValueChange={(_, data) => {
+              const next = data.checkedItems[0] as ThemeMode | undefined;
+              if (next) setThemeMode(next);
+            }}
+          >
+            <MenuTrigger disableButtonEnhancement>
+              <Tooltip content={t("theme.label")} relationship="label">
+                <Button
+                  appearance="subtle"
+                  size="small"
+                  icon={themeIcons[themeMode]}
+                />
+              </Tooltip>
+            </MenuTrigger>
+            <MenuPopover>
+              <MenuList>
+                <MenuItemRadio
+                  name="theme"
+                  value="system"
+                  icon={<DesktopRegular />}
+                >
+                  {t("theme.system")}
+                </MenuItemRadio>
+                <MenuItemRadio
+                  name="theme"
+                  value="light"
+                  icon={<WeatherSunnyRegular />}
+                >
+                  {t("theme.light")}
+                </MenuItemRadio>
+                <MenuItemRadio
+                  name="theme"
+                  value="dark"
+                  icon={<WeatherMoonRegular />}
+                >
+                  {t("theme.dark")}
+                </MenuItemRadio>
+              </MenuList>
+            </MenuPopover>
+          </Menu>
+        </div>
         <Menu>
           <MenuTrigger disableButtonEnhancement>
             <MenuButton

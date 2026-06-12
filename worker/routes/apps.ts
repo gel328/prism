@@ -26,7 +26,6 @@ import {
 } from "../lib/notifications";
 import type {
   OAuthAppRow,
-  TeamMemberRow,
   AppScopeDefinitionRow,
   AppScopeAccessRuleRow,
   AppAccessRuleRow,
@@ -153,19 +152,8 @@ const ROLE_RANK: Record<string, number> = {
   member: 1,
 };
 
-async function getTeamMember(
-  db: D1Database,
-  teamId: string,
-  userId: string,
-): Promise<TeamMemberRow | null> {
-  return db
-    .prepare("SELECT * FROM team_members WHERE team_id = ? AND user_id = ?")
-    .bind(teamId, userId)
-    .first<TeamMemberRow>();
-}
-
-/** Same shape as {@link getTeamMember} but returns the user's *effective*
- *  role on the team, including any role inherited from an ancestor team.
+/** Returns the user's *effective* role on the team, including any role
+ *  inherited from an ancestor team.
  *  Backs the canAccess() team-app gate so sub-team-owned apps respect the
  *  same inheritance rules the session API uses. */
 async function getEffectiveTeamMember(
@@ -1471,10 +1459,7 @@ app.post("/:id/access-rules", async (c) => {
       { error: "min_role must be one of: owner, co-owner, admin, member" },
       400,
     );
-  const minRole =
-    body.rule_type === "team"
-      ? body.min_role || "member"
-      : null;
+  const minRole = body.rule_type === "team" ? body.min_role || "member" : null;
 
   const now = Math.floor(Date.now() / 1000);
   const ruleId = randomId();

@@ -40,85 +40,19 @@ import { useQuery } from "@tanstack/react-query";
 import { startAuthentication } from "@simplewebauthn/browser";
 import { useTranslation } from "react-i18next";
 import { api, ApiError } from "../lib/api";
+import { AuthShell } from "../components/AuthShell";
 import { Captcha } from "../components/Captcha";
+import { PasswordInput } from "../components/PasswordInput";
 import type { CaptchaValue } from "../components/Captcha";
+import { ProviderButton } from "../components/ProviderButton";
 import { useAuthStore } from "../store/auth";
 import type { UserProfile } from "../lib/api";
 
 const useStyles = makeStyles({
-  page: {
-    minHeight: "100vh",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    background: tokens.colorNeutralBackground1,
-    padding: "16px",
-    boxSizing: "border-box",
-  },
-  card: {
-    width: "100%",
-    maxWidth: "400px",
-    padding: "40px",
-    borderRadius: "8px",
-    border: `1px solid ${tokens.colorNeutralStroke1}`,
-    background: tokens.colorNeutralBackground2,
-    display: "flex",
-    flexDirection: "column",
-    gap: "20px",
-  },
   form: { display: "flex", flexDirection: "column", gap: "12px" },
   providers: { display: "flex", flexDirection: "column", gap: "8px" },
   footer: { textAlign: "center" },
 });
-
-// Icon URL is pre-resolved and pre-proxied server-side (see worker
-// /api/site) because the public /proxy/image/register endpoint requires
-// auth — the anonymous Login page would otherwise silently get no icon.
-function ProviderButton({
-  provider,
-  onClick,
-}: {
-  provider: {
-    slug: string;
-    name: string;
-    icon_proxied_url?: string | null;
-    icon_invert_on_dark?: boolean;
-    icon_only?: 0 | 1 | 2;
-  };
-  onClick: () => void;
-}) {
-  // Server-trusted: icon_only is forced to 0 when no icon is renderable,
-  // so we never paint an empty button.
-  const iconOnly = provider.icon_only ?? 0;
-  const iconEl = provider.icon_proxied_url ? (
-    <img
-      src={provider.icon_proxied_url}
-      alt=""
-      width={16}
-      height={16}
-      className={
-        provider.icon_invert_on_dark
-          ? "provider-icon--invert-on-dark"
-          : undefined
-      }
-      style={{ display: "block" }}
-    />
-  ) : undefined;
-  // Mode 2 ("full-width") matches the shape of a text+icon button: same
-  // height as mode 0, but stretched to fill the column so the icon sits
-  // centered in a wide button rather than a compact square.
-  return (
-    <Button
-      appearance="outline"
-      onClick={onClick}
-      icon={iconEl}
-      aria-label={iconOnly !== 0 ? provider.name : undefined}
-      className={iconOnly === 2 ? "provider-button--full-width" : undefined}
-    >
-      {iconOnly !== 0 ? null : provider.name}
-    </Button>
-  );
-}
 
 export function Login() {
   const styles = useStyles();
@@ -182,7 +116,7 @@ export function Login() {
     setLoading(true);
     try {
       const res = await api.login({
-        identifier,
+        identifier: identifier.trim(),
         password,
         totp_code: totpRequired ? totpCode : undefined,
         ...captcha,
@@ -324,8 +258,8 @@ export function Login() {
   };
 
   return (
-    <div className={styles.page}>
-      <div className={styles.card}>
+    <AuthShell>
+      <>
         <Title2>
           {t("auth.signInTo", { siteName: site?.site_name ?? "Prism" })}
         </Title2>
@@ -345,11 +279,11 @@ export function Login() {
                   onChange={(e) => setIdentifier(e.target.value)}
                   placeholder="you@example.com"
                   autoComplete="username"
+                  autoFocus
                 />
               </Field>
               <Field label={t("auth.password")}>
-                <Input
-                  type="password"
+                <PasswordInput
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   autoComplete="current-password"
@@ -364,6 +298,7 @@ export function Login() {
                 placeholder={t("auth.twoFactorPlaceholder")}
                 maxLength={11}
                 autoFocus
+                autoComplete="one-time-code"
               />
             </Field>
           )}
@@ -379,9 +314,9 @@ export function Login() {
           )}
 
           {error && (
-            <Text style={{ color: tokens.colorPaletteRedForeground1 }}>
-              {error}
-            </Text>
+            <MessageBar intent="error">
+              <MessageBarBody>{error}</MessageBarBody>
+            </MessageBar>
           )}
 
           <Button
@@ -582,8 +517,7 @@ export function Login() {
                   </div>
                 </Field>
                 <Field label={t("security.gpgPassphrase")}>
-                  <Input
-                    type="password"
+                  <PasswordInput
                     value={gpgPassphrase}
                     onChange={(e) => setGpgPassphrase(e.target.value)}
                     placeholder={t("security.gpgPassphrasePlaceholder")}
@@ -656,7 +590,7 @@ export function Login() {
             <Link href="/register">{t("auth.signUp")}</Link>
           </div>
         )}
-      </div>
-    </div>
+      </>
+    </AuthShell>
   );
 }

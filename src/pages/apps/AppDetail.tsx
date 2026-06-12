@@ -1127,7 +1127,9 @@ export function AppDetail() {
 
   const [accessRuleTargetId, setAccessRuleTargetId] = useState("");
   const [accessRuleType, setAccessRuleType] = useState<"team" | "user">("team");
-  const [accessRuleMinRole, setAccessRuleMinRole] = useState<"owner" | "co-owner" | "admin" | "member">("member");
+  const [accessRuleMinRole, setAccessRuleMinRole] = useState<
+    "owner" | "co-owner" | "admin" | "member"
+  >("member");
 
   const addAccessRule = useMutation({
     mutationFn: () =>
@@ -1679,9 +1681,7 @@ export function AppDetail() {
                     ) : (
                       <Input
                         value={accessRuleTargetId}
-                        onChange={(e) =>
-                          setAccessRuleTargetId(e.target.value)
-                        }
+                        onChange={(e) => setAccessRuleTargetId(e.target.value)}
                         placeholder="user-id"
                       />
                     )}
@@ -1695,17 +1695,25 @@ export function AppDetail() {
                     <Dropdown
                       value={t(
                         `accessWhitelist.${
-                          ({
-                            owner: "roleOwner",
-                            "co-owner": "roleCoOwner",
-                            admin: "roleAdmin",
-                            member: "roleMember",
-                          } as Record<string, string>)[accessRuleMinRole]
+                          (
+                            {
+                              owner: "roleOwner",
+                              "co-owner": "roleCoOwner",
+                              admin: "roleAdmin",
+                              member: "roleMember",
+                            } as Record<string, string>
+                          )[accessRuleMinRole]
                         }`,
                       )}
                       selectedOptions={[accessRuleMinRole]}
                       onOptionSelect={(_, d) =>
-                        setAccessRuleMinRole((d.optionValue ?? "member") as "owner" | "co-owner" | "admin" | "member")
+                        setAccessRuleMinRole(
+                          (d.optionValue ?? "member") as
+                            | "owner"
+                            | "co-owner"
+                            | "admin"
+                            | "member",
+                        )
                       }
                     >
                       <Option value="owner">
@@ -1727,8 +1735,7 @@ export function AppDetail() {
                   appearance="primary"
                   disabled={
                     !accessRuleTargetId.trim() ||
-                    (accessRuleType === "team" &&
-                      !teamsData?.teams.length) ||
+                    (accessRuleType === "team" && !teamsData?.teams.length) ||
                     addAccessRule.isPending
                   }
                   onClick={() => addAccessRule.mutate()}
@@ -1777,9 +1784,9 @@ export function AppDetail() {
                       </Badge>
                       <Text size={300} style={{ flex: 1 }}>
                         {rule.rule_type === "team"
-                          ? teamsData?.teams.find(
+                          ? (teamsData?.teams.find(
                               (tm) => tm.id === rule.target_id,
-                            )?.name ?? rule.target_id
+                            )?.name ?? rule.target_id)
                           : rule.target_id}
                       </Text>
                       {rule.min_role && (
@@ -1789,14 +1796,14 @@ export function AppDetail() {
                         >
                           {t(
                             `accessWhitelist.${
-                              ({
-                                owner: "roleOwner",
-                                "co-owner": "roleCoOwner",
-                                admin: "roleAdmin",
-                                member: "roleMember",
-                              } as Record<string, string>)[
-                                rule.min_role
-                              ]
+                              (
+                                {
+                                  owner: "roleOwner",
+                                  "co-owner": "roleCoOwner",
+                                  admin: "roleAdmin",
+                                  member: "roleMember",
+                                } as Record<string, string>
+                              )[rule.min_role]
                             }`,
                           )}
                         </Text>

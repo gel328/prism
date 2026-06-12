@@ -23,29 +23,32 @@ import {
   TableHeaderCell,
   TableRow,
   Text,
-  Title2,
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
-import { AddRegular, CopyRegular, DeleteRegular } from "@fluentui/react-icons";
+import {
+  AddRegular,
+  CopyRegular,
+  DeleteRegular,
+  KeyRegular,
+} from "@fluentui/react-icons";
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api, ApiError } from "../lib/api";
+import { EmptyState } from "../components/EmptyState";
+import { PageHeader } from "../components/PageHeader";
 import { SkeletonTableRows } from "../components/Skeletons";
 
 const useStyles = makeStyles({
-  header: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: "24px",
-  },
   card: {
     border: `1px solid ${tokens.colorNeutralStroke1}`,
     borderRadius: "8px",
     padding: "24px",
     background: tokens.colorNeutralBackground2,
+    // Let the table scroll sideways on narrow screens instead of
+    // overflowing the page
+    overflowX: "auto",
   },
   tokenRow: {
     display: "flex",
@@ -168,135 +171,132 @@ export function Tokens() {
     setErr(null);
   };
 
+  const createDialog = (
+    <Dialog
+      open={open}
+      onOpenChange={(_, d) => {
+        setOpen(d.open);
+        if (!d.open) resetDialog();
+      }}
+    >
+      <DialogTrigger disableButtonEnhancement>
+        <Button appearance="primary" icon={<AddRegular />}>
+          {t("tokens.createToken")}
+        </Button>
+      </DialogTrigger>
+      <DialogSurface>
+        <DialogBody>
+          <DialogTitle>
+            {newToken ? t("tokens.tokenCreated") : t("tokens.createToken")}
+          </DialogTitle>
+          <DialogContent>
+            {newToken ? (
+              <div>
+                <MessageBar intent="warning" style={{ marginBottom: 12 }}>
+                  {t("tokens.saveWarning")}
+                </MessageBar>
+                <div className={styles.tokenRow}>
+                  <Text style={{ flex: 1, fontFamily: "monospace" }}>
+                    {newToken}
+                  </Text>
+                  <Button
+                    icon={<CopyRegular />}
+                    size="small"
+                    appearance="subtle"
+                    onClick={() => copy(newToken)}
+                  >
+                    {copied ? t("tokens.copied") : t("common.copy")}
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 12,
+                }}
+              >
+                {err && <MessageBar intent="error">{err}</MessageBar>}
+                <Field label={t("tokens.tokenName")} required>
+                  <Input
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder={t("tokens.tokenNamePlaceholder")}
+                  />
+                </Field>
+                <Field label={t("tokens.expiry")}>
+                  <Select
+                    value={expiry}
+                    onChange={(_, d) => setExpiry(d.value)}
+                  >
+                    {EXPIRY_OPTIONS.map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+                <Field label={t("tokens.scopes")}>
+                  <div className={styles.scopeGrid}>
+                    {ALL_SCOPES.map((s) => (
+                      <Checkbox
+                        key={s}
+                        id={`token-scope-${s}`}
+                        label={s}
+                        checked={scopes.includes(s)}
+                        onChange={(_, d) => {
+                          setScopes(
+                            d.checked
+                              ? [...scopes, s]
+                              : scopes.filter((x) => x !== s),
+                          );
+                        }}
+                      />
+                    ))}
+                  </div>
+                </Field>
+              </div>
+            )}
+          </DialogContent>
+          <DialogActions>
+            <DialogTrigger>
+              <Button>
+                {newToken ? t("common.close") : t("common.cancel")}
+              </Button>
+            </DialogTrigger>
+            {!newToken && (
+              <Button
+                appearance="primary"
+                onClick={handleCreate}
+                disabled={creating || !name.trim() || scopes.length === 0}
+              >
+                {creating ? <Spinner size="tiny" /> : t("tokens.generate")}
+              </Button>
+            )}
+          </DialogActions>
+        </DialogBody>
+      </DialogSurface>
+    </Dialog>
+  );
+
   return (
     <div>
-      <div className={styles.header}>
-        <Title2>{t("tokens.title")}</Title2>
-        <Dialog
-          open={open}
-          onOpenChange={(_, d) => {
-            setOpen(d.open);
-            if (!d.open) resetDialog();
-          }}
-        >
-          <DialogTrigger disableButtonEnhancement>
-            <Button appearance="primary" icon={<AddRegular />}>
-              {t("tokens.createToken")}
-            </Button>
-          </DialogTrigger>
-          <DialogSurface>
-            <DialogBody>
-              <DialogTitle>
-                {newToken ? t("tokens.tokenCreated") : t("tokens.createToken")}
-              </DialogTitle>
-              <DialogContent>
-                {newToken ? (
-                  <div>
-                    <MessageBar intent="warning" style={{ marginBottom: 12 }}>
-                      {t("tokens.saveWarning")}
-                    </MessageBar>
-                    <div className={styles.tokenRow}>
-                      <Text style={{ flex: 1, fontFamily: "monospace" }}>
-                        {newToken}
-                      </Text>
-                      <Button
-                        icon={<CopyRegular />}
-                        size="small"
-                        appearance="subtle"
-                        onClick={() => copy(newToken)}
-                      >
-                        {copied ? t("tokens.copied") : t("common.copy")}
-                      </Button>
-                    </div>
-                  </div>
-                ) : (
-                  <div
-                    style={{
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: 12,
-                    }}
-                  >
-                    {err && <MessageBar intent="error">{err}</MessageBar>}
-                    <Field label={t("tokens.tokenName")} required>
-                      <Input
-                        value={name}
-                        onChange={(e) => setName(e.target.value)}
-                        placeholder={t("tokens.tokenNamePlaceholder")}
-                      />
-                    </Field>
-                    <Field label={t("tokens.expiry")}>
-                      <Select
-                        value={expiry}
-                        onChange={(_, d) => setExpiry(d.value)}
-                      >
-                        {EXPIRY_OPTIONS.map((o) => (
-                          <option key={o.value} value={o.value}>
-                            {o.label}
-                          </option>
-                        ))}
-                      </Select>
-                    </Field>
-                    <Field label={t("tokens.scopes")}>
-                      <div className={styles.scopeGrid}>
-                        {ALL_SCOPES.map((s) => (
-                          <Checkbox
-                            key={s}
-                            id={`token-scope-${s}`}
-                            label={s}
-                            checked={scopes.includes(s)}
-                            onChange={(_, d) => {
-                              setScopes(
-                                d.checked
-                                  ? [...scopes, s]
-                                  : scopes.filter((x) => x !== s),
-                              );
-                            }}
-                          />
-                        ))}
-                      </div>
-                    </Field>
-                  </div>
-                )}
-              </DialogContent>
-              <DialogActions>
-                <DialogTrigger>
-                  <Button>
-                    {newToken ? t("common.close") : t("common.cancel")}
-                  </Button>
-                </DialogTrigger>
-                {!newToken && (
-                  <Button
-                    appearance="primary"
-                    onClick={handleCreate}
-                    disabled={creating || !name.trim() || scopes.length === 0}
-                  >
-                    {creating ? <Spinner size="tiny" /> : t("tokens.generate")}
-                  </Button>
-                )}
-              </DialogActions>
-            </DialogBody>
-          </DialogSurface>
-        </Dialog>
-      </div>
-
-      <Text
-        style={{
-          color: tokens.colorNeutralForeground3,
-          display: "block",
-          marginBottom: 20,
-        }}
-      >
-        {t("tokens.subtitle")}
-      </Text>
+      <PageHeader
+        title={t("tokens.title")}
+        subtitle={t("tokens.subtitle")}
+        actions={createDialog}
+      />
 
       <div className={styles.card}>
         {isLoading ? (
           <SkeletonTableRows rows={5} cols={5} />
         ) : !data?.tokens.length ? (
-          <Text style={{ color: tokens.colorNeutralForeground3 }}>
-            {t("tokens.noTokens")}
-          </Text>
+          <EmptyState
+            icon={<KeyRegular />}
+            title={t("tokens.noTokens")}
+            description={t("tokens.subtitle")}
+          />
         ) : (
           <Table>
             <TableHeader>

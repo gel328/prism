@@ -87,11 +87,14 @@ export async function verifyTotp(
   window = 1,
   timestampMs = Date.now(),
 ): Promise<boolean> {
+  // Authenticator apps display codes as "123 456"; tolerate pasted
+  // whitespace so the comparison sees only the digits.
+  const normalized = token.replace(/\s+/g, "");
   const secretBytes = base32ToBytes(secret);
   const counter = BigInt(Math.floor(timestampMs / 30_000));
   for (let i = -window; i <= window; i++) {
     const code = await hotp(secretBytes, counter + BigInt(i));
-    if (code.toString().padStart(6, "0") === token) return true;
+    if (code.toString().padStart(6, "0") === normalized) return true;
   }
   return false;
 }
@@ -150,7 +153,8 @@ export async function verifyAnyTotp(
     .first<{ user_id: string; backup_codes: string; updated_at: number }>();
   if (recovery) {
     const codes = JSON.parse(recovery.backup_codes) as string[];
-    const normalized = code.replace(/-/g, "").toUpperCase();
+    // Tolerate pasted whitespace alongside the optional hyphen
+    const normalized = code.replace(/[\s-]/g, "").toUpperCase();
     let idx = -1;
     for (let i = 0; i < codes.length; i++) {
       const stored = codes[i];

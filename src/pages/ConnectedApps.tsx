@@ -15,9 +15,9 @@ import {
   DialogSurface,
   DialogTitle,
   DialogTrigger,
+  MessageBar,
   Spinner,
   Text,
-  Title2,
   Tooltip,
   makeStyles,
   tokens,
@@ -34,6 +34,8 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api, ApiError, type OAuthConsent, type OAuthToken } from "../lib/api";
+import { EmptyState } from "../components/EmptyState";
+import { PageHeader } from "../components/PageHeader";
 import { SkeletonConsentCards } from "../components/Skeletons";
 
 const useStyles = makeStyles({
@@ -418,28 +420,18 @@ export function ConnectedApps() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-      <div>
-        <Title2>{t("connectedApps.title")}</Title2>
-        <Text
-          block
-          style={{ color: tokens.colorNeutralForeground3, marginTop: 4 }}
-        >
-          {t("connectedApps.description")}
-        </Text>
-      </div>
+      <PageHeader
+        title={t("connectedApps.title")}
+        subtitle={t("connectedApps.description")}
+        style={{ marginBottom: 0 }}
+      />
 
-      {error && (
-        <Text style={{ color: tokens.colorPaletteRedForeground1 }}>
-          {error}
-        </Text>
-      )}
+      {error && <MessageBar intent="error">{error}</MessageBar>}
 
       {isLoading ? (
         <SkeletonConsentCards count={3} />
       ) : consents.length === 0 ? (
-        <Text style={{ color: tokens.colorNeutralForeground3 }}>
-          {t("connectedApps.noApps")}
-        </Text>
+        <EmptyState icon={<GlobeRegular />} title={t("connectedApps.noApps")} />
       ) : (
         <div className={styles.list}>
           {consents.map((consent) => (

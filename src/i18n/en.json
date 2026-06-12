@@ -2,6 +2,8 @@
   "common": {
     "cancel": "Cancel",
     "save": "Save",
+    "showPassword": "Show password",
+    "hidePassword": "Hide password",
     "delete": "Delete",
     "close": "Close",
     "add": "Add",
@@ -82,6 +84,8 @@
     "passkeyFailed": "Passkey authentication failed",
     "gpgFailed": "GPG authentication failed",
     "loginFailed": "Login failed",
+    "registrationFailed": "Registration failed",
+    "registrationSuccessEmail": "Registration successful! Please check your email to verify your account.",
     "emailOrUsernameRequired": "Please enter your email or username first",
     "errorInvalidToken": "This link is invalid or has expired. Please sign in again.",
     "errorNoToken": "No authentication token was provided. Please sign in again.",
@@ -114,7 +118,8 @@
     "errorDesc": "Something went wrong loading this profile.",
     "gpgKeysHeading": "{{count}} GPG key",
     "gpgKeysHeading_other": "{{count}} GPG keys",
-    "gpgKeysHint": "Fetch the armored public keys at /users/{{username}}.gpg",
+    "gpgKeysDownload": "Download armored public keys",
+    "copyFingerprint": "Copy fingerprint",
     "ownedAppsHeading": "{{count}} app",
     "ownedAppsHeading_other": "{{count}} apps",
     "authorizedAppsHeading": "Connected to {{count}} app",
@@ -297,6 +302,11 @@
     "gpgPublicKeyPlaceholder": "-----BEGIN PGP PUBLIC KEY BLOCK-----\n...\n-----END PGP PUBLIC KEY BLOCK-----",
     "addGpgKey": "Add key",
     "gpgKeyAdded": "GPG key added",
+    "gpgKeysAdded": "{{count}} GPG key added.",
+    "gpgKeysAdded_other": "{{count}} GPG keys added.",
+    "gpgKeysSkipped": "{{count}} duplicate skipped.",
+    "gpgKeysSkipped_other": "{{count}} duplicates skipped.",
+    "gpgMultiKeyHint": "You can paste several public keys at once — each is added separately.",
     "gpgKeyAddFailed": "Failed to add GPG key",
     "gpgKeyRemoved": "GPG key removed",
     "gpgKeyRemoveFailed": "Failed to remove GPG key",
@@ -1512,6 +1522,22 @@
   "language": {
     "switchToZh": "中文",
     "switchToEn": "English"
+  },
+  "theme": {
+    "label": "Theme",
+    "system": "System",
+    "light": "Light",
+    "dark": "Dark"
+  },
+  "captcha": {
+    "turnstileFailed": "Turnstile verification failed",
+    "recaptchaFailed": "reCAPTCHA verification failed",
+    "powFailed": "Couldn't solve the proof-of-work challenge",
+    "powFailedShort": "Challenge failed.",
+    "powPreparing": "Preparing challenge…",
+    "powSolving": "Solving proof-of-work challenge…",
+    "powSolved": "Challenge solved",
+    "retry": "Retry"
   },
   "imageUrl": {
     "httpsRequired": "Image URL must use HTTPS",

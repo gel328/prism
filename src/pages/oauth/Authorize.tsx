@@ -31,6 +31,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api, ApiError } from "../../lib/api";
+import { AuthShell } from "../../components/AuthShell";
 import { useAuthStore } from "../../store/auth";
 
 const useStyles = makeStyles({
@@ -42,17 +43,6 @@ const useStyles = makeStyles({
     background: tokens.colorNeutralBackground1,
     padding: "16px",
     boxSizing: "border-box",
-  },
-  card: {
-    width: "100%",
-    maxWidth: "440px",
-    padding: "40px",
-    borderRadius: "8px",
-    border: `1px solid ${tokens.colorNeutralStroke1}`,
-    background: tokens.colorNeutralBackground2,
-    display: "flex",
-    flexDirection: "column",
-    gap: "24px",
   },
   appRow: {
     display: "flex",
@@ -80,7 +70,8 @@ const useStyles = makeStyles({
   },
   divider: {
     borderTop: `1px solid ${tokens.colorNeutralStroke1}`,
-    margin: "0 -40px",
+    // Full-bleed across the AuthShell card regardless of its padding
+    margin: "0 calc(-1 * var(--auth-card-pad, 40px))",
   },
   siteScopeWarning: {
     padding: "16px",
@@ -146,8 +137,7 @@ export function Authorize() {
       error.status === 403 &&
       typeof error.data === "object" &&
       error.data !== null &&
-      (error.data as Record<string, unknown>).error ===
-        "unauthorized_whitelist"
+      (error.data as Record<string, unknown>).error === "unauthorized_whitelist"
     ) {
       const appName = (error.data as Record<string, unknown>).app_name ?? "";
       navigate(`/unauthorized?app_name=${encodeURIComponent(String(appName))}`);
@@ -378,16 +368,14 @@ export function Authorize() {
 
   if (error || !data) {
     return (
-      <div className={styles.page}>
-        <div className={styles.card}>
-          <Title2>{t("oauth.authorizationError")}</Title2>
-          <Text style={{ color: tokens.colorPaletteRedForeground1 }}>
-            {error instanceof ApiError
-              ? error.message
-              : t("oauth.invalidRequest")}
-          </Text>
-        </div>
-      </div>
+      <AuthShell maxWidth={440} cardGap={24}>
+        <Title2>{t("oauth.authorizationError")}</Title2>
+        <Text style={{ color: tokens.colorPaletteRedForeground1 }}>
+          {error instanceof ApiError
+            ? error.message
+            : t("oauth.invalidRequest")}
+        </Text>
+      </AuthShell>
     );
   }
 
@@ -527,8 +515,8 @@ export function Authorize() {
   };
 
   return (
-    <div className={styles.page}>
-      <div className={styles.card}>
+    <AuthShell maxWidth={440} cardGap={24}>
+      <>
         <Title2>{t("oauth.authorizationRequest")}</Title2>
 
         {/* App info */}
@@ -827,6 +815,7 @@ export function Authorize() {
                             }}
                             placeholder="000000"
                             maxLength={8}
+                            autoComplete="one-time-code"
                             style={{
                               fontFamily: "monospace",
                               letterSpacing: 4,
@@ -1243,7 +1232,7 @@ export function Authorize() {
         >
           {t("oauth.footerNote", { appName: data.app.name })}
         </Text>
-      </div>
-    </div>
+      </>
+    </AuthShell>
   );
 }

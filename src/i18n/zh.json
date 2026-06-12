@@ -2,6 +2,8 @@
   "common": {
     "cancel": "取消",
     "save": "保存",
+    "showPassword": "显示密码",
+    "hidePassword": "隐藏密码",
     "delete": "删除",
     "close": "关闭",
     "add": "添加",
@@ -82,6 +84,8 @@
     "passkeyFailed": "通行密钥验证失败",
     "gpgFailed": "GPG 验证失败",
     "loginFailed": "登录失败",
+    "registrationFailed": "注册失败",
+    "registrationSuccessEmail": "注册成功！请查收邮件以验证您的账户。",
     "emailOrUsernameRequired": "请先输入您的邮箱或用户名",
     "errorInvalidToken": "此链接无效或已过期，请重新登录。",
     "errorNoToken": "未提供认证令牌，请重新登录。",
@@ -114,7 +118,8 @@
     "errorDesc": "加载资料时出错。",
     "gpgKeysHeading": "{{count}} 个 GPG 公钥",
     "gpgKeysHeading_other": "{{count}} 个 GPG 公钥",
-    "gpgKeysHint": "可从 /users/{{username}}.gpg 获取公钥的 armored 文本",
+    "gpgKeysDownload": "下载 armored 格式公钥",
+    "copyFingerprint": "复制指纹",
     "ownedAppsHeading": "{{count}} 个应用",
     "ownedAppsHeading_other": "{{count}} 个应用",
     "authorizedAppsHeading": "已连接 {{count}} 个应用",
@@ -297,6 +302,11 @@
     "gpgPublicKeyPlaceholder": "-----BEGIN PGP PUBLIC KEY BLOCK-----\n...\n-----END PGP PUBLIC KEY BLOCK-----",
     "addGpgKey": "添加密钥",
     "gpgKeyAdded": "GPG 密钥已添加",
+    "gpgKeysAdded": "已添加 {{count}} 个 GPG 密钥。",
+    "gpgKeysAdded_other": "已添加 {{count}} 个 GPG 密钥。",
+    "gpgKeysSkipped": "已跳过 {{count}} 个重复密钥。",
+    "gpgKeysSkipped_other": "已跳过 {{count}} 个重复密钥。",
+    "gpgMultiKeyHint": "可一次粘贴多个公钥，它们会被分别添加。",
     "gpgKeyAddFailed": "添加 GPG 密钥失败",
     "gpgKeyRemoved": "GPG 密钥已移除",
     "gpgKeyRemoveFailed": "移除 GPG 密钥失败",
@@ -1512,6 +1522,22 @@
   "language": {
     "switchToZh": "中文",
     "switchToEn": "English"
+  },
+  "theme": {
+    "label": "主题",
+    "system": "跟随系统",
+    "light": "浅色",
+    "dark": "深色"
+  },
+  "captcha": {
+    "turnstileFailed": "Turnstile 验证失败",
+    "recaptchaFailed": "reCAPTCHA 验证失败",
+    "powFailed": "无法完成工作量证明挑战",
+    "powFailedShort": "挑战失败。",
+    "powPreparing": "正在准备挑战…",
+    "powSolving": "正在求解工作量证明挑战…",
+    "powSolved": "挑战已完成",
+    "retry": "重试"
   },
   "imageUrl": {
     "httpsRequired": "图片 URL 必须使用 HTTPS",

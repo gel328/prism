@@ -1205,7 +1205,7 @@ app.delete("/:id/members/:userId", async (c) => {
   const targetUserId = c.req.param("userId");
 
   const isSelf = targetUserId === user.id;
-  let actorRole: string | null = null;
+  let actorRole: string;
   if (isSelf) {
     const direct = await getMember(c.env.DB, id, user.id);
     if (!direct)

@@ -35,6 +35,9 @@ import { CopyIdButton } from "../../components/CopyIdButton";
 import { SkeletonTableRows } from "../../components/Skeletons";
 
 const useStyles = makeStyles({
+  // Let the table scroll sideways on narrow screens instead of
+  // overflowing the page
+  tableScroll: { overflowX: "auto" },
   detailGrid: {
     display: "grid",
     gridTemplateColumns: "1fr 1fr",
@@ -109,132 +112,140 @@ export function AdminApps() {
       {isLoading ? (
         <SkeletonTableRows rows={8} cols={4} />
       ) : (
-        <Table style={{ tableLayout: "auto" }}>
-          <TableHeader>
-            <TableRow>
-              <TableHeaderCell>{t("admin.appHeader")}</TableHeaderCell>
-              <TableHeaderCell>{t("admin.ownerHeader")}</TableHeaderCell>
-              <TableHeaderCell>{t("admin.statusHeader")}</TableHeaderCell>
-              <TableHeaderCell style={{ width: 1 }} />
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {data?.apps.map((app) => (
-              <TableRow key={app.id}>
-                <TableCell>
-                  <div
-                    style={{ display: "flex", alignItems: "center", gap: 8 }}
-                  >
-                    {app.icon_url && (
-                      <Image
-                        src={app.icon_url}
-                        alt={app.name}
-                        shape="rounded"
-                        fit="cover"
-                        width={24}
-                        height={24}
-                      />
-                    )}
-                    <div>
+        <div className={styles.tableScroll}>
+          <Table style={{ tableLayout: "auto" }}>
+            <TableHeader>
+              <TableRow>
+                <TableHeaderCell>{t("admin.appHeader")}</TableHeaderCell>
+                <TableHeaderCell>{t("admin.ownerHeader")}</TableHeaderCell>
+                <TableHeaderCell>{t("admin.statusHeader")}</TableHeaderCell>
+                <TableHeaderCell style={{ width: 1 }} />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {data?.apps.map((app) => (
+                <TableRow key={app.id}>
+                  <TableCell>
+                    <div
+                      style={{ display: "flex", alignItems: "center", gap: 8 }}
+                    >
+                      {app.icon_url && (
+                        <Image
+                          src={app.icon_url}
+                          alt={app.name}
+                          shape="rounded"
+                          fit="cover"
+                          width={24}
+                          height={24}
+                        />
+                      )}
+                      <div>
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 4,
+                          }}
+                        >
+                          <Text weight="semibold">{app.name}</Text>
+                          {!!app.is_official && (
+                            <Badge color="brand" appearance="tint" size="small">
+                              {t("admin.officialHeader")}
+                            </Badge>
+                          )}
+                          {!!app.is_first_party && (
+                            <Badge
+                              color="informative"
+                              appearance="tint"
+                              size="small"
+                            >
+                              {t("admin.firstPartyHeader")}
+                            </Badge>
+                          )}
+                        </div>
+                        <Text
+                          size={200}
+                          style={{ color: tokens.colorNeutralForeground3 }}
+                        >
+                          {app.description?.slice(0, 40)}
+                        </Text>
+                      </div>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    {app.team_id ? (
                       <div
                         style={{
                           display: "flex",
                           alignItems: "center",
-                          gap: 4,
+                          gap: 6,
                         }}
                       >
-                        <Text weight="semibold">{app.name}</Text>
-                        {!!app.is_official && (
-                          <Badge color="brand" appearance="tint" size="small">
-                            {t("admin.officialHeader")}
-                          </Badge>
-                        )}
-                        {!!app.is_first_party && (
-                          <Badge
-                            color="informative"
-                            appearance="tint"
-                            size="small"
-                          >
-                            {t("admin.firstPartyHeader")}
-                          </Badge>
-                        )}
+                        {app.team_avatar_url ? (
+                          <Image
+                            src={app.team_avatar_url}
+                            alt=""
+                            shape="rounded"
+                            fit="cover"
+                            width={16}
+                            height={16}
+                          />
+                        ) : null}
+                        <Text size={200} weight="semibold">
+                          {app.team_name ?? t("admin.teamHeader")}
+                        </Text>
+                        <Badge color="brand" appearance="tint" size="small">
+                          {t("admin.teamHeader")}
+                        </Badge>
                       </div>
-                      <Text
-                        size={200}
-                        style={{ color: tokens.colorNeutralForeground3 }}
+                    ) : (
+                      <Text size={200}>
+                        {app.owner_username ? `@${app.owner_username}` : "—"}
+                      </Text>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                      <Badge
+                        color={app.is_active ? "success" : "subtle"}
+                        appearance="filled"
+                        size="small"
                       >
-                        {app.description?.slice(0, 40)}
-                      </Text>
-                    </div>
-                  </div>
-                </TableCell>
-                <TableCell>
-                  {app.team_id ? (
-                    <div
-                      style={{ display: "flex", alignItems: "center", gap: 6 }}
-                    >
-                      {app.team_avatar_url ? (
-                        <Image
-                          src={app.team_avatar_url}
-                          alt=""
-                          shape="rounded"
-                          fit="cover"
-                          width={16}
-                          height={16}
-                        />
-                      ) : null}
-                      <Text size={200} weight="semibold">
-                        {app.team_name ?? t("admin.teamHeader")}
-                      </Text>
-                      <Badge color="brand" appearance="tint" size="small">
-                        {t("admin.teamHeader")}
+                        {app.is_active
+                          ? t("admin.activeStatus")
+                          : t("admin.disabledStatus")}
+                      </Badge>
+                      <Badge
+                        color={app.is_verified ? "success" : "subtle"}
+                        appearance="filled"
+                        size="small"
+                      >
+                        {app.is_verified
+                          ? t("admin.verifiedBadge")
+                          : t("admin.unverifiedBadge")}
                       </Badge>
                     </div>
-                  ) : (
-                    <Text size={200}>
-                      {app.owner_username ? `@${app.owner_username}` : "—"}
-                    </Text>
-                  )}
-                </TableCell>
-                <TableCell>
-                  <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-                    <Badge
-                      color={app.is_active ? "success" : "subtle"}
-                      appearance="filled"
-                      size="small"
+                  </TableCell>
+                  <TableCell>
+                    <div
+                      style={{ display: "flex", justifyContent: "flex-end" }}
                     >
-                      {app.is_active
-                        ? t("admin.activeStatus")
-                        : t("admin.disabledStatus")}
-                    </Badge>
-                    <Badge
-                      color={app.is_verified ? "success" : "subtle"}
-                      appearance="filled"
-                      size="small"
-                    >
-                      {app.is_verified
-                        ? t("admin.verifiedBadge")
-                        : t("admin.unverifiedBadge")}
-                    </Badge>
-                  </div>
-                </TableCell>
-                <TableCell>
-                  <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                    <CopyIdButton id={app.id} />
-                    <Button
-                      size="small"
-                      appearance="subtle"
-                      icon={<EditRegular />}
-                      onClick={() =>
-                        openEdit(app as unknown as Record<string, unknown>)
-                      }
-                    />
-                  </div>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+                      <CopyIdButton id={app.id} />
+                      <Button
+                        size="small"
+                        appearance="subtle"
+                        icon={<EditRegular />}
+                        onClick={() =>
+                          openEdit(app as unknown as Record<string, unknown>)
+                        }
+                      />
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
       )}
 
       {totalPages > 1 && (

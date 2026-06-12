@@ -4,6 +4,7 @@ import {
   Button,
   Field,
   Input,
+  MessageBar,
   Spinner,
   Text,
   Title1,
@@ -14,30 +15,12 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { api, ApiError } from "../lib/api";
+import { AuthShell } from "../components/AuthShell";
+import { PasswordInput } from "../components/PasswordInput";
 import { useAuthStore } from "../store/auth";
 import type { UserProfile } from "../lib/api";
 
 const useStyles = makeStyles({
-  page: {
-    minHeight: "100vh",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    background: tokens.colorNeutralBackground1,
-    padding: "16px",
-    boxSizing: "border-box",
-  },
-  card: {
-    width: "100%",
-    maxWidth: "400px",
-    padding: "40px",
-    borderRadius: "8px",
-    border: `1px solid ${tokens.colorNeutralStroke1}`,
-    background: tokens.colorNeutralBackground2,
-    display: "flex",
-    flexDirection: "column",
-    gap: "20px",
-  },
   header: {
     display: "flex",
     flexDirection: "column",
@@ -93,7 +76,13 @@ export function Init() {
     setError("");
     setLoading(true);
     try {
-      const res = await api.init(form);
+      const res = await api.init({
+        ...form,
+        site_name: form.site_name.trim(),
+        email: form.email.trim(),
+        username: form.username.trim(),
+        display_name: form.display_name.trim(),
+      });
       setAuth(res.token, res.user as UserProfile);
       navigate("/");
     } catch (err) {
@@ -104,8 +93,8 @@ export function Init() {
   };
 
   return (
-    <div className={styles.page}>
-      <div className={styles.card}>
+    <AuthShell hideBrand>
+      <>
         <div className={styles.header}>
           <Text className={styles.badge}>{t("init.firstRunSetup")}</Text>
           <Title1>{t("init.welcomeToPrism")}</Title1>
@@ -148,19 +137,15 @@ export function Init() {
           </Field>
 
           <Field label={t("init.password")} required>
-            <Input
-              type="password"
+            <PasswordInput
               value={form.password}
               onChange={update("password")}
               placeholder={t("init.passwordPlaceholder")}
+              autoComplete="new-password"
             />
           </Field>
 
-          {error && (
-            <Text style={{ color: tokens.colorPaletteRedForeground1 }}>
-              {error}
-            </Text>
-          )}
+          {error && <MessageBar intent="error">{error}</MessageBar>}
 
           <Button
             appearance="primary"
@@ -171,7 +156,7 @@ export function Init() {
             {loading ? t("init.creating") : t("init.createAdminAccount")}
           </Button>
         </form>
-      </div>
-    </div>
+      </>
+    </AuthShell>
   );
 }

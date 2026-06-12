@@ -34,15 +34,21 @@ import {
   ArrowSyncRegular,
   DeleteRegular,
   EditRegular,
+  PlugConnectedRegular,
   SearchRegular,
 } from "@fluentui/react-icons";
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api, ApiError, type OAuthSource } from "../../lib/api";
+import { EmptyState } from "../../components/EmptyState";
+import { PasswordInput } from "../../components/PasswordInput";
 import { SkeletonTableRows } from "../../components/Skeletons";
 
 const useStyles = makeStyles({
+  // Let the table scroll sideways on narrow screens instead of
+  // overflowing the page
+  tableScroll: { overflowX: "auto" },
   section: {
     display: "flex",
     flexDirection: "column",
@@ -420,8 +426,7 @@ export function AdminConnections() {
 
         <div className={styles.formFull}>
           <Field label={t("admin.oauthClientSecret")} required>
-            <Input
-              type="password"
+            <PasswordInput
               value={form.client_secret}
               onChange={(e) =>
                 setForm((f) => ({ ...f, client_secret: e.target.value }))
@@ -533,15 +538,9 @@ export function AdminConnections() {
                     </Button>
                   </div>
                   {discoverError && (
-                    <Text
-                      style={{
-                        color: tokens.colorPaletteRedForeground1,
-                        fontSize: "12px",
-                        marginTop: "4px",
-                      }}
-                    >
+                    <MessageBar intent="error" style={{ marginTop: 4 }}>
                       {discoverError}
-                    </Text>
+                    </MessageBar>
                   )}
                 </Field>
               </div>
@@ -617,56 +616,59 @@ export function AdminConnections() {
       {isLoading ? (
         <SkeletonTableRows rows={5} cols={5} />
       ) : !data?.sources.length ? (
-        <Text style={{ color: tokens.colorNeutralForeground3 }}>
-          {t("admin.oauthNoSources")}
-        </Text>
+        <EmptyState
+          icon={<PlugConnectedRegular />}
+          title={t("admin.oauthNoSources")}
+        />
       ) : (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHeaderCell>{t("admin.oauthSlug")}</TableHeaderCell>
-              <TableHeaderCell>{t("admin.oauthProvider")}</TableHeaderCell>
-              <TableHeaderCell>{t("admin.oauthName")}</TableHeaderCell>
-              <TableHeaderCell>{t("common.enabled")}</TableHeaderCell>
-              <TableHeaderCell />
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {data.sources.map((src) => (
-              <TableRow key={src.id}>
-                <TableCell>
-                  <Text font="monospace">{src.slug}</Text>
-                </TableCell>
-                <TableCell>
-                  <Badge color="informative">
-                    {PROVIDER_LABEL[src.provider] ?? src.provider}
-                  </Badge>
-                </TableCell>
-                <TableCell>{src.name}</TableCell>
-                <TableCell>
-                  <Switch
-                    checked={src.enabled === 1}
-                    onChange={() => handleToggle(src)}
-                  />
-                </TableCell>
-                <TableCell>
-                  <Button
-                    icon={<EditRegular />}
-                    appearance="subtle"
-                    size="small"
-                    onClick={() => openEdit(src)}
-                  />
-                  <Button
-                    icon={<DeleteRegular />}
-                    appearance="subtle"
-                    size="small"
-                    onClick={() => setDeleteTarget(src)}
-                  />
-                </TableCell>
+        <div className={styles.tableScroll}>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHeaderCell>{t("admin.oauthSlug")}</TableHeaderCell>
+                <TableHeaderCell>{t("admin.oauthProvider")}</TableHeaderCell>
+                <TableHeaderCell>{t("admin.oauthName")}</TableHeaderCell>
+                <TableHeaderCell>{t("common.enabled")}</TableHeaderCell>
+                <TableHeaderCell />
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+            </TableHeader>
+            <TableBody>
+              {data.sources.map((src) => (
+                <TableRow key={src.id}>
+                  <TableCell>
+                    <Text font="monospace">{src.slug}</Text>
+                  </TableCell>
+                  <TableCell>
+                    <Badge color="informative">
+                      {PROVIDER_LABEL[src.provider] ?? src.provider}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>{src.name}</TableCell>
+                  <TableCell>
+                    <Switch
+                      checked={src.enabled === 1}
+                      onChange={() => handleToggle(src)}
+                    />
+                  </TableCell>
+                  <TableCell>
+                    <Button
+                      icon={<EditRegular />}
+                      appearance="subtle"
+                      size="small"
+                      onClick={() => openEdit(src)}
+                    />
+                    <Button
+                      icon={<DeleteRegular />}
+                      appearance="subtle"
+                      size="small"
+                      onClick={() => setDeleteTarget(src)}
+                    />
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
       )}
 
       {/* Edit dialog */}
@@ -703,8 +705,7 @@ export function AdminConnections() {
                 label={t("admin.oauthClientSecret")}
                 hint={t("admin.oauthLeaveBlankToKeep")}
               >
-                <Input
-                  type="password"
+                <PasswordInput
                   value={editForm.client_secret}
                   onChange={(e) =>
                     setEditForm((f) => ({
@@ -814,15 +815,9 @@ export function AdminConnections() {
                         </Button>
                       </div>
                       {editDiscoverError && (
-                        <Text
-                          style={{
-                            color: tokens.colorPaletteRedForeground1,
-                            fontSize: "12px",
-                            marginTop: "4px",
-                          }}
-                        >
+                        <MessageBar intent="error" style={{ marginTop: 4 }}>
                           {editDiscoverError}
-                        </Text>
+                        </MessageBar>
                       )}
                     </Field>
                   )}

@@ -10,7 +10,6 @@ import {
   TableHeader,
   TableHeaderCell,
   TableRow,
-  Text,
   Tooltip,
   makeStyles,
   tokens,
@@ -20,9 +19,11 @@ import {
   ArrowSwapRegular,
   CheckmarkCircleRegular,
   CopyRegular,
+  GlobeRegular,
 } from "@fluentui/react-icons";
 import { useTranslation } from "react-i18next";
 import type { Domain, Team } from "../../lib/api";
+import { EmptyState } from "../../components/EmptyState";
 import { SkeletonTableRows } from "../../components/Skeletons";
 import { DeleteDomainDialog } from "./dialogs/DeleteDomainDialog";
 
@@ -66,15 +67,7 @@ export function DomainsTable({
 
   if (domains.length === 0) {
     return (
-      <Text
-        style={{
-          color: tokens.colorNeutralForeground3,
-          textAlign: "center",
-          padding: "40px 0",
-        }}
-      >
-        {t("domains.noDomainsYet")}
-      </Text>
+      <EmptyState icon={<GlobeRegular />} title={t("domains.noDomainsYet")} />
     );
   }
 

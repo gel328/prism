@@ -22,6 +22,7 @@ import {
   TableRow,
   Text,
   Tooltip,
+  makeStyles,
   tokens,
 } from "@fluentui/react-components";
 import { useState } from "react";
@@ -29,6 +30,12 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api } from "../../lib/api";
 import { SkeletonTableRows } from "../../components/Skeletons";
+
+const useStyles = makeStyles({
+  // Let the table scroll sideways on narrow screens instead of
+  // overflowing the page
+  tableScroll: { overflowX: "auto" },
+});
 
 type RequestLog = {
   id: string;
@@ -437,6 +444,7 @@ function DebugControls() {
 }
 
 export function AdminLogs() {
+  const styles = useStyles();
   const { t } = useTranslation();
   const [page, setPage] = useState(1);
   const [filterMethod, setFilterMethod] = useState("");
@@ -644,101 +652,109 @@ export function AdminLogs() {
       {isLoading ? (
         <SkeletonTableRows rows={8} cols={4} />
       ) : (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHeaderCell>{t("admin.logs.timeHeader")}</TableHeaderCell>
-              <TableHeaderCell>{t("admin.logs.methodHeader")}</TableHeaderCell>
-              <TableHeaderCell>{t("admin.logs.pathHeader")}</TableHeaderCell>
-              <TableHeaderCell>{t("admin.logs.statusHeader")}</TableHeaderCell>
-              <TableHeaderCell>
-                {t("admin.logs.durationHeader")}
-              </TableHeaderCell>
-              <TableHeaderCell>{t("admin.logs.userHeader")}</TableHeaderCell>
-              <TableHeaderCell>{t("admin.logs.ipHeader")}</TableHeaderCell>
-              <TableHeaderCell />
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {logs.length === 0 ? (
+        <div className={styles.tableScroll}>
+          <Table>
+            <TableHeader>
               <TableRow>
-                <TableCell
-                  colSpan={8}
-                  style={{
-                    textAlign: "center",
-                    color: tokens.colorNeutralForeground3,
-                  }}
-                >
-                  {t("admin.logs.noResults")}
-                </TableCell>
+                <TableHeaderCell>{t("admin.logs.timeHeader")}</TableHeaderCell>
+                <TableHeaderCell>
+                  {t("admin.logs.methodHeader")}
+                </TableHeaderCell>
+                <TableHeaderCell>{t("admin.logs.pathHeader")}</TableHeaderCell>
+                <TableHeaderCell>
+                  {t("admin.logs.statusHeader")}
+                </TableHeaderCell>
+                <TableHeaderCell>
+                  {t("admin.logs.durationHeader")}
+                </TableHeaderCell>
+                <TableHeaderCell>{t("admin.logs.userHeader")}</TableHeaderCell>
+                <TableHeaderCell>{t("admin.logs.ipHeader")}</TableHeaderCell>
+                <TableHeaderCell />
               </TableRow>
-            ) : (
-              logs.map((log) => (
-                <TableRow key={log.id}>
-                  <TableCell style={{ whiteSpace: "nowrap", fontSize: 12 }}>
-                    {new Date(log.created_at * 1000).toLocaleString()}
-                  </TableCell>
-                  <TableCell>
-                    <Badge
-                      color={methodBadgeColor(log.method)}
-                      appearance="filled"
-                      style={{ fontSize: 11, fontFamily: "monospace" }}
-                    >
-                      {log.method}
-                    </Badge>
-                  </TableCell>
+            </TableHeader>
+            <TableBody>
+              {logs.length === 0 ? (
+                <TableRow>
                   <TableCell
+                    colSpan={8}
                     style={{
-                      fontFamily: "monospace",
-                      fontSize: 12,
-                      maxWidth: 280,
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    <Tooltip content={log.path} relationship="description">
-                      <Text>{log.path}</Text>
-                    </Tooltip>
-                  </TableCell>
-                  <TableCell>
-                    <Badge
-                      color={statusBadgeColor(log.status)}
-                      appearance="filled"
-                      style={{ fontSize: 11, fontFamily: "monospace" }}
-                    >
-                      {log.status}
-                    </Badge>
-                  </TableCell>
-                  <TableCell style={{ fontFamily: "monospace", fontSize: 12 }}>
-                    {log.duration_ms}ms
-                  </TableCell>
-                  <TableCell
-                    style={{
-                      fontFamily: "monospace",
-                      fontSize: 11,
+                      textAlign: "center",
                       color: tokens.colorNeutralForeground3,
                     }}
                   >
-                    {log.user_id ? log.user_id.slice(0, 8) + "…" : "—"}
-                  </TableCell>
-                  <TableCell
-                    style={{
-                      fontFamily: "monospace",
-                      fontSize: 12,
-                      wordBreak: "break-all",
-                    }}
-                  >
-                    {log.ip_address ?? "—"}
-                  </TableCell>
-                  <TableCell>
-                    <DetailsDialog id={log.id} />
+                    {t("admin.logs.noResults")}
                   </TableCell>
                 </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
+              ) : (
+                logs.map((log) => (
+                  <TableRow key={log.id}>
+                    <TableCell style={{ whiteSpace: "nowrap", fontSize: 12 }}>
+                      {new Date(log.created_at * 1000).toLocaleString()}
+                    </TableCell>
+                    <TableCell>
+                      <Badge
+                        color={methodBadgeColor(log.method)}
+                        appearance="filled"
+                        style={{ fontSize: 11, fontFamily: "monospace" }}
+                      >
+                        {log.method}
+                      </Badge>
+                    </TableCell>
+                    <TableCell
+                      style={{
+                        fontFamily: "monospace",
+                        fontSize: 12,
+                        maxWidth: 280,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      <Tooltip content={log.path} relationship="description">
+                        <Text>{log.path}</Text>
+                      </Tooltip>
+                    </TableCell>
+                    <TableCell>
+                      <Badge
+                        color={statusBadgeColor(log.status)}
+                        appearance="filled"
+                        style={{ fontSize: 11, fontFamily: "monospace" }}
+                      >
+                        {log.status}
+                      </Badge>
+                    </TableCell>
+                    <TableCell
+                      style={{ fontFamily: "monospace", fontSize: 12 }}
+                    >
+                      {log.duration_ms}ms
+                    </TableCell>
+                    <TableCell
+                      style={{
+                        fontFamily: "monospace",
+                        fontSize: 11,
+                        color: tokens.colorNeutralForeground3,
+                      }}
+                    >
+                      {log.user_id ? log.user_id.slice(0, 8) + "…" : "—"}
+                    </TableCell>
+                    <TableCell
+                      style={{
+                        fontFamily: "monospace",
+                        fontSize: 12,
+                        wordBreak: "break-all",
+                      }}
+                    >
+                      {log.ip_address ?? "—"}
+                    </TableCell>
+                    <TableCell>
+                      <DetailsDialog id={log.id} />
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </div>
       )}
 
       {totalPages > 1 && (

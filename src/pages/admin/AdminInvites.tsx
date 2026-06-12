@@ -25,14 +25,18 @@ import {
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
-import { CopyRegular, DeleteRegular } from "@fluentui/react-icons";
+import { CopyRegular, DeleteRegular, MailRegular } from "@fluentui/react-icons";
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api, ApiError, type SiteInvite } from "../../lib/api";
+import { EmptyState } from "../../components/EmptyState";
 import { SkeletonTableRows } from "../../components/Skeletons";
 
 const useStyles = makeStyles({
+  // Let the table scroll sideways on narrow screens instead of
+  // overflowing the page
+  tableScroll: { overflowX: "auto" },
   section: {
     display: "flex",
     flexDirection: "column",
@@ -276,81 +280,81 @@ export function AdminInvites() {
       {isLoading ? (
         <SkeletonTableRows rows={5} cols={6} />
       ) : !data?.invites.length ? (
-        <Text style={{ color: tokens.colorNeutralForeground3 }}>
-          {t("admin.inviteNoInvites")}
-        </Text>
+        <EmptyState icon={<MailRegular />} title={t("admin.inviteNoInvites")} />
       ) : (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHeaderCell>{t("admin.inviteEmail")}</TableHeaderCell>
-              <TableHeaderCell>{t("admin.inviteNote")}</TableHeaderCell>
-              <TableHeaderCell>{t("admin.inviteUsed")}</TableHeaderCell>
-              <TableHeaderCell>{t("admin.inviteCreatedBy")}</TableHeaderCell>
-              <TableHeaderCell>{t("admin.inviteExpiresIn")}</TableHeaderCell>
-              <TableHeaderCell>{t("admin.inviteLink")}</TableHeaderCell>
-              <TableHeaderCell />
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {data.invites.map((inv) => {
-              const expired = inv.expires_at !== null && inv.expires_at < now;
-              const exhausted =
-                inv.max_uses !== null && inv.use_count >= inv.max_uses;
-              const inviteUrl = `${window.location.origin}/register?invite=${inv.token}`;
-              return (
-                <TableRow key={inv.id}>
-                  <TableCell>{inv.email ?? "—"}</TableCell>
-                  <TableCell>{inv.note ?? "—"}</TableCell>
-                  <TableCell>
-                    {inv.use_count}
-                    {inv.max_uses !== null
-                      ? ` / ${inv.max_uses}`
-                      : ` / ${t("admin.inviteUnlimited")}`}
-                    {exhausted && (
-                      <Badge color="warning" style={{ marginLeft: 6 }}>
-                        {t("admin.inviteUsed")}
-                      </Badge>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    {inv.created_by_username ?? inv.created_by}
-                  </TableCell>
-                  <TableCell>
-                    {inv.expires_at ? (
-                      <>
-                        {formatDate(inv.expires_at)}
-                        {expired && (
-                          <Badge color="danger" style={{ marginLeft: 6 }}>
-                            {t("admin.inviteExpired")}
-                          </Badge>
-                        )}
-                      </>
-                    ) : (
-                      t("admin.inviteNoExpiry")
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <Button
-                      icon={<CopyRegular />}
-                      appearance="subtle"
-                      size="small"
-                      onClick={() => handleCopy(inviteUrl)}
-                    />
-                  </TableCell>
-                  <TableCell>
-                    <Button
-                      icon={<DeleteRegular />}
-                      appearance="subtle"
-                      size="small"
-                      onClick={() => setRevokeTarget(inv)}
-                    />
-                  </TableCell>
-                </TableRow>
-              );
-            })}
-          </TableBody>
-        </Table>
+        <div className={styles.tableScroll}>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHeaderCell>{t("admin.inviteEmail")}</TableHeaderCell>
+                <TableHeaderCell>{t("admin.inviteNote")}</TableHeaderCell>
+                <TableHeaderCell>{t("admin.inviteUsed")}</TableHeaderCell>
+                <TableHeaderCell>{t("admin.inviteCreatedBy")}</TableHeaderCell>
+                <TableHeaderCell>{t("admin.inviteExpiresIn")}</TableHeaderCell>
+                <TableHeaderCell>{t("admin.inviteLink")}</TableHeaderCell>
+                <TableHeaderCell />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {data.invites.map((inv) => {
+                const expired = inv.expires_at !== null && inv.expires_at < now;
+                const exhausted =
+                  inv.max_uses !== null && inv.use_count >= inv.max_uses;
+                const inviteUrl = `${window.location.origin}/register?invite=${inv.token}`;
+                return (
+                  <TableRow key={inv.id}>
+                    <TableCell>{inv.email ?? "—"}</TableCell>
+                    <TableCell>{inv.note ?? "—"}</TableCell>
+                    <TableCell>
+                      {inv.use_count}
+                      {inv.max_uses !== null
+                        ? ` / ${inv.max_uses}`
+                        : ` / ${t("admin.inviteUnlimited")}`}
+                      {exhausted && (
+                        <Badge color="warning" style={{ marginLeft: 6 }}>
+                          {t("admin.inviteUsed")}
+                        </Badge>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {inv.created_by_username ?? inv.created_by}
+                    </TableCell>
+                    <TableCell>
+                      {inv.expires_at ? (
+                        <>
+                          {formatDate(inv.expires_at)}
+                          {expired && (
+                            <Badge color="danger" style={{ marginLeft: 6 }}>
+                              {t("admin.inviteExpired")}
+                            </Badge>
+                          )}
+                        </>
+                      ) : (
+                        t("admin.inviteNoExpiry")
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <Button
+                        icon={<CopyRegular />}
+                        appearance="subtle"
+                        size="small"
+                        onClick={() => handleCopy(inviteUrl)}
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <Button
+                        icon={<DeleteRegular />}
+                        appearance="subtle"
+                        size="small"
+                        onClick={() => setRevokeTarget(inv)}
+                      />
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </div>
       )}
 
       {/* Revoke confirm dialog */}

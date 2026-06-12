@@ -56,8 +56,8 @@ export function NewTeamAppDialog({ teamId, showMsg }: NewTeamAppDialogProps) {
     try {
       const res = await api.createTeamApp(teamId, {
         name: form.name.trim(),
-        description: form.description || undefined,
-        website_url: form.website_url || undefined,
+        description: form.description.trim() || undefined,
+        website_url: form.website_url.trim() || undefined,
         redirect_uris: uris,
       });
       await qc.invalidateQueries({ queryKey: ["team-apps", teamId] });
