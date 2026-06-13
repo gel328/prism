@@ -43,6 +43,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api } from "../lib/api";
+import { formatDateTime } from "../lib/datetime";
 import { EmptyState } from "../components/EmptyState";
 import { PageHeader } from "../components/PageHeader";
 import { PasswordInput } from "../components/PasswordInput";
@@ -90,10 +91,6 @@ function parseEvents(raw: string): string[] {
   } catch {
     return [];
   }
-}
-
-function fmtDate(ts: number) {
-  return new Date(ts * 1000).toLocaleString();
 }
 
 // ─── Event selector ──────────────────────────────────────────────────────────
@@ -315,7 +312,7 @@ function DeliveryRow({ d }: { d: Delivery }) {
       </TableCell>
       <TableCell>
         <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-          {fmtDate(d.delivered_at)}
+          {formatDateTime(d.delivered_at)}
         </Text>
       </TableCell>
     </TableRow>

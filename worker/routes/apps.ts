@@ -2,6 +2,7 @@
 
 import { Hono, type Context, type Next } from "hono";
 import { randomId, randomBase64url } from "../lib/crypto";
+import { parseBasicAuth } from "../lib/basicAuth";
 import {
   encryptSecret,
   decryptSecret,
@@ -183,20 +184,9 @@ async function tryAppSelfAuthForScopeDefs(
   c: Context<AppEnv>,
   next: Next,
 ): Promise<Response | void> {
-  const authHeader = c.req.header("Authorization");
-  if (!authHeader?.startsWith("Basic ")) return await next();
-
-  let decoded: string;
-  try {
-    decoded = atob(authHeader.slice(6));
-  } catch {
-    return await next();
-  }
-  const sep = decoded.indexOf(":");
-  if (sep < 1) return await next();
-  const clientId = decoded.slice(0, sep);
-  const clientSecret = decoded.slice(sep + 1);
-  if (!clientSecret) return await next();
+  const basicAuth = parseBasicAuth(c.req.header("Authorization"));
+  if (!basicAuth?.clientSecret) return await next();
+  const { clientId, clientSecret } = basicAuth;
 
   const row = await c.env.DB.prepare(
     "SELECT id, client_id, client_secret, is_active, is_public, allow_self_manage_exported_permissions FROM oauth_apps WHERE client_id = ?",
@@ -692,18 +682,9 @@ async function verifyClientAuth(
   client_id: string;
   is_active: number;
 } | null> {
-  if (!authHeader?.startsWith("Basic ")) return null;
-  let decoded: string;
-  try {
-    decoded = atob(authHeader.slice(6));
-  } catch {
-    return null;
-  }
-  const sep = decoded.indexOf(":");
-  if (sep < 1) return null;
-  const clientId = decoded.slice(0, sep);
-  const clientSecret = decoded.slice(sep + 1);
-  if (!clientSecret) return null;
+  const basicAuth = parseBasicAuth(authHeader);
+  if (!basicAuth?.clientSecret) return null;
+  const { clientId, clientSecret } = basicAuth;
   const row = await env.DB.prepare(
     "SELECT id, client_id, client_secret, is_active FROM oauth_apps WHERE client_id = ?",
   )

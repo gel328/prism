@@ -36,6 +36,7 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api, ApiError } from "../lib/api";
+import { formatDate } from "../lib/datetime";
 import { EmptyState } from "../components/EmptyState";
 import { PageHeader } from "../components/PageHeader";
 import { SkeletonTableRows } from "../components/Skeletons";
@@ -100,11 +101,6 @@ const EXPIRY_OPTIONS = [
   { label: "90 days", value: "90" },
   { label: "365 days", value: "365" },
 ];
-
-function ts(unix: number | null): string {
-  if (!unix) return "—";
-  return new Date(unix * 1000).toLocaleDateString();
-}
 
 export function Tokens() {
   const styles = useStyles();
@@ -328,7 +324,7 @@ export function Tokens() {
                       size={200}
                       style={{ color: tokens.colorNeutralForeground3 }}
                     >
-                      {ts(tok.last_used_at)}
+                      {formatDate(tok.last_used_at)}
                     </Text>
                   </TableCell>
                   <TableCell>
@@ -336,7 +332,7 @@ export function Tokens() {
                       size={200}
                       style={{ color: tokens.colorNeutralForeground3 }}
                     >
-                      {ts(tok.expires_at)}
+                      {formatDate(tok.expires_at)}
                     </Text>
                   </TableCell>
                   <TableCell>

@@ -162,6 +162,17 @@ export async function setConfigValues(
 }
 
 /**
+ * View a SiteConfig as a string-keyed bag for access by runtime-computed
+ * keys — e.g. iterating SENSITIVE_CONFIG_KEYS or building `${slug}_client_id`.
+ * SiteConfig is statically typed, but these call sites index it with keys
+ * only known at runtime, so the cast is unavoidable; centralizing it keeps
+ * the single `as unknown as` escape hatch in one reviewed place.
+ */
+export function configBag(config: SiteConfig): Record<string, unknown> {
+  return config as unknown as Record<string, unknown>;
+}
+
+/**
  * Decrypt the encrypted-at-rest fields of a SiteConfig in place. Callers
  * that need the actual plaintext of e.g. `email_api_key` or
  * `captcha_secret_key` MUST run the result of getConfig() through this
@@ -171,7 +182,7 @@ export async function decryptConfigSecrets(
   env: Env,
   config: SiteConfig,
 ): Promise<SiteConfig> {
-  const bag = config as unknown as Record<string, unknown>;
+  const bag = configBag(config);
   for (const key of SENSITIVE_CONFIG_KEYS) {
     const v = bag[key];
     if (typeof v === "string" && isEncryptedSecret(v)) {

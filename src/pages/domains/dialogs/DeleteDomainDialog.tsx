@@ -16,11 +16,16 @@ import type { Domain } from "../../../lib/api";
 interface DeleteDomainDialogProps {
   domain: Domain;
   onDelete: (id: string) => void;
+  // Pre-translated confirmation copy; defaults to the personal-domain
+  // wording. Team views pass their own so the i18n key stays literal at
+  // the call site, where the static key checker can verify it.
+  description?: string;
 }
 
 export function DeleteDomainDialog({
   domain,
   onDelete,
+  description,
 }: DeleteDomainDialogProps) {
   const { t } = useTranslation();
   return (
@@ -32,7 +37,8 @@ export function DeleteDomainDialog({
         <DialogBody>
           <DialogTitle>{t("domains.removeDomain")}</DialogTitle>
           <DialogContent>
-            {t("domains.removeDomainDesc", { domain: domain.domain })}
+            {description ??
+              t("domains.removeDomainDesc", { domain: domain.domain })}
           </DialogContent>
           <DialogActions>
             <DialogTrigger>

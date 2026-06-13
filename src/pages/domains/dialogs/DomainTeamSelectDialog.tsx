@@ -15,31 +15,41 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Domain, Team } from "../../../lib/api";
 
-interface TransferDomainDialogProps {
+// Shared "pick a team, then act on this domain" dialog backing both the
+// share-with-team and move-to-team flows. Title/description/action label
+// come in pre-translated so the i18n keys stay literal at the call sites,
+// where the static key checker can verify them.
+interface DomainTeamSelectDialogProps {
   domain: Domain | null;
   teams: Team[];
+  title: string;
+  description: string;
+  actionLabel: string;
   onClose: () => void;
-  onTransfer: (teamId: string) => Promise<void>;
+  onConfirm: (teamId: string) => Promise<void>;
 }
 
-export function TransferDomainDialog({
+export function DomainTeamSelectDialog({
   domain,
   teams,
+  title,
+  description,
+  actionLabel,
   onClose,
-  onTransfer,
-}: TransferDomainDialogProps) {
+  onConfirm,
+}: DomainTeamSelectDialogProps) {
   const { t } = useTranslation();
   const [teamId, setTeamId] = useState("");
-  const [transferring, setTransferring] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
-  const handleTransfer = async () => {
+  const handleConfirm = async () => {
     if (!teamId) return;
-    setTransferring(true);
+    setSubmitting(true);
     try {
-      await onTransfer(teamId);
+      await onConfirm(teamId);
       setTeamId("");
     } finally {
-      setTransferring(false);
+      setSubmitting(false);
     }
   };
 
@@ -55,12 +65,10 @@ export function TransferDomainDialog({
     >
       <DialogSurface>
         <DialogBody>
-          <DialogTitle>{t("domains.moveDomainToTeam")}</DialogTitle>
+          <DialogTitle>{title}</DialogTitle>
           <DialogContent>
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-              <Text>
-                {t("domains.moveDomainDesc", { domain: domain?.domain ?? "" })}
-              </Text>
+              <Text>{description}</Text>
               <Field label={t("domains.selectTeam")} required>
                 <Select value={teamId} onChange={(_, d) => setTeamId(d.value)}>
                   <option value="">{t("domains.chooseTeam")}</option>
@@ -84,14 +92,10 @@ export function TransferDomainDialog({
             </Button>
             <Button
               appearance="primary"
-              onClick={handleTransfer}
-              disabled={transferring || !teamId}
+              onClick={handleConfirm}
+              disabled={submitting || !teamId}
             >
-              {transferring ? (
-                <Spinner size="tiny" />
-              ) : (
-                t("domains.moveToTeamAction")
-              )}
+              {submitting ? <Spinner size="tiny" /> : actionLabel}
             </Button>
           </DialogActions>
         </DialogBody>

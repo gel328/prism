@@ -14,8 +14,7 @@ import { useTranslation } from "react-i18next";
 import { api, ApiError } from "../lib/api";
 import type { Domain, DomainAddResponse, VerificationMethod } from "../lib/api";
 import { DomainDetailDialog } from "./domains/dialogs/DomainDetailDialog";
-import { TransferDomainDialog } from "./domains/dialogs/TransferDomainDialog";
-import { ShareDomainDialog } from "./domains/dialogs/ShareDomainDialog";
+import { DomainTeamSelectDialog } from "./domains/dialogs/DomainTeamSelectDialog";
 import { DomainsTable } from "./domains/DomainsTable";
 import { DnsAddedInfo } from "./domains/components";
 import { PageHeader } from "../components/PageHeader";
@@ -187,18 +186,28 @@ export function Domains() {
         onDelete={handleDelete}
       />
 
-      <TransferDomainDialog
+      <DomainTeamSelectDialog
         domain={transferDomain}
         teams={manageableTeams}
+        title={t("domains.moveDomainToTeam")}
+        description={t("domains.moveDomainDesc", {
+          domain: transferDomain?.domain ?? "",
+        })}
+        actionLabel={t("domains.moveToTeamAction")}
         onClose={() => setTransferDomain(null)}
-        onTransfer={handleTransferToTeam}
+        onConfirm={handleTransferToTeam}
       />
 
-      <ShareDomainDialog
+      <DomainTeamSelectDialog
         domain={shareDomain}
         teams={manageableTeams}
+        title={t("domains.shareDomainWithTeam")}
+        description={t("domains.shareDomainDesc", {
+          domain: shareDomain?.domain ?? "",
+        })}
+        actionLabel={t("domains.shareWithTeamAction")}
         onClose={() => setShareDomain(null)}
-        onShare={handleShareToTeam}
+        onConfirm={handleShareToTeam}
       />
     </div>
   );

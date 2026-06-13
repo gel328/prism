@@ -1,7 +1,7 @@
 // OAuth 2.0 Authorization Server (Authorization Code + PKCE, OpenID Connect)
 
 import { Hono } from "hono";
-import { getConfig, getRsaKeyPair } from "../lib/config";
+import { configBag, getConfig, getRsaKeyPair } from "../lib/config";
 import {
   encryptSecret,
   decryptSecret,
@@ -12,6 +12,8 @@ import {
 import { getMLDSAKey } from "../lib/mldsa";
 import { signAccessToken, verifyAccessToken, extractAud } from "../lib/jwt";
 import { randomBase64url, randomId, verifyPkce } from "../lib/crypto";
+import { parseBasicAuth } from "../lib/basicAuth";
+import { getIp } from "../lib/clientIp";
 import { verifyAnyTotp } from "../lib/totp";
 import { sudoKvKey, isSudoActive, grantSudo } from "../lib/sudo";
 import { rateLimit } from "../middleware/rateLimit";
@@ -134,6 +136,52 @@ function unboundTeamPermissions(scopes: string[]): string[] {
   return scopes
     .map((s) => parseUnboundTeamScope(s))
     .filter((p): p is string => p !== null);
+}
+
+/**
+ * Authenticate an OAuth client against its stored secret.
+ *
+ * Public clients (PKCE) carry no secret and always pass — PKCE binds the
+ * exchange instead. Confidential clients are verified in constant time via
+ * timingSafeSecretEqual; this returns false (never throws) when either the
+ * stored or presented secret is empty, so a confidential app whose secret is
+ * unset can never authenticate by sending an empty one.
+ *
+ * Centralized so the three token-issuing endpoints (token, 2FA verify,
+ * authorize-confirm) enforce byte-for-byte identical client-auth rules.
+ */
+async function clientSecretValid(
+  env: Env,
+  oauthApp: OAuthAppRow,
+  clientSecret: string | undefined,
+): Promise<boolean> {
+  if (oauthApp.is_public) return true;
+  return timingSafeSecretEqual(env, oauthApp.client_secret, clientSecret ?? "");
+}
+
+/**
+ * Build the public "app" summary returned by the consent and 2FA screens.
+ * Proxies the icon URL so the browser fetches it through the image proxy and
+ * maps the SQLite 0/1 flags to booleans. Shared so both screens describe an
+ * app identically.
+ */
+async function buildConsentAppSummary(
+  env: Env,
+  app: OAuthAppRow,
+  isVerified: boolean,
+) {
+  return {
+    id: app.id,
+    name: app.name,
+    description: app.description,
+    icon_url: await proxyImageUrl(env.APP_URL, env.DB, app.icon_url),
+    unproxied_icon_url: app.icon_url,
+    website_url: app.website_url,
+    is_verified: isVerified,
+    is_official: app.is_official === 1,
+    is_first_party: app.is_first_party === 1,
+    is_public: app.is_public === 1,
+  };
 }
 
 // ─── Scope helpers ───────────────────────────────────────────────────────────
@@ -744,18 +792,7 @@ app.get("/app-info", optionalAuth, async (c) => {
   }
 
   return c.json({
-    app: {
-      id: oauthApp.id,
-      name: oauthApp.name,
-      description: oauthApp.description,
-      icon_url: await proxyImageUrl(c.env.APP_URL, c.env.DB, oauthApp.icon_url),
-      unproxied_icon_url: oauthApp.icon_url,
-      website_url: oauthApp.website_url,
-      is_verified: isVerified,
-      is_official: oauthApp.is_official === 1,
-      is_first_party: oauthApp.is_first_party === 1,
-      is_public: oauthApp.is_public === 1,
-    },
+    app: await buildConsentAppSummary(c.env, oauthApp, isVerified),
     scopes,
     optional_scopes: optionalScopes,
     app_scopes: appScopes,
@@ -1142,12 +1179,10 @@ app.post("/2fa/challenges", async (c) => {
   }
 
   let { client_id: clientId, client_secret: clientSecret } = params;
-  const authHeader = c.req.header("Authorization");
-  if (authHeader?.startsWith("Basic ")) {
-    const decoded = atob(authHeader.slice(6));
-    const [id, secret] = decoded.split(":");
-    clientId = id ?? "";
-    clientSecret = secret ?? "";
+  const basicAuth = parseBasicAuth(c.req.header("Authorization"));
+  if (basicAuth) {
+    clientId = basicAuth.clientId;
+    clientSecret = basicAuth.clientSecret;
   }
 
   if (!clientId) {
@@ -1161,18 +1196,8 @@ app.post("/2fa/challenges", async (c) => {
     .first<OAuthAppRow>();
   if (!oauthApp) return c.json({ error: "invalid_client" }, 401);
 
-  if (!oauthApp.is_public) {
-    if (
-      !oauthApp.client_secret ||
-      !clientSecret ||
-      !(await timingSafeSecretEqual(
-        c.env,
-        oauthApp.client_secret,
-        clientSecret,
-      ))
-    ) {
-      return c.json({ error: "invalid_client" }, 401);
-    }
+  if (!(await clientSecretValid(c.env, oauthApp, clientSecret))) {
+    return c.json({ error: "invalid_client" }, 401);
   }
 
   const { redirect_uri, action, nonce, code_challenge, code_challenge_method } =
@@ -1345,18 +1370,7 @@ app.get("/2fa/info", optionalAuth, async (c) => {
     !sudoActive;
 
   return c.json({
-    app: {
-      id: oauthApp.id,
-      name: oauthApp.name,
-      description: oauthApp.description,
-      icon_url: await proxyImageUrl(c.env.APP_URL, c.env.DB, oauthApp.icon_url),
-      unproxied_icon_url: oauthApp.icon_url,
-      website_url: oauthApp.website_url,
-      is_verified: isVerified,
-      is_official: oauthApp.is_official === 1,
-      is_first_party: oauthApp.is_first_party === 1,
-      is_public: oauthApp.is_public === 1,
-    },
+    app: await buildConsentAppSummary(c.env, oauthApp, isVerified),
     challenge_id,
     redirect_uri: challenge.redirect_uri,
     state: state ?? null,
@@ -1433,10 +1447,7 @@ app.post("/2fa/authorize", requireAuth, async (c) => {
     (config.require_captcha_for_2fa || challenge.require_captcha === 1) &&
     config.captcha_provider !== "none";
   if (captchaRequired && body.decision === "approve") {
-    const ip =
-      c.req.header("CF-Connecting-IP") ??
-      c.req.header("X-Forwarded-For") ??
-      "unknown";
+    const ip = getIp(c);
     const captchaResult = await verifyCaptchaToken(
       c.env.DB,
       body.captcha_token,
@@ -1636,12 +1647,10 @@ app.post("/2fa/verify", async (c) => {
 
   const { code, redirect_uri, code_verifier } = params;
   let { client_id: clientId, client_secret: clientSecret } = params;
-  const authHeader = c.req.header("Authorization");
-  if (authHeader?.startsWith("Basic ")) {
-    const decoded = atob(authHeader.slice(6));
-    const [id, secret] = decoded.split(":");
-    clientId = id ?? "";
-    clientSecret = secret ?? "";
+  const basicAuth = parseBasicAuth(c.req.header("Authorization"));
+  if (basicAuth) {
+    clientId = basicAuth.clientId;
+    clientSecret = basicAuth.clientSecret;
   }
 
   if (!code || !clientId || !redirect_uri) {
@@ -1655,18 +1664,8 @@ app.post("/2fa/verify", async (c) => {
     .first<OAuthAppRow>();
   if (!oauthApp) return c.json({ error: "invalid_client" }, 401);
 
-  if (!oauthApp.is_public) {
-    if (
-      !oauthApp.client_secret ||
-      !clientSecret ||
-      !(await timingSafeSecretEqual(
-        c.env,
-        oauthApp.client_secret,
-        clientSecret,
-      ))
-    ) {
-      return c.json({ error: "invalid_client" }, 401);
-    }
+  if (!(await clientSecretValid(c.env, oauthApp, clientSecret))) {
+    return c.json({ error: "invalid_client" }, 401);
   }
 
   const codeLookup = await hashLookupCandidate(c.env, code);
@@ -1777,14 +1776,12 @@ app.post("/token", async (c) => {
   } = params;
 
   // Authenticate client
-  const authHeader = c.req.header("Authorization");
   let clientId = client_id;
   let clientSecret = client_secret;
-  if (authHeader?.startsWith("Basic ")) {
-    const decoded = atob(authHeader.slice(6));
-    const [id, secret] = decoded.split(":");
-    clientId = id ?? "";
-    clientSecret = secret ?? "";
+  const basicAuth = parseBasicAuth(c.req.header("Authorization"));
+  if (basicAuth) {
+    clientId = basicAuth.clientId;
+    clientSecret = basicAuth.clientSecret;
   }
 
   const oauthApp = await c.env.DB.prepare(
@@ -1794,22 +1791,8 @@ app.post("/token", async (c) => {
     .first<OAuthAppRow>();
   if (!oauthApp) return c.json({ error: "invalid_client" }, 401);
 
-  // For public clients (PKCE), secret not required; for confidential clients,
-  // verify the secret in constant time. Refuse if either side is empty so a
-  // confidential client with an unset stored secret can never authenticate
-  // by sending an empty secret.
-  if (!oauthApp.is_public) {
-    if (
-      !oauthApp.client_secret ||
-      !clientSecret ||
-      !(await timingSafeSecretEqual(
-        c.env,
-        oauthApp.client_secret,
-        clientSecret,
-      ))
-    ) {
-      return c.json({ error: "invalid_client" }, 401);
-    }
+  if (!(await clientSecretValid(c.env, oauthApp, clientSecret))) {
+    return c.json({ error: "invalid_client" }, 401);
   }
 
   const config = await getConfig(c.env.DB);
@@ -3785,7 +3768,7 @@ app.get("/me/admin/config", async (c) => {
     "email_api_key",
   ];
   const safe = Object.fromEntries(
-    Object.entries(config as unknown as Record<string, unknown>).filter(
+    Object.entries(configBag(config)).filter(
       ([k]) => !SENSITIVE_KEYS.includes(k),
     ),
   );

@@ -30,6 +30,7 @@ import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api, ApiError, type SiteInvite } from "../../lib/api";
+import { formatDate } from "../../lib/datetime";
 import { EmptyState } from "../../components/EmptyState";
 import { SkeletonTableRows } from "../../components/Skeletons";
 
@@ -91,11 +92,6 @@ const useStyles = makeStyles({
     whiteSpace: "nowrap",
   },
 });
-
-function formatDate(ts: number | null): string {
-  if (!ts) return "—";
-  return new Date(ts * 1000).toLocaleDateString();
-}
 
 export function AdminInvites() {
   const styles = useStyles();

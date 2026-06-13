@@ -34,7 +34,7 @@ import {
 } from "../../lib/api";
 import { TransferFromPersonalDialog } from "./dialogs/TransferFromPersonalDialog";
 import { TeamDomainDetailDialog } from "./dialogs/TeamDomainDetailDialog";
-import { DeleteTeamDomainDialog } from "./dialogs/DeleteTeamDomainDialog";
+import { DeleteDomainDialog } from "../domains/dialogs/DeleteDomainDialog";
 import { EmptyState } from "../../components/EmptyState";
 import { SkeletonTableRows } from "../../components/Skeletons";
 import { DnsAddedInfo } from "../domains/components";
@@ -274,9 +274,12 @@ export function DomainsTable({
                             t("common.verify")
                           )}
                         </Button>
-                        <DeleteTeamDomainDialog
+                        <DeleteDomainDialog
                           domain={d}
                           onDelete={handleDeleteDomain}
+                          description={t("domains.removeDomainTeamDesc", {
+                            domain: d.domain,
+                          })}
                         />
                         <Tooltip
                           content={t("domains.returnToPersonalTooltip")}

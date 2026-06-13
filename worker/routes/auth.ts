@@ -3,6 +3,7 @@
 import { Hono } from "hono";
 import type { Context } from "hono";
 import { getConfig, getConfigValue, getJwtSecret } from "../lib/config";
+import { getIp } from "../lib/clientIp";
 import { clearSessionCookie, setSessionCookie } from "../lib/cookies";
 import {
   hashPassword,
@@ -83,16 +84,6 @@ async function logLoginError(
 
 type AppEnv = { Bindings: Env; Variables: Variables };
 const app = new Hono<AppEnv>();
-
-function getIp(c: {
-  req: { header: (h: string) => string | undefined };
-}): string {
-  return (
-    c.req.header("CF-Connecting-IP") ??
-    c.req.header("X-Forwarded-For") ??
-    "unknown"
-  );
-}
 
 async function issueSession(
   c: Context<AppEnv>,

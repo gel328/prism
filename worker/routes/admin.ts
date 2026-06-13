@@ -2,10 +2,12 @@
 
 import { Hono } from "hono";
 import {
+  configBag,
   encryptConfigUpdates,
   getConfig,
   setConfigValues,
 } from "../lib/config";
+import { getIp } from "../lib/clientIp";
 import {
   SENSITIVE_CONFIG_KEYS,
   encryptSecret,
@@ -353,9 +355,10 @@ app.post("/secrets/migrate", async (c) => {
 
   // ── site_config sensitive keys ──────────────────────────────────────────
   const cfg = await getConfig(c.env.DB);
+  const cfgBag = configBag(cfg);
   const cfgUpdates: Partial<Record<string, unknown>> = {};
   for (const key of SENSITIVE_CONFIG_KEYS) {
-    const v = (cfg as unknown as Record<string, unknown>)[key];
+    const v = cfgBag[key];
     if (typeof v !== "string" || v === "" || isEncryptedSecret(v)) continue;
     cfgUpdates[key] = await encryptSecret(c.env, v);
   }
@@ -424,10 +427,11 @@ async function collectSecretsStatus(env: Env): Promise<SecretsMigrateStatus> {
   // For site_config we just iterate the in-memory loaded config so we
   // don't have to enumerate keys server-side via a generic query.
   const cfg = await getConfig(env.DB);
+  const cfgBag = configBag(cfg);
   let cfgTotal = 0;
   let cfgPlain = 0;
   for (const key of SENSITIVE_CONFIG_KEYS) {
-    const v = (cfg as unknown as Record<string, unknown>)[key];
+    const v = cfgBag[key];
     if (typeof v !== "string" || v === "") continue;
     cfgTotal++;
     if (!isEncryptedSecret(v)) cfgPlain++;
@@ -2441,7 +2445,7 @@ app.get("/oauth-sources", async (c) => {
   ]);
 
   const existingSlugs = new Set(results.map((r) => r.slug));
-  const cfg = config as unknown as Record<string, unknown>;
+  const cfg = configBag(config);
   const legacy_providers = LEGACY_PROVIDER_KEYS.filter(
     (p) => !!cfg[`${p.slug}_client_id`] && !existingSlugs.has(p.slug),
   ).map((p) => p.slug);
@@ -2514,7 +2518,7 @@ app.post("/oauth-sources/migrate", async (c) => {
   const migrated: string[] = [];
   const skipped: string[] = [];
 
-  const cfg = config as unknown as Record<string, unknown>;
+  const cfg = configBag(config);
   for (const { slug, provider, name } of LEGACY_PROVIDER_KEYS) {
     const clientId = cfg[`${slug}_client_id`] as string;
     const clientSecret = cfg[`${slug}_client_secret`] as string;
@@ -2803,12 +2807,6 @@ app.delete("/oauth-sources/:id", async (c) => {
   );
   return c.json({ message: "Deleted" });
 });
-
-function getIp(c: {
-  req: { header: (h: string) => string | undefined };
-}): string {
-  return c.req.header("CF-Connecting-IP") ?? "unknown";
-}
 
 // ─── Webhooks ────────────────────────────────────────────────────────────────
 
