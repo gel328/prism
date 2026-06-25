@@ -50,6 +50,31 @@ import { DurationInput } from "../components/DurationInput";
 import { LabeledLine } from "../components/LabeledLine";
 import { useToastMessage } from "../lib/useToastMessage";
 
+// Turn a raw User-Agent string into a friendly "Browser on OS" label for
+// the sessions table. Returns null when the UA is empty/unparseable so the
+// caller can fall back to the localized "unknown" string.
+function describeDevice(userAgent: string | null): string | null {
+  if (!userAgent) return null;
+  let browser = "";
+  if (/Edg\//.test(userAgent)) browser = "Edge";
+  else if (/OPR\//.test(userAgent) || /Opera\//.test(userAgent))
+    browser = "Opera";
+  else if (/Firefox\//.test(userAgent)) browser = "Firefox";
+  else if (/Chrome\//.test(userAgent)) browser = "Chrome";
+  else if (/Safari\//.test(userAgent)) browser = "Safari";
+
+  let os = "";
+  if (/Windows NT 10/.test(userAgent)) os = "Windows";
+  else if (/Windows NT/.test(userAgent)) os = "Windows";
+  else if (/iPhone|iPad|iPod/.test(userAgent)) os = "iOS";
+  else if (/Mac OS X/.test(userAgent)) os = "macOS";
+  else if (/Android/.test(userAgent)) os = "Android";
+  else if (/Linux/.test(userAgent)) os = "Linux";
+
+  if (browser && os) return `${browser} on ${os}`;
+  return browser || os || userAgent;
+}
+
 const useStyles = makeStyles({
   page: { display: "flex", flexDirection: "column", gap: "32px" },
   card: {
@@ -1175,7 +1200,8 @@ export function Security() {
                             gap: 8,
                           }}
                         >
-                          {s.user_agent ?? t("security.unknown")}
+                          {describeDevice(s.user_agent) ??
+                            t("security.unknown")}
                           {s.is_current && (
                             <Badge
                               color="informative"
@@ -1227,7 +1253,8 @@ export function Security() {
                     style={{ display: "flex", flexDirection: "column", gap: 8 }}
                   >
                     <LabeledLine label={t("security.deviceLabel")}>
-                      {selectedSession?.user_agent ?? t("security.unknown")}
+                      {describeDevice(selectedSession?.user_agent ?? null) ??
+                        t("security.unknown")}
                     </LabeledLine>
                     <LabeledLine label={t("security.ipLabel")}>
                       {selectedSession?.ip_address ?? "—"}

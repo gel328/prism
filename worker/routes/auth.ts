@@ -112,9 +112,17 @@ async function issueSession(
   const hash = await sha256(token);
   await db
     .prepare(
-      "INSERT INTO sessions (id, user_id, token_hash, expires_at, created_at) VALUES (?, ?, ?, ?, ?)",
+      "INSERT INTO sessions (id, user_id, token_hash, user_agent, ip_address, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
     )
-    .bind(sessionId, user.id, hash, now + ttlSeconds, now)
+    .bind(
+      sessionId,
+      user.id,
+      hash,
+      c.req.header("User-Agent") ?? null,
+      getIp(c),
+      now + ttlSeconds,
+      now,
+    )
     .run();
   // Mirror the JWT into a cookie so SSR can authenticate the next request
   // without any client JS. Bearer-header callers get the token in the JSON

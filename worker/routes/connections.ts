@@ -1618,9 +1618,17 @@ async function issueJWT(
   const hash = await sha256Hex(token);
   await db
     .prepare(
-      "INSERT INTO sessions (id, user_id, token_hash, expires_at, created_at) VALUES (?, ?, ?, ?, ?)",
+      "INSERT INTO sessions (id, user_id, token_hash, user_agent, ip_address, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
     )
-    .bind(sessionId, user.id, hash, now + ttlSeconds, now)
+    .bind(
+      sessionId,
+      user.id,
+      hash,
+      c.req.header("User-Agent") ?? null,
+      c.req.header("CF-Connecting-IP") ?? c.req.header("X-Forwarded-For") ?? "unknown",
+      now + ttlSeconds,
+      now,
+    )
     .run();
   // Set the session cookie on this response. For redirect responses (social
   // OAuth callback flow) the cookie travels with the redirect and the

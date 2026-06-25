@@ -32,7 +32,6 @@ import { api, ApiError } from "../lib/api";
 import { PageHeader } from "../components/PageHeader";
 import { SkeletonAppCards } from "../components/Skeletons";
 import { useToastMessage } from "../lib/useToastMessage";
-import { PROVIDER_COLORS } from "../lib/providerIcons";
 
 const useStyles = makeStyles({
   grid: {
@@ -50,14 +49,15 @@ const useStyles = makeStyles({
     gap: "12px",
   },
   providerHeader: { display: "flex", alignItems: "center", gap: "12px" },
-  providerIconInner: {
-    width: "26px",
-    height: "26px",
-    borderRadius: "6px",
-    background: "rgba(255, 255, 255, 0.95)",
+  providerIcon: {
+    width: "40px",
+    height: "40px",
+    borderRadius: "8px",
+    background: tokens.colorNeutralBackground3,
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
+    flexShrink: 0,
   },
   connRow: {
     display: "flex",
@@ -71,21 +71,9 @@ const useStyles = makeStyles({
 });
 
 // URL is pre-proxied by /api/site so no client-side proxy registration is
-// needed here. Wrapped just to keep the markup tidy.
-function ProviderIcon({
-  url,
-  alt,
-  className,
-}: {
-  url: string;
-  alt: string;
-  className: string;
-}) {
-  return (
-    <div className={className}>
-      <Image src={url} alt={alt} width={18} height={18} fit="contain" />
-    </div>
-  );
+// needed here.
+function ProviderIcon({ url, alt }: { url: string; alt: string }) {
+  return <Image src={url} alt={alt} width={24} height={24} fit="contain" />;
 }
 
 const ERROR_MESSAGES: Record<string, string> = {
@@ -345,32 +333,16 @@ export function Connections() {
       <div className={styles.grid} style={isLoading ? { display: "none" } : {}}>
         {providers.map((p) => {
           const conns = getConnections(p.slug);
-          const color = PROVIDER_COLORS[p.provider] ?? "#666";
           const providerIconUrl = p.icon_proxied_url ?? null;
 
           return (
             <div key={p.slug} className={styles.providerCard}>
               <div className={styles.providerHeader}>
-                <div
-                  style={{
-                    width: 40,
-                    height: 40,
-                    borderRadius: 8,
-                    background: color,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    flexShrink: 0,
-                  }}
-                >
+                <div className={styles.providerIcon}>
                   {providerIconUrl ? (
-                    <ProviderIcon
-                      url={providerIconUrl}
-                      alt={p.name}
-                      className={styles.providerIconInner}
-                    />
+                    <ProviderIcon url={providerIconUrl} alt={p.name} />
                   ) : (
-                    <GlobeRegular style={{ color: "white", fontSize: 20 }} />
+                    <GlobeRegular style={{ fontSize: 20 }} />
                   )}
                 </div>
                 <div style={{ flex: 1 }}>

@@ -92,9 +92,17 @@ app.post("/", async (c) => {
   // Store session record
   const tokenHash = await sha256(token);
   await c.env.DB.prepare(
-    `INSERT INTO sessions (id, user_id, token_hash, expires_at, created_at) VALUES (?, ?, ?, ?, ?)`,
+    `INSERT INTO sessions (id, user_id, token_hash, user_agent, ip_address, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
   )
-    .bind(sessionId, userId, tokenHash, now + sessionTtl, now)
+    .bind(
+      sessionId,
+      userId,
+      tokenHash,
+      c.req.header("User-Agent") ?? null,
+      c.req.header("CF-Connecting-IP") ?? c.req.header("X-Forwarded-For") ?? "unknown",
+      now + sessionTtl,
+      now,
+    )
     .run();
 
   setSessionCookie(c, token, sessionTtl);
