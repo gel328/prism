@@ -465,10 +465,10 @@ export function TeamDetail() {
         ) : (
           <Avatar name={team.name} size={48} />
         )}
-        <div>
+        <div style={{ display: "flex", flexDirection: "column" }}>
           <Title2>{team.name}</Title2>
           {team.description && (
-            <Text style={{ color: tokens.colorNeutralForeground3 }}>
+            <Text block style={{ color: tokens.colorNeutralForeground3 }}>
               {team.description}
             </Text>
           )}
@@ -1021,7 +1021,7 @@ export function TeamDetail() {
                     {t("teams.publicProfileDesc")}
                   </Text>
                 </div>
-                {team.profile_is_public && (
+                {!!team.profile_is_public && (
                   <Link
                     href={`/t/${team.id}`}
                     target="_blank"
@@ -1045,7 +1045,7 @@ export function TeamDetail() {
                   handleVisibilityChange("profile_is_public", d.checked)
                 }
               />
-              {team.profile_is_public && site && (
+              {!!team.profile_is_public && site && (
                 <div
                   style={{
                     display: "flex",

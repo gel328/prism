@@ -38,6 +38,32 @@ import {
 type AppEnv = { Bindings: Env; Variables: Variables };
 const app = new Hono<AppEnv>();
 
+// ─── Serialization ────────────────────────────────────────────────────────────
+
+/** SQLite stores booleans as 0/1 (and nullable preferences as 0/1/NULL).
+ *  The client `Team` type expects real booleans, so normalize every
+ *  boolean-ish column before sending a team row over the wire. Keeping this
+ *  in one place avoids `0` leaking into the UI (e.g. `value && <JSX/>`). */
+function serializeTeamRow(team: TeamRow) {
+  const toBool = (v: number): boolean => v === 1;
+  const toNullableBool = (v: number | null): boolean | null =>
+    v === null ? null : v === 1;
+  return {
+    ...team,
+    profile_is_public: toBool(team.profile_is_public),
+    profile_show_description: toNullableBool(team.profile_show_description),
+    profile_show_avatar: toNullableBool(team.profile_show_avatar),
+    profile_show_owner: toNullableBool(team.profile_show_owner),
+    profile_show_member_count: toNullableBool(team.profile_show_member_count),
+    profile_show_apps: toNullableBool(team.profile_show_apps),
+    profile_show_domains: toNullableBool(team.profile_show_domains),
+    profile_show_members: toNullableBool(team.profile_show_members),
+    profile_show_sub_teams: toNullableBool(team.profile_show_sub_teams),
+    require_2fa: toBool(team.require_2fa),
+    require_verified_email: toBool(team.require_verified_email),
+  };
+}
+
 // ─── Role helpers ─────────────────────────────────────────────────────────────
 
 export const ROLE_RANK: Record<string, number> = {
@@ -580,7 +606,7 @@ app.get("/", async (c) => {
   return c.json({
     teams: await Promise.all(
       Array.from(collected.values()).map(async (entry) => ({
-        ...entry.team,
+        ...serializeTeamRow(entry.team),
         role: entry.role,
         avatar_url: await proxyImageUrl(
           c.env.APP_URL,
@@ -712,7 +738,7 @@ app.post("/", async (c) => {
     .bind(id)
     .first<TeamRow>();
 
-  return c.json({ team: { ...team!, role: "owner" } }, 201);
+  return c.json({ team: { ...serializeTeamRow(team!), role: "owner" } }, 201);
 });
 
 // List immediate sub-teams of a parent team.
@@ -824,7 +850,7 @@ app.post("/:id/sub-teams", async (c) => {
   const team = await c.env.DB.prepare("SELECT * FROM teams WHERE id = ?")
     .bind(subId)
     .first<TeamRow>();
-  return c.json({ team: { ...team!, role: "owner" } }, 201);
+  return c.json({ team: { ...serializeTeamRow(team!), role: "owner" } }, 201);
 });
 
 // Get team details + members + hierarchy info.
@@ -894,7 +920,7 @@ app.get("/:id", async (c) => {
 
   return c.json({
     team: {
-      ...team,
+      ...serializeTeamRow(team),
       avatar_url: await proxyImageUrl(c.env.APP_URL, c.env.DB, team.avatar_url),
       unproxied_avatar_url: team.avatar_url,
       my_role: eff.role,
@@ -1065,7 +1091,9 @@ app.patch("/:id", async (c) => {
   const updated = await c.env.DB.prepare("SELECT * FROM teams WHERE id = ?")
     .bind(id)
     .first<TeamRow>();
-  return c.json({ team: { ...updated!, my_role: member.role } });
+  return c.json({
+    team: { ...serializeTeamRow(updated!), my_role: member.role },
+  });
 });
 
 // Delete team — owner only (direct OR inherited from an ancestor team).
