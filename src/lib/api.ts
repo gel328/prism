@@ -1190,6 +1190,7 @@ export const api = {
       rules: NotificationRules;
       emails: NotifEmail[];
       tg_connections: NotifTgConnection[];
+      discord_connections: NotifDiscordConnection[];
       available: string[];
     }>("GET", "/user/me/notifications", undefined, getToken()),
   updateNotificationPrefs: (rules: NotificationRules) =>
@@ -1657,6 +1658,7 @@ export interface SitePublicConfig {
   initialized: boolean;
   r2_enabled: boolean;
   tg_notify_source_slug: string;
+  discord_notify_source_slug: string;
   enable_public_profiles: boolean;
   default_profile_show_display_name: boolean;
   default_profile_show_avatar: boolean;
@@ -2428,6 +2430,12 @@ export interface NotifTgConnection {
   username: string | null;
 }
 
+export interface NotifDiscordConnection {
+  id: string;
+  name: string;
+  username: string | null;
+}
+
 export interface NotificationEmailRule {
   email_id: string;
   level: "brief" | "full";
@@ -2438,9 +2446,15 @@ export interface NotificationTgRule {
   level: "brief" | "full";
 }
 
+export interface NotificationDiscordRule {
+  connection_id: string;
+  level: "brief" | "full";
+}
+
 export interface NotificationRule {
   email?: NotificationEmailRule[];
   tg?: NotificationTgRule[];
+  discord?: NotificationDiscordRule[];
 }
 
 export type NotificationRules = Record<string, NotificationRule>;
@@ -2468,7 +2482,8 @@ export interface NotificationRuleMatch {
 
 export type NotificationRuleSendChannel =
   | { kind: "email"; email_id: string; level: NotificationLevel }
-  | { kind: "tg"; connection_id: string; level: NotificationLevel };
+  | { kind: "tg"; connection_id: string; level: NotificationLevel }
+  | { kind: "discord"; connection_id: string; level: NotificationLevel };
 
 export type NotificationRuleAction =
   | { type: "drop" }

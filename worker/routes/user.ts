@@ -1393,10 +1393,32 @@ app.get("/me/notifications", async (c) => {
     return { id: conn.id, name, username };
   });
 
+  // Build discord connection list
+  const { results: discordConns } = await c.env.DB.prepare(
+    "SELECT id, provider_user_id, profile_data FROM social_connections WHERE user_id = ? AND provider = 'discord' ORDER BY connected_at ASC",
+  )
+    .bind(user.id)
+    .all<{ id: string; provider_user_id: string; profile_data: string }>();
+
+  const discord_connections = discordConns.map((conn) => {
+    let name = conn.provider_user_id;
+    let username: string | null = null;
+    try {
+      const p = JSON.parse(conn.profile_data) as Record<string, unknown>;
+      const globalName = p.global_name as string | undefined;
+      username = (p.username as string | undefined) ?? null;
+      name = globalName || username || conn.provider_user_id;
+    } catch {
+      // ignore
+    }
+    return { id: conn.id, name, username };
+  });
+
   return c.json({
     rules,
     emails,
     tg_connections,
+    discord_connections,
     available: USER_NOTIFICATION_EVENTS,
   });
 });
@@ -1416,7 +1438,7 @@ function sanitizeNotificationRules(input: unknown): NotificationRules | null {
     if (!rule || typeof rule !== "object") continue;
     const cleaned: NonNullable<(typeof valid)[string]> = {};
 
-    const r = rule as { email?: unknown; tg?: unknown };
+    const r = rule as { email?: unknown; tg?: unknown; discord?: unknown };
     if (Array.isArray(r.email)) {
       const emailEntries: typeof cleaned.email = [];
       for (const entry of r.email) {
@@ -1448,6 +1470,24 @@ function sanitizeNotificationRules(input: unknown): NotificationRules | null {
         }
       }
       if (tgEntries.length) cleaned.tg = tgEntries;
+    }
+
+    if (Array.isArray(r.discord)) {
+      const discordEntries: typeof cleaned.discord = [];
+      for (const entry of r.discord) {
+        const { connection_id, level } = entry as unknown as Record<
+          string,
+          unknown
+        >;
+        if (
+          typeof connection_id === "string" &&
+          connection_id.length > 0 &&
+          (level === "brief" || level === "full")
+        ) {
+          discordEntries.push({ connection_id, level });
+        }
+      }
+      if (discordEntries.length) cleaned.discord = discordEntries;
     }
 
     valid[ev] = cleaned;

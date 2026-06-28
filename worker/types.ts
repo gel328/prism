@@ -359,9 +359,15 @@ export interface NotificationTgRule {
   level: "brief" | "full";
 }
 
+export interface NotificationDiscordRule {
+  connection_id: string; // UUID from social_connections
+  level: "brief" | "full";
+}
+
 export interface NotificationRule {
   email?: NotificationEmailRule[];
   tg?: NotificationTgRule[];
+  discord?: NotificationDiscordRule[];
 }
 
 export type NotificationRules = Record<string, NotificationRule>;
@@ -471,6 +477,9 @@ export interface SiteConfig {
    *  cutting D1 read load during incidents. */
   disable_ssr: boolean;
   tg_notify_source_slug: string;
+  /** Slug of the enabled Discord oauth_source whose bot token is used to send
+   *  direct-message notifications. Empty disables Discord DM notifications. */
+  discord_notify_source_slug: string;
   /** How long, in minutes, a successful 2FA step-up grants a sudo grace period
    *  during which subsequent challenges from the same app on the same session
    *  bypass TOTP/passkey re-prompting. 0 disables sudo mode entirely. */

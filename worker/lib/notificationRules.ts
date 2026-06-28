@@ -9,8 +9,8 @@
 //     everything; "?" matches a single character. No regex syntax beyond
 //     these two wildcards.
 //
-//   • match.accounts is an optional list of account keys ("email:<id>"
-//     or "tg:<id>"). When non-empty, the rule's *effect* is filtered to
+//   • match.accounts is an optional list of account keys ("email:<id>",
+//     "tg:<id>" or "discord:<id>"). When non-empty, the rule's *effect* is filtered to
 //     those accounts only — `send` channels not in the list are ignored,
 //     `drop` only clears those accounts. Other accounts pass through as
 //     if this rule didn't fire. When empty/missing the rule applies to
@@ -32,16 +32,18 @@ export type NotificationLevel = "brief" | "full";
 export interface RuleMatch {
   event?: string;
   /**
-   * Account-key filter. Each entry is "email:<email_id>" or
-   * "tg:<connection_id>". Empty/missing means the rule's effect is not
-   * scoped to any particular account.
+   * Account-key filter. Each entry is "email:<email_id>",
+   * "tg:<connection_id>" or "discord:<connection_id>". Empty/missing means
+   * the rule's effect is not scoped to any particular account.
    */
   accounts?: string[];
 }
 
 /** Helper: render a channel as the account key the rule's match uses. */
 export function channelKey(c: RuleSendChannel): string {
-  return c.kind === "email" ? `email:${c.email_id}` : `tg:${c.connection_id}`;
+  if (c.kind === "email") return `email:${c.email_id}`;
+  if (c.kind === "discord") return `discord:${c.connection_id}`;
+  return `tg:${c.connection_id}`;
 }
 
 export interface RuleSendChannelEmail {
@@ -56,7 +58,16 @@ export interface RuleSendChannelTg {
   level: NotificationLevel;
 }
 
-export type RuleSendChannel = RuleSendChannelEmail | RuleSendChannelTg;
+export interface RuleSendChannelDiscord {
+  kind: "discord";
+  connection_id: string;
+  level: NotificationLevel;
+}
+
+export type RuleSendChannel =
+  | RuleSendChannelEmail
+  | RuleSendChannelTg
+  | RuleSendChannelDiscord;
 
 export type RuleAction =
   | { type: "drop" }
@@ -74,6 +85,7 @@ export interface NotificationRule {
 export interface ResolvedDelivery {
   emails: Array<{ email_id: string; level: NotificationLevel }>;
   tgs: Array<{ connection_id: string; level: NotificationLevel }>;
+  discords: Array<{ connection_id: string; level: NotificationLevel }>;
 }
 
 const RULE_NAME_MAX = 64;
@@ -104,6 +116,7 @@ export function evaluateRuleset(
 ): ResolvedDelivery {
   const emailMap = new Map<string, NotificationLevel>();
   const tgMap = new Map<string, NotificationLevel>();
+  const discordMap = new Map<string, NotificationLevel>();
 
   for (const rule of rules) {
     if (rule.enabled === false) continue;
@@ -119,11 +132,13 @@ export function evaluateRuleset(
         // Per-account drop: only clear the listed accounts; others stay.
         for (const key of scopedAccounts) {
           if (key.startsWith("email:")) emailMap.delete(key.slice(6));
+          else if (key.startsWith("discord:")) discordMap.delete(key.slice(8));
           else if (key.startsWith("tg:")) tgMap.delete(key.slice(3));
         }
       } else {
         emailMap.clear();
         tgMap.clear();
+        discordMap.clear();
       }
     } else {
       for (const ch of rule.action.channels) {
@@ -141,6 +156,11 @@ export function evaluateRuleset(
             ch.connection_id,
             upgradeLevel(tgMap.get(ch.connection_id), ch.level),
           );
+        } else if (ch.kind === "discord") {
+          discordMap.set(
+            ch.connection_id,
+            upgradeLevel(discordMap.get(ch.connection_id), ch.level),
+          );
         }
       }
     }
@@ -151,6 +171,10 @@ export function evaluateRuleset(
   return {
     emails: [...emailMap].map(([email_id, level]) => ({ email_id, level })),
     tgs: [...tgMap].map(([connection_id, level]) => ({
+      connection_id,
+      level,
+    })),
+    discords: [...discordMap].map(([connection_id, level]) => ({
       connection_id,
       level,
     })),
@@ -233,12 +257,14 @@ export function sanitizeRulesArray(
         const key = matchRaw.accounts[k];
         if (
           typeof key !== "string" ||
-          (!key.startsWith("email:") && !key.startsWith("tg:")) ||
+          (!key.startsWith("email:") &&
+            !key.startsWith("tg:") &&
+            !key.startsWith("discord:")) ||
           key.length < 5 ||
           key.length > 128
         ) {
           return {
-            error: `rules[${i}].match.accounts[${k}] must be "email:<id>" or "tg:<id>"`,
+            error: `rules[${i}].match.accounts[${k}] must be "email:<id>", "tg:<id>" or "discord:<id>"`,
           };
         }
         accounts.push(key);
@@ -291,9 +317,19 @@ export function sanitizeRulesArray(
             connection_id: c.connection_id,
             level: c.level,
           });
+        } else if (c.kind === "discord") {
+          if (typeof c.connection_id !== "string" || !c.connection_id)
+            return {
+              error: `rules[${i}].action.channels[${j}].connection_id is required`,
+            };
+          channels.push({
+            kind: "discord",
+            connection_id: c.connection_id,
+            level: c.level,
+          });
         } else {
           return {
-            error: `rules[${i}].action.channels[${j}].kind must be "email" or "tg"`,
+            error: `rules[${i}].action.channels[${j}].kind must be "email", "tg" or "discord"`,
           };
         }
       }

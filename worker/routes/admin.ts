@@ -117,6 +117,7 @@ app.patch("/config", async (c) => {
     "imap_user",
     "imap_password",
     "tg_notify_source_slug",
+    "discord_notify_source_slug",
     "email_api_key",
     "email_from",
     "smtp_host",

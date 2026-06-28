@@ -35,12 +35,14 @@ import type {
   NotificationRules,
   NotificationEmailRule,
   NotificationTgRule,
+  NotificationDiscordRule,
   NotificationRuleset,
   NotificationRule,
   NotificationRuleSendChannel,
   NotificationLevel,
   NotifEmail,
   NotifTgConnection,
+  NotifDiscordConnection,
 } from "../lib/api";
 import { SkeletonToggleRows } from "../components/Skeletons";
 
@@ -248,6 +250,23 @@ function getUniformTgLevel(
   return uniformLevel(levels);
 }
 
+function getUniformDiscordLevel(
+  eventKeys: string[],
+  rules: NotificationRules,
+  connections: NotifDiscordConnection[],
+): "brief" | "full" | null | "mixed" {
+  if (!connections.length) return null;
+  const levels: Array<"brief" | "full" | null> = [];
+  for (const ev of eventKeys)
+    for (const conn of connections) {
+      const entry = (rules[ev]?.discord ?? []).find(
+        (r) => r.connection_id === conn.id,
+      );
+      levels.push(entry?.level ?? null);
+    }
+  return uniformLevel(levels);
+}
+
 function getUniformEmailAccountLevel(
   eventKeys: string[],
   rules: NotificationRules,
@@ -269,6 +288,21 @@ function getUniformTgAccountLevel(
   const levels: Array<"brief" | "full" | null> = [];
   for (const ev of eventKeys) {
     const entry = (rules[ev]?.tg ?? []).find(
+      (r) => r.connection_id === connectionId,
+    );
+    levels.push(entry?.level ?? null);
+  }
+  return uniformLevel(levels);
+}
+
+function getUniformDiscordAccountLevel(
+  eventKeys: string[],
+  rules: NotificationRules,
+  connectionId: string,
+): "brief" | "full" | null | "mixed" {
+  const levels: Array<"brief" | "full" | null> = [];
+  for (const ev of eventKeys) {
+    const entry = (rules[ev]?.discord ?? []).find(
       (r) => r.connection_id === connectionId,
     );
     levels.push(entry?.level ?? null);
@@ -534,6 +568,46 @@ function TgChannelPicker({
   );
 }
 
+// ─── Discord channel picker ───────────────────────────────────────────────────
+
+function DiscordChannelPicker({
+  value,
+  connections,
+  onChange,
+}: {
+  value: NotificationDiscordRule[];
+  connections: NotifDiscordConnection[];
+  onChange: (v: NotificationDiscordRule[]) => void;
+}) {
+  const { t } = useTranslation();
+  if (connections.length === 0) return null;
+  return (
+    <>
+      {connections.map((conn) => {
+        const handle = conn.username ? `@${conn.username}` : conn.name;
+        const label = t("notifications.discordAccountLabel", {
+          account: handle,
+        });
+        const rule = value.find((r) => r.connection_id === conn.id);
+        return (
+          <AccountLevelRow
+            key={conn.id}
+            icon="🎮"
+            label={label}
+            level={rule?.level ?? null}
+            onChange={(l) => {
+              const rest = value.filter((r) => r.connection_id !== conn.id);
+              onChange(
+                l ? [...rest, { connection_id: conn.id, level: l }] : rest,
+              );
+            }}
+          />
+        );
+      })}
+    </>
+  );
+}
+
 // ─── Bulk level controls ─────────────────────────────────────────────────────
 
 const BULK_LEVELS = [
@@ -547,25 +621,38 @@ function BulkLevelControls({
   rules,
   emailLevel,
   tgLevel,
+  discordLevel,
   emails,
   connections,
+  discordConnections,
   showTg,
+  showDiscord,
   onEmail,
   onTg,
+  onDiscord,
   onEmailAccount,
   onTgAccount,
+  onDiscordAccount,
 }: {
   eventKeys: string[];
   rules: NotificationRules;
   emailLevel: "brief" | "full" | null | "mixed";
   tgLevel: "brief" | "full" | null | "mixed";
+  discordLevel: "brief" | "full" | null | "mixed";
   emails: NotifEmail[];
   connections: NotifTgConnection[];
+  discordConnections: NotifDiscordConnection[];
   showTg: boolean;
+  showDiscord: boolean;
   onEmail: (level: "brief" | "full" | null) => void;
   onTg: (level: "brief" | "full" | null) => void;
+  onDiscord: (level: "brief" | "full" | null) => void;
   onEmailAccount: (emailId: string, level: "brief" | "full" | null) => void;
   onTgAccount: (connectionId: string, level: "brief" | "full" | null) => void;
+  onDiscordAccount: (
+    connectionId: string,
+    level: "brief" | "full" | null,
+  ) => void;
 }) {
   const { t } = useTranslation();
   const styles = useStyles();
@@ -622,6 +709,33 @@ function BulkLevelControls({
           </div>
         </div>
       )}
+      {showDiscord && discordConnections.length > 0 && (
+        <div className={styles.channelRow}>
+          <Tooltip
+            content={t("notifications.discordChannel")}
+            relationship="label"
+          >
+            <Text className={styles.channelLabel}>🎮</Text>
+          </Tooltip>
+          <div className={styles.levelPicker}>
+            {BULK_LEVELS.map(([level, key]) => (
+              <Button
+                key={String(level)}
+                className={styles.levelBtn}
+                size="small"
+                appearance={
+                  discordLevel !== "mixed" && discordLevel === level
+                    ? "primary"
+                    : "subtle"
+                }
+                onClick={() => onDiscord(level)}
+              >
+                {t(key)}
+              </Button>
+            ))}
+          </div>
+        </div>
+      )}
       {emails.map((email) => {
         const level = getUniformEmailAccountLevel(eventKeys, rules, email.id);
         return (
@@ -649,6 +763,23 @@ function BulkLevelControls({
             />
           );
         })}
+      {showDiscord &&
+        discordConnections.map((conn) => {
+          const handle = conn.username ? `@${conn.username}` : conn.name;
+          const label = t("notifications.discordAccountLabel", {
+            account: handle,
+          });
+          const level = getUniformDiscordAccountLevel(eventKeys, rules, conn.id);
+          return (
+            <AccountLevelRow
+              key={`bulk-discord-${conn.id}`}
+              icon="🎮"
+              label={label}
+              level={level}
+              onChange={(nextLevel) => onDiscordAccount(conn.id, nextLevel)}
+            />
+          );
+        })}
     </div>
   );
 }
@@ -671,6 +802,7 @@ function RulesetSection(props: {
   draftDirty: boolean;
   emails: NotifEmail[];
   tgConnections: NotifTgConnection[];
+  discordConnections: NotifDiscordConnection[];
   rulesetMessage: { intent: "success" | "error"; text: string } | null;
   creating: boolean;
   updating: boolean;
@@ -792,6 +924,7 @@ function RulesetSection(props: {
                 rule={rule}
                 emails={props.emails}
                 tgConnections={props.tgConnections}
+                discordConnections={props.discordConnections}
                 knownEvents={props.knownEvents}
                 isFirst={idx === 0}
                 isLast={idx === draftRules.length - 1}
@@ -843,6 +976,7 @@ function RulesetSection(props: {
 function RuleAccountFilter(props: {
   emails: NotifEmail[];
   tgConnections: NotifTgConnection[];
+  discordConnections: NotifDiscordConnection[];
   value: string[];
   onChange: (next: string[]) => void;
 }) {
@@ -857,6 +991,11 @@ function RuleAccountFilter(props: {
       key: `tg:${c.id}`,
       label: c.username ? `@${c.username}` : c.name,
       icon: "✈",
+    })),
+    ...props.discordConnections.map((c) => ({
+      key: `discord:${c.id}`,
+      label: c.username ? `@${c.username}` : c.name,
+      icon: "🎮",
     })),
   ];
   const selected = new Set(props.value);
@@ -947,6 +1086,7 @@ function RuleEditorCard(props: {
   rule: NotificationRule;
   emails: NotifEmail[];
   tgConnections: NotifTgConnection[];
+  discordConnections: NotifDiscordConnection[];
   knownEvents: string[];
   isFirst: boolean;
   isLast: boolean;
@@ -988,6 +1128,14 @@ function RuleEditorCard(props: {
     setChannels([
       ...sendChannels,
       { kind: "tg", connection_id: first.id, level: "full" },
+    ]);
+  }
+  function addDiscordChannel() {
+    const first = props.discordConnections[0];
+    if (!first) return;
+    setChannels([
+      ...sendChannels,
+      { kind: "discord", connection_id: first.id, level: "full" },
     ]);
   }
 
@@ -1071,6 +1219,7 @@ function RuleEditorCard(props: {
       <RuleAccountFilter
         emails={props.emails}
         tgConnections={props.tgConnections}
+        discordConnections={props.discordConnections}
         value={rule.match.accounts ?? []}
         onChange={(accounts) =>
           props.onPatch({
@@ -1109,6 +1258,7 @@ function RuleEditorCard(props: {
               channel={ch}
               emails={props.emails}
               tgConnections={props.tgConnections}
+              discordConnections={props.discordConnections}
               onChange={(next) => {
                 const copy = sendChannels.slice();
                 copy[ci] = next;
@@ -1136,6 +1286,14 @@ function RuleEditorCard(props: {
             >
               + {t("notifications.tgChannel")}
             </Button>
+            <Button
+              size="small"
+              appearance="subtle"
+              onClick={addDiscordChannel}
+              disabled={props.discordConnections.length === 0}
+            >
+              + {t("notifications.discordChannel")}
+            </Button>
           </div>
         </div>
       )}
@@ -1157,6 +1315,7 @@ function RuleChannelRow(props: {
   channel: NotificationRuleSendChannel;
   emails: NotifEmail[];
   tgConnections: NotifTgConnection[];
+  discordConnections: NotifDiscordConnection[];
   onChange: (next: NotificationRuleSendChannel) => void;
   onDelete: () => void;
 }) {
@@ -1164,16 +1323,20 @@ function RuleChannelRow(props: {
   const { channel } = props;
   const setLevel = (level: NotificationLevel) =>
     props.onChange({ ...channel, level });
+  const channelIcon =
+    channel.kind === "email" ? "✉" : channel.kind === "discord" ? "🎮" : "✈";
+  const accountConnections =
+    channel.kind === "discord" ? props.discordConnections : props.tgConnections;
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-      <Text size={200}>{channel.kind === "email" ? "✉" : "✈"}</Text>
+      <Text size={200}>{channelIcon}</Text>
       <Dropdown
         size="small"
         value={
           channel.kind === "email"
             ? (props.emails.find((e) => e.id === channel.email_id)?.email ?? "")
             : (() => {
-                const c = props.tgConnections.find(
+                const c = accountConnections.find(
                   (c) => c.id === channel.connection_id,
                 );
                 return c ? (c.username ? `@${c.username}` : c.name) : "";
@@ -1198,7 +1361,7 @@ function RuleChannelRow(props: {
                 {e.email}
               </Option>
             ))
-          : props.tgConnections.map((c) => {
+          : accountConnections.map((c) => {
               const label = c.username ? `@${c.username}` : c.name;
               return (
                 <Option key={c.id} value={c.id} text={label}>
@@ -1257,9 +1420,15 @@ export function Notifications() {
   });
 
   const hasTgBot = !!site?.tg_notify_source_slug;
+  const hasDiscordBot = !!site?.discord_notify_source_slug;
   const emails: NotifEmail[] = data?.emails ?? [];
   const tgConnections: NotifTgConnection[] = data?.tg_connections ?? [];
+  const discordConnections: NotifDiscordConnection[] =
+    data?.discord_connections ?? [];
   const showTg = tgConnections.length > 0;
+  // Discord DM routing is only offered when the admin enabled a Discord bot
+  // AND the user has linked at least one Discord account.
+  const showDiscord = hasDiscordBot && discordConnections.length > 0;
 
   const [rules, setRules] = useState<NotificationRules>({});
   const [dirty, setDirty] = useState(false);
@@ -1561,6 +1730,50 @@ export function Notifications() {
     setSaved(false);
   }
 
+  function applyBulkDiscord(
+    eventKeys: string[],
+    level: "brief" | "full" | null,
+  ) {
+    setRules((prev) => {
+      const next = { ...prev };
+      for (const ev of eventKeys)
+        next[ev] = {
+          ...(next[ev] ?? {}),
+          discord: level
+            ? discordConnections.map((c) => ({ connection_id: c.id, level }))
+            : [],
+        };
+      return next;
+    });
+    setDirty(true);
+    setSaved(false);
+  }
+
+  function applyBulkDiscordAccount(
+    eventKeys: string[],
+    connectionId: string,
+    level: "brief" | "full" | null,
+  ) {
+    setRules((prev) => {
+      const next = { ...prev };
+      for (const ev of eventKeys) {
+        const curr = next[ev] ?? {};
+        const rest = (curr.discord ?? []).filter(
+          (r) => r.connection_id !== connectionId,
+        );
+        next[ev] = {
+          ...curr,
+          discord: level
+            ? [...rest, { connection_id: connectionId, level }]
+            : rest,
+        };
+      }
+      return next;
+    });
+    setDirty(true);
+    setSaved(false);
+  }
+
   function openJson() {
     setJsonText(JSON.stringify(rules, null, 2));
     setJsonError(null);
@@ -1599,6 +1812,15 @@ export function Notifications() {
     setRules((prev) => ({
       ...prev,
       [event]: { ...(prev[event] ?? {}), tg: value },
+    }));
+    setDirty(true);
+    setSaved(false);
+  }
+
+  function setDiscordChannel(event: string, value: NotificationDiscordRule[]) {
+    setRules((prev) => ({
+      ...prev,
+      [event]: { ...(prev[event] ?? {}), discord: value },
     }));
     setDirty(true);
     setSaved(false);
@@ -1672,6 +1894,12 @@ export function Notifications() {
         </MessageBar>
       )}
 
+      {hasDiscordBot && discordConnections.length === 0 && (
+        <MessageBar intent="info">
+          <MessageBarBody>{t("notifications.discordNoAccount")}</MessageBarBody>
+        </MessageBar>
+      )}
+
       {saved && (
         <MessageBar intent="success">
           <MessageBarBody>{t("notifications.saved")}</MessageBarBody>
@@ -1694,6 +1922,7 @@ export function Notifications() {
         draftDirty={draftDirty}
         emails={emails}
         tgConnections={tgConnections}
+        discordConnections={showDiscord ? discordConnections : []}
         rulesetMessage={rulesetMessage}
         creating={createRulesetMut.isPending}
         updating={updateRulesetMut.isPending}
@@ -1721,7 +1950,7 @@ export function Notifications() {
         </MessageBar>
       )}
 
-      {(emails.length > 0 || showTg) && (
+      {(emails.length > 0 || showTg || showDiscord) && (
         <div className={styles.selectAllRow}>
           <Text className={styles.selectAllLabel}>
             {t("notifications.selectAll")}
@@ -1731,16 +1960,27 @@ export function Notifications() {
             rules={rules}
             emailLevel={getUniformEmailLevel(ALL_EVENT_KEYS, rules, emails)}
             tgLevel={getUniformTgLevel(ALL_EVENT_KEYS, rules, tgConnections)}
+            discordLevel={getUniformDiscordLevel(
+              ALL_EVENT_KEYS,
+              rules,
+              discordConnections,
+            )}
             emails={emails}
             connections={tgConnections}
+            discordConnections={discordConnections}
             showTg={showTg}
+            showDiscord={showDiscord}
             onEmail={(l) => applyBulkEmail(ALL_EVENT_KEYS, l)}
             onTg={(l) => applyBulkTg(ALL_EVENT_KEYS, l)}
+            onDiscord={(l) => applyBulkDiscord(ALL_EVENT_KEYS, l)}
             onEmailAccount={(emailId, l) =>
               applyBulkEmailAccount(ALL_EVENT_KEYS, emailId, l)
             }
             onTgAccount={(connectionId, l) =>
               applyBulkTgAccount(ALL_EVENT_KEYS, connectionId, l)
+            }
+            onDiscordAccount={(connectionId, l) =>
+              applyBulkDiscordAccount(ALL_EVENT_KEYS, connectionId, l)
             }
           />
         </div>
@@ -1757,16 +1997,27 @@ export function Notifications() {
                 rules={rules}
                 emailLevel={getUniformEmailLevel(groupKeys, rules, emails)}
                 tgLevel={getUniformTgLevel(groupKeys, rules, tgConnections)}
+                discordLevel={getUniformDiscordLevel(
+                  groupKeys,
+                  rules,
+                  discordConnections,
+                )}
                 emails={emails}
                 connections={tgConnections}
+                discordConnections={discordConnections}
                 showTg={showTg}
+                showDiscord={showDiscord}
                 onEmail={(l) => applyBulkEmail(groupKeys, l)}
                 onTg={(l) => applyBulkTg(groupKeys, l)}
+                onDiscord={(l) => applyBulkDiscord(groupKeys, l)}
                 onEmailAccount={(emailId, l) =>
                   applyBulkEmailAccount(groupKeys, emailId, l)
                 }
                 onTgAccount={(connectionId, l) =>
                   applyBulkTgAccount(groupKeys, connectionId, l)
+                }
+                onDiscordAccount={(connectionId, l) =>
+                  applyBulkDiscordAccount(groupKeys, connectionId, l)
                 }
               />
             </div>
@@ -1796,6 +2047,13 @@ export function Notifications() {
                         value={rule.tg ?? []}
                         connections={tgConnections}
                         onChange={(v) => setTgChannel(entry.value, v)}
+                      />
+                    )}
+                    {showDiscord && (
+                      <DiscordChannelPicker
+                        value={rule.discord ?? []}
+                        connections={discordConnections}
+                        onChange={(v) => setDiscordChannel(entry.value, v)}
                       />
                     )}
                   </div>

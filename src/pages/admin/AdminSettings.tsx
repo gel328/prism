@@ -102,6 +102,9 @@ export function AdminSettings() {
   const telegramSources = (oauthSourcesData?.sources ?? []).filter(
     (s) => s.provider === "telegram" && s.enabled,
   );
+  const discordSources = (oauthSourcesData?.sources ?? []).filter(
+    (s) => s.provider === "discord" && s.enabled,
+  );
   const config = data?.config as SiteConfig | undefined;
 
   const [localConfig, setLocalConfig] = useState<Partial<SiteConfig>>({});
@@ -372,6 +375,35 @@ export function AdminSettings() {
       );
     } finally {
       setSaving(false);
+    }
+  };
+
+  // Save a single config key immediately (used by the per-platform save
+  // buttons on the third-party notifications tab). Keeps its own pending
+  // flag so one platform's spinner doesn't block the other.
+  const [savingThirdParty, setSavingThirdParty] = useState<string | null>(null);
+  const saveConfigKey = async (key: keyof SiteConfig) => {
+    setSavingThirdParty(key as string);
+    try {
+      await api.adminUpdateConfig({ [key]: get(key) } as Record<
+        string,
+        unknown
+      >);
+      await qc.invalidateQueries({ queryKey: ["admin-config"] });
+      await qc.invalidateQueries({ queryKey: ["site"] });
+      setLocalConfig((c) => {
+        const next = { ...c };
+        delete next[key];
+        return next;
+      });
+      showMsg("success", t("admin.thirdPartySaved"));
+    } catch (err) {
+      showMsg(
+        "error",
+        err instanceof ApiError ? err.message : t("admin.thirdPartySaveFailed"),
+      );
+    } finally {
+      setSavingThirdParty(null);
     }
   };
 
@@ -940,7 +972,7 @@ export function AdminSettings() {
           >
             <Tab value="send">{t("admin.emailSendTab")}</Tab>
             <Tab value="receive">{t("admin.emailReceiveTab")}</Tab>
-            <Tab value="telegram">{t("admin.emailTelegramTab")}</Tab>
+            <Tab value="telegram">{t("admin.thirdPartyTab")}</Tab>
           </TabList>
 
           {emailSubTab === "send" && (
@@ -1170,36 +1202,157 @@ export function AdminSettings() {
           {emailSubTab === "telegram" && (
             <div className={styles.form}>
               <Text style={{ color: tokens.colorNeutralForeground3 }}>
-                {t("admin.tgNotifyDesc")}
+                {t("admin.thirdPartyDesc")}
               </Text>
-              <Field label={t("admin.tgNotifyBot")}>
-                <Dropdown
-                  value={
-                    telegramSources.find(
-                      (s) => s.slug === (get("tg_notify_source_slug") ?? ""),
-                    )?.name ?? t("admin.tgNotifyNone")
+
+              {/* ── Telegram ── */}
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 8,
+                  paddingTop: 8,
+                  borderTop: `1px solid ${tokens.colorNeutralStroke2}`,
+                }}
+              >
+                <Switch
+                  checked={!!get("tg_notify_source_slug")}
+                  label={t("admin.tgNotifyToggle")}
+                  onChange={(_, d) =>
+                    set(
+                      "tg_notify_source_slug",
+                      d.checked ? (telegramSources[0]?.slug ?? "") : "",
+                    )
                   }
-                  selectedOptions={[get("tg_notify_source_slug") ?? ""]}
-                  onOptionSelect={(_, d) =>
-                    set("tg_notify_source_slug", d.optionValue)
-                  }
-                >
-                  <Option value="">{t("admin.tgNotifyNone")}</Option>
-                  {telegramSources.map((s) => (
-                    <Option key={s.slug} value={s.slug}>
-                      {s.name}
-                    </Option>
-                  ))}
-                </Dropdown>
-              </Field>
-              {telegramSources.length === 0 && (
+                  disabled={telegramSources.length === 0}
+                />
                 <Text
                   size={200}
                   style={{ color: tokens.colorNeutralForeground3 }}
                 >
-                  {t("admin.tgNotifyNoSources")}
+                  {t("admin.tgNotifyDesc")}
                 </Text>
-              )}
+                {!!get("tg_notify_source_slug") && (
+                  <Field label={t("admin.tgNotifyBot")}>
+                    <Dropdown
+                      value={
+                        telegramSources.find(
+                          (s) => s.slug === (get("tg_notify_source_slug") ?? ""),
+                        )?.name ?? t("admin.tgNotifyNone")
+                      }
+                      selectedOptions={[get("tg_notify_source_slug") ?? ""]}
+                      onOptionSelect={(_, d) =>
+                        set("tg_notify_source_slug", d.optionValue)
+                      }
+                    >
+                      {telegramSources.map((s) => (
+                        <Option key={s.slug} value={s.slug}>
+                          {s.name}
+                        </Option>
+                      ))}
+                    </Dropdown>
+                  </Field>
+                )}
+                {telegramSources.length === 0 && (
+                  <Text
+                    size={200}
+                    style={{ color: tokens.colorNeutralForeground3 }}
+                  >
+                    {t("admin.tgNotifyNoSources")}
+                  </Text>
+                )}
+                <div>
+                  <Button
+                    appearance="primary"
+                    disabled={
+                      savingThirdParty !== null ||
+                      !("tg_notify_source_slug" in localConfig)
+                    }
+                    onClick={() => saveConfigKey("tg_notify_source_slug")}
+                  >
+                    {savingThirdParty === "tg_notify_source_slug" ? (
+                      <Spinner size="tiny" />
+                    ) : (
+                      t("common.saveChanges")
+                    )}
+                  </Button>
+                </div>
+              </div>
+
+              {/* ── Discord ── */}
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 8,
+                  paddingTop: 8,
+                  borderTop: `1px solid ${tokens.colorNeutralStroke2}`,
+                }}
+              >
+                <Switch
+                  checked={!!get("discord_notify_source_slug")}
+                  label={t("admin.discordNotifyToggle")}
+                  onChange={(_, d) =>
+                    set(
+                      "discord_notify_source_slug",
+                      d.checked ? (discordSources[0]?.slug ?? "") : "",
+                    )
+                  }
+                  disabled={discordSources.length === 0}
+                />
+                <Text
+                  size={200}
+                  style={{ color: tokens.colorNeutralForeground3 }}
+                >
+                  {t("admin.discordNotifyDesc")}
+                </Text>
+                {!!get("discord_notify_source_slug") && (
+                  <Field label={t("admin.discordNotifyBot")}>
+                    <Dropdown
+                      value={
+                        discordSources.find(
+                          (s) =>
+                            s.slug === (get("discord_notify_source_slug") ?? ""),
+                        )?.name ?? t("admin.discordNotifyNone")
+                      }
+                      selectedOptions={[get("discord_notify_source_slug") ?? ""]}
+                      onOptionSelect={(_, d) =>
+                        set("discord_notify_source_slug", d.optionValue)
+                      }
+                    >
+                      {discordSources.map((s) => (
+                        <Option key={s.slug} value={s.slug}>
+                          {s.name}
+                        </Option>
+                      ))}
+                    </Dropdown>
+                  </Field>
+                )}
+                {discordSources.length === 0 && (
+                  <Text
+                    size={200}
+                    style={{ color: tokens.colorNeutralForeground3 }}
+                  >
+                    {t("admin.discordNotifyNoSources")}
+                  </Text>
+                )}
+                <div>
+                  <Button
+                    appearance="primary"
+                    disabled={
+                      savingThirdParty !== null ||
+                      !("discord_notify_source_slug" in localConfig)
+                    }
+                    onClick={() => saveConfigKey("discord_notify_source_slug")}
+                  >
+                    {savingThirdParty === "discord_notify_source_slug" ? (
+                      <Spinner size="tiny" />
+                    ) : (
+                      t("common.saveChanges")
+                    )}
+                  </Button>
+                </div>
+              </div>
             </div>
           )}
         </div>

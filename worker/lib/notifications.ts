@@ -883,6 +883,176 @@ function withTelegramOperatorMeta(
   return `${message}\n\n🧭 Operator metadata\n${lines.join("\n")}`;
 }
 
+// ─── Discord (Markdown) message building ──────────────────────────────────────
+
+/** Escape Discord Markdown control characters so user content renders literally. */
+function dcEsc(s: string): string {
+  // Backslash-escape the characters Discord treats as Markdown syntax.
+  return s.replace(/([\\*_~`>|[\]()#-])/g, "\\$1");
+}
+
+/** Render a Discord markdown link, falling back to bare text for unsafe URLs. */
+function dcLink(url: string, label: string): string {
+  const safe = safeUrl(url);
+  if (safe === "#") return dcEsc(label);
+  // Discord auto-embeds bare URLs; wrap in <> to suppress the preview.
+  return `[${dcEsc(label)}](<${safe}>)`;
+}
+
+/**
+ * Build a Discord direct-message body in Markdown. Mirrors the Telegram
+ * message catalogue but uses Discord's Markdown flavour (**bold**, masked
+ * links) instead of Telegram HTML.
+ */
+function buildDiscordMessage(
+  event: string,
+  data: Record<string, unknown>,
+  siteName: string,
+  appUrl: string,
+  displayName: string,
+  level: "brief" | "full",
+): string | null {
+  const sn = dcEsc(siteName);
+  const dn = dcEsc(displayName);
+  const notifLink = dcLink(`${appUrl}/notifications`, "Manage notifications");
+  const brief = level === "brief";
+
+  switch (event) {
+    case "app.created": {
+      const name = dcEsc((data.name as string | undefined) ?? "an application");
+      if (brief) return `**${sn}**\n\n🆕 App created: **${name}**`;
+      return `**${sn}**\n\n🆕 **App created**\n\nHi ${dn}, your OAuth application **${name}** has been created.\n\n${notifLink}`;
+    }
+    case "app.updated": {
+      const rawName = data.name as string | undefined;
+      const name = rawName ? dcEsc(rawName) : null;
+      if (brief)
+        return `**${sn}**\n\n✏️ App updated${name ? `: **${name}**` : ""}`;
+      return `**${sn}**\n\n✏️ **App updated**\n\nHi ${dn}, ${name ? `**${name}**` : "one of your applications"} was updated.\n\n${notifLink}`;
+    }
+    case "app.deleted": {
+      const rawName = data.name as string | undefined;
+      const name = rawName ? dcEsc(rawName) : null;
+      if (brief)
+        return `**${sn}**\n\n🗑 App deleted${name ? `: **${name}**` : ""}`;
+      return `**${sn}**\n\n🗑 **App deleted**\n\nHi ${dn}, ${name ? `**${name}**` : "one of your OAuth applications"} was permanently deleted from your account.\n\n${notifLink}`;
+    }
+    case "domain.added": {
+      const domain = dcEsc((data.domain as string | undefined) ?? "a domain");
+      if (brief) return `**${sn}**\n\n🌐 Domain added: **${domain}**`;
+      return `**${sn}**\n\n🌐 **Domain added**\n\nHi ${dn}, the domain **${domain}** has been added to your account and is awaiting verification.\n\n${dcLink(`${appUrl}/domains`, "Verify domain")}`;
+    }
+    case "domain.verified": {
+      const domain = dcEsc((data.domain as string | undefined) ?? "a domain");
+      if (brief) return `**${sn}**\n\n✅ Domain verified: **${domain}**`;
+      return `**${sn}**\n\n✅ **Domain verified**\n\nHi ${dn}, your domain **${domain}** has been verified and is ready to use.\n\n${dcLink(`${appUrl}/domains`, "View domains")}`;
+    }
+    case "domain.deleted": {
+      const domain = dcEsc((data.domain as string | undefined) ?? "a domain");
+      if (brief) return `**${sn}**\n\n🗑 Domain removed: **${domain}**`;
+      return `**${sn}**\n\n🗑 **Domain removed**\n\nHi ${dn}, the domain **${domain}** has been removed from your account.`;
+    }
+    case "connection.added": {
+      const provider = dcEsc(
+        (data.provider_name as string | undefined) ?? "a provider",
+      );
+      if (brief) return `**${sn}**\n\n🔗 Connection added: **${provider}**`;
+      return `**${sn}**\n\n🔗 **Connection added**\n\nHi ${dn}, your account has been linked to **${provider}**.\n\nIf you did not do this, review your connections immediately.\n\n${dcLink(`${appUrl}/connections`, "View connections")}`;
+    }
+    case "connection.removed": {
+      const provider = dcEsc(
+        (data.provider_name as string | undefined) ?? "a provider",
+      );
+      if (brief) return `**${sn}**\n\n🔓 Connection removed: **${provider}**`;
+      return `**${sn}**\n\n🔓 **Connection removed**\n\nHi ${dn}, the connection to **${provider}** has been removed from your account.`;
+    }
+    case "connection.login": {
+      const provider = dcEsc(
+        (data.provider_name as string | undefined) ?? "a provider",
+      );
+      if (brief) return `**${sn}**\n\n🔐 New login via **${provider}**`;
+      return `**${sn}**\n\n🔐 **New login**\n\nHi ${dn}, your account was signed in via **${provider}**.\n\nIf this was not you, change your password immediately.`;
+    }
+    case "profile.updated": {
+      if (brief) return `**${sn}**\n\n👤 Profile updated`;
+      return `**${sn}**\n\n👤 **Profile updated**\n\nHi ${dn}, changes were made to your profile.\n\nIf you did not make this change, review your account security.\n\n${dcLink(`${appUrl}/profile`, "View profile")}`;
+    }
+    case "security.passkey_added": {
+      const name = dcEsc((data.name as string | undefined) ?? "a passkey");
+      if (brief) return `**${sn}**\n\n🔑 Passkey added: **${name}**`;
+      return `**${sn}**\n\n🔑 **Passkey added**\n\nHi ${dn}, a passkey named **${name}** was added to your account.\n\nIf you did not do this, remove it immediately.\n\n${dcLink(`${appUrl}/security`, "Manage passkeys")}`;
+    }
+    case "security.passkey_removed": {
+      const name = dcEsc((data.name as string | undefined) ?? "a passkey");
+      if (brief) return `**${sn}**\n\n🗑 Passkey removed: **${name}**`;
+      return `**${sn}**\n\n🗑 **Passkey removed**\n\nHi ${dn}, the passkey **${name}** was removed from your account.\n\n${dcLink(`${appUrl}/security`, "Manage security")}`;
+    }
+    case "security.totp_enabled": {
+      const name = dcEsc(
+        (data.name as string | undefined) ?? "an authenticator",
+      );
+      if (brief) return `**${sn}**\n\n🔐 2FA enabled: **${name}**`;
+      return `**${sn}**\n\n🔐 **2FA enabled**\n\nHi ${dn}, two-factor authentication was enabled using **${name}**.\n\n${dcLink(`${appUrl}/security`, "Manage 2FA")}`;
+    }
+    case "security.totp_disabled": {
+      const name = dcEsc(
+        (data.name as string | undefined) ?? "an authenticator",
+      );
+      if (brief) return `**${sn}**\n\n⚠️ 2FA removed: **${name}**`;
+      return `**${sn}**\n\n⚠️ **2FA removed**\n\nHi ${dn}, the two-factor authenticator **${name}** was removed from your account.\n\nIf you did not do this, secure your account immediately.\n\n${dcLink(`${appUrl}/security`, "Manage 2FA")}`;
+    }
+    case "token.created": {
+      const name = dcEsc((data.name as string | undefined) ?? "a token");
+      if (brief) return `**${sn}**\n\n🔑 Access token created: **${name}**`;
+      return `**${sn}**\n\n🔑 **Access token created**\n\nHi ${dn}, a new access token named **${name}** was created.\n\n${dcLink(`${appUrl}/tokens`, "Manage tokens")}`;
+    }
+    case "token.revoked": {
+      const name = dcEsc((data.name as string | undefined) ?? "a token");
+      if (brief) return `**${sn}**\n\n🚫 Access token revoked: **${name}**`;
+      return `**${sn}**\n\n🚫 **Access token revoked**\n\nHi ${dn}, the access token **${name}** was revoked.\n\n${dcLink(`${appUrl}/tokens`, "Manage tokens")}`;
+    }
+    case "team.member_added": {
+      const team = dcEsc((data.team_name as string | undefined) ?? "a team");
+      const role = dcEsc((data.role as string | undefined) ?? "member");
+      if (brief) return `**${sn}**\n\n👥 Added to **${team}** as **${role}**`;
+      return `**${sn}**\n\n👥 **Added to team**\n\nHi ${dn}, you have been added to **${team}** as **${role}**.\n\n${dcLink(`${appUrl}/teams`, "View teams")}`;
+    }
+    case "team.member_removed": {
+      const team = dcEsc((data.team_name as string | undefined) ?? "a team");
+      if (brief) return `**${sn}**\n\n👋 Removed from **${team}**`;
+      return `**${sn}**\n\n👋 **Removed from team**\n\nHi ${dn}, you have been removed from **${team}**.`;
+    }
+    case "oauth.consent_granted": {
+      const app = dcEsc(
+        (data.app_name as string | undefined) ?? "an application",
+      );
+      if (brief) return `**${sn}**\n\n🤝 App access granted: **${app}**`;
+      return `**${sn}**\n\n🤝 **App access granted**\n\nHi ${dn}, you granted **${app}** access to your account.\n\n${dcLink(`${appUrl}/connected-apps`, "Manage connected apps")}`;
+    }
+    case "oauth.consent_revoked": {
+      const app = dcEsc(
+        (data.app_name as string | undefined) ?? "an application",
+      );
+      if (brief) return `**${sn}**\n\n🚫 App access revoked: **${app}**`;
+      return `**${sn}**\n\n🚫 **App access revoked**\n\nHi ${dn}, access for **${app}** has been revoked from your account.`;
+    }
+    default:
+      return null;
+  }
+}
+
+function withDiscordOperatorMeta(
+  message: string,
+  data: Record<string, unknown>,
+): string {
+  const meta = getOperatorMeta(data);
+  if (!meta.ip && !meta.userAgent) return message;
+  const lines: string[] = [];
+  if (meta.ip) lines.push(`• IP: \`${meta.ip}\``);
+  if (meta.userAgent) lines.push(`• User-Agent: \`${meta.userAgent}\``);
+  return `${message}\n\n🧭 **Operator metadata**\n${lines.join("\n")}`;
+}
+
 // ─── Rules helpers ────────────────────────────────────────────────────────────
 
 import type { NotificationRules } from "../types";
@@ -1003,6 +1173,83 @@ async function sendTelegramNotification(
   });
 }
 
+// ─── Discord delivery ─────────────────────────────────────────────────────────
+
+async function sendDiscordNotification(
+  env: Env,
+  userId: string,
+  connectionId: string,
+  level: "brief" | "full",
+  event: string,
+  data: Record<string, unknown>,
+  appUrl: string,
+): Promise<void> {
+  const db = env.DB;
+  const config = await getConfig(db);
+  const sourceSlug = config.discord_notify_source_slug;
+  if (!sourceSlug) return;
+
+  const source = await db
+    .prepare(
+      "SELECT client_secret FROM oauth_sources WHERE slug = ? AND provider = 'discord' AND enabled = 1",
+    )
+    .bind(sourceSlug)
+    .first<{ client_secret: string }>();
+  if (!source) return;
+  // The bot token is stored in client_secret and may be encrypted at rest.
+  const botToken = await decryptSecret(env, source.client_secret);
+  if (!botToken) return;
+
+  const conn = await db
+    .prepare(
+      "SELECT provider_user_id FROM social_connections WHERE id = ? AND user_id = ? AND provider = 'discord'",
+    )
+    .bind(connectionId, userId)
+    .first<{ provider_user_id: string }>();
+  if (!conn) return;
+
+  const user = await db
+    .prepare("SELECT display_name FROM users WHERE id = ?")
+    .bind(userId)
+    .first<{ display_name: string }>();
+  if (!user) return;
+
+  const baseText = buildDiscordMessage(
+    event,
+    data,
+    config.site_name,
+    appUrl,
+    user.display_name,
+    level,
+  );
+  if (!baseText) return;
+  const content = withDiscordOperatorMeta(baseText, data);
+
+  // Discord bots cannot DM a user directly; first open (or reuse) a DM
+  // channel with the recipient, then post the message into it.
+  const dmRes = await fetch("https://discord.com/api/v10/users/@me/channels", {
+    method: "POST",
+    headers: {
+      Authorization: `Bot ${botToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ recipient_id: conn.provider_user_id }),
+  });
+  if (!dmRes.ok) return;
+  const dm = (await dmRes.json()) as { id?: string };
+  if (!dm.id) return;
+
+  await fetch(`https://discord.com/api/v10/channels/${dm.id}/messages`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bot ${botToken}`,
+      "Content-Type": "application/json",
+    },
+    // content is capped at 2000 chars by Discord; our messages stay well under.
+    body: JSON.stringify({ content: content.slice(0, 2000) }),
+  });
+}
+
 // ─── Main delivery function ───────────────────────────────────────────────────
 
 export async function deliverUserEmailNotifications(
@@ -1024,6 +1271,7 @@ export async function deliverUserEmailNotifications(
 
   let emailRules: Array<{ email_id: string; level: "brief" | "full" }>;
   let tgRules: Array<{ connection_id: string; level: "brief" | "full" }>;
+  let discordRules: Array<{ connection_id: string; level: "brief" | "full" }>;
 
   if (activeRuleset) {
     let parsedRules: NotificationRule[] = [];
@@ -1037,6 +1285,7 @@ export async function deliverUserEmailNotifications(
     const resolved = evaluateRuleset(parsedRules, event);
     emailRules = resolved.emails;
     tgRules = resolved.tgs;
+    discordRules = resolved.discords;
   } else {
     // Load prefs row (all three columns for migration support)
     const prefsRow = await db
@@ -1069,9 +1318,10 @@ export async function deliverUserEmailNotifications(
 
     emailRules = rules[event]?.email ?? [];
     tgRules = rules[event]?.tg ?? [];
+    discordRules = rules[event]?.discord ?? [];
   }
 
-  if (!emailRules.length && !tgRules.length) return;
+  if (!emailRules.length && !tgRules.length && !discordRules.length) return;
 
   const config = await getConfig(db);
   const tasks: Promise<unknown>[] = [];
@@ -1154,6 +1404,22 @@ export async function deliverUserEmailNotifications(
         userId,
         tgRule.connection_id,
         tgRule.level,
+        event,
+        data,
+        appUrl,
+      ),
+    );
+  }
+
+  // ── Discord deliveries ──────────────────────────────────────────────────────
+
+  for (const discordRule of discordRules) {
+    tasks.push(
+      sendDiscordNotification(
+        env,
+        userId,
+        discordRule.connection_id,
+        discordRule.level,
         event,
         data,
         appUrl,
