@@ -150,8 +150,12 @@ export async function setConfigValues(
   db: D1Database,
   updates: Partial<Record<string, unknown>>,
 ): Promise<void> {
+  const entries = Object.entries(updates);
+  // D1's batch() rejects an empty statement list with
+  // "D1_ERROR: No SQL statements detected." Nothing to write is a no-op.
+  if (entries.length === 0) return;
   const now = Math.floor(Date.now() / 1000);
-  const stmts = Object.entries(updates).map(([k, v]) =>
+  const stmts = entries.map(([k, v]) =>
     db
       .prepare(
         "INSERT INTO site_config (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
