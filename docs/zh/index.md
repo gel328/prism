@@ -15,9 +15,6 @@ hero:
     - theme: alt
       text: GitHub
       link: https://github.com/siiway/prism
-    - theme: alt
-      text: 线上演示
-      link: https://prism.siiway.org
 
 features:
   - icon: 🔐
