@@ -77,8 +77,16 @@ export function SocialSelect() {
         action: "login",
         user_id: userId,
       });
-      setAuth(res.token, res.user);
-      navigate("/", { replace: true });
+      if ("type" in res && res.type === "2fa") {
+        navigate(`/social-2fa?key=${encodeURIComponent(res.pending_key)}`, {
+          replace: true,
+        });
+        return;
+      }
+      if ("token" in res) {
+        setAuth(res.token, res.user);
+        navigate("/", { replace: true });
+      }
     } catch (err) {
       console.error(err);
     }

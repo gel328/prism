@@ -2441,7 +2441,7 @@ const LEGACY_PROVIDER_KEYS = [
 app.get("/oauth-sources", async (c) => {
   const [{ results }, config] = await Promise.all([
     c.env.DB.prepare(
-      "SELECT id, slug, provider, name, enabled, created_at, auth_url, token_url, userinfo_url, scopes, issuer_url, icon_url, show_icon, icon_only FROM oauth_sources ORDER BY created_at ASC",
+      "SELECT id, slug, provider, name, enabled, created_at, auth_url, token_url, userinfo_url, scopes, issuer_url, icon_url, show_icon, icon_only, trusted FROM oauth_sources ORDER BY created_at ASC",
     ).all<Omit<OAuthSourceRow, "client_id" | "client_secret">>(),
     getConfig(c.env.DB),
   ]);
@@ -2579,6 +2579,7 @@ app.post("/oauth-sources", async (c) => {
     icon_url?: string;
     show_icon?: boolean;
     icon_only?: 0 | 1 | 2;
+    trusted?: boolean;
   }>();
 
   if (
@@ -2631,7 +2632,7 @@ app.post("/oauth-sources", async (c) => {
     const iconOnlyInt =
       body.icon_only === 1 || body.icon_only === 2 ? body.icon_only : 0;
     await c.env.DB.prepare(
-      "INSERT INTO oauth_sources (id, slug, provider, name, client_id, client_secret, enabled, created_at, auth_url, token_url, userinfo_url, scopes, issuer_url, icon_url, show_icon, icon_only) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO oauth_sources (id, slug, provider, name, client_id, client_secret, enabled, created_at, auth_url, token_url, userinfo_url, scopes, issuer_url, icon_url, show_icon, icon_only, trusted) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
       .bind(
         id,
@@ -2649,6 +2650,7 @@ app.post("/oauth-sources", async (c) => {
         body.icon_url ?? null,
         body.show_icon === false ? 0 : 1,
         iconOnlyInt,
+        body.trusted === false ? 0 : 1,
       )
       .run();
   } catch (err) {
@@ -2706,6 +2708,7 @@ app.patch("/oauth-sources/:id", async (c) => {
     icon_url?: string;
     show_icon?: boolean;
     icon_only?: 0 | 1 | 2;
+    trusted?: boolean;
   }>();
 
   const sets: string[] = [];
@@ -2759,6 +2762,10 @@ app.patch("/oauth-sources/:id", async (c) => {
     vals.push(
       body.icon_only === 1 || body.icon_only === 2 ? body.icon_only : 0,
     );
+  }
+  if (body.trusted !== undefined) {
+    sets.push("trusted = ?");
+    vals.push(body.trusted ? 1 : 0);
   }
 
   if (!sets.length) return c.json({ error: "Nothing to update" }, 400);

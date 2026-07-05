@@ -18,6 +18,7 @@ import {
   notificationActorMetaFromHeaders,
 } from "../lib/notifications";
 import { proxyImageUrl } from "../lib/proxyImage";
+import { verifyAnyTotp } from "../lib/totp";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -138,6 +139,19 @@ interface ResolvedSource {
   tokenUrl: string;
   userUrl: string;
   scopes: string;
+  // When false, users logging in through this source must additionally
+  // pass a TOTP challenge (if enrolled) before a session is issued.
+  trusted: boolean;
+}
+
+// Pending "prove-you-still-hold-your-TOTP" state stashed in KV between the
+// social flow succeeding and the user submitting a TOTP code. Kept as a
+// distinct KV keyspace from the register/select PendingState because the
+// shape and lifetime concerns differ.
+interface Pending2faState {
+  userId: string;
+  slug: string;
+  providerName: string;
 }
 
 /**
@@ -182,7 +196,40 @@ async function resolveSource(
     tokenUrl,
     userUrl,
     scopes,
+    trusted: row.trusted !== 0,
   };
+}
+
+/**
+ * True when the source is untrusted AND the user has TOTP enrolled — in
+ * that case we must gate JWT issuance behind a TOTP challenge. Trusted
+ * sources always return false (fast path). Untrusted sources for users
+ * without TOTP also return false — TOTP is what we gate on, matching the
+ * password login flow which likewise only step-ups when TOTP is enrolled.
+ */
+async function socialLoginNeedsTotp(
+  env: Env,
+  userId: string,
+  source: ResolvedSource,
+): Promise<boolean> {
+  if (source.trusted) return false;
+  const row = await env.DB.prepare(
+    "SELECT COUNT(*) AS n FROM totp_authenticators WHERE user_id = ? AND enabled = 1",
+  )
+    .bind(userId)
+    .first<{ n: number }>();
+  return (row?.n ?? 0) > 0;
+}
+
+async function issue2faPending(
+  env: Env,
+  state: Pending2faState,
+): Promise<string> {
+  const pendingKey = `social:2fa:${randomBase64url(24)}`;
+  await env.KV_CACHE.put(pendingKey, JSON.stringify(state), {
+    expirationTtl: 600,
+  });
+  return pendingKey;
 }
 
 // ─── List connections ─────────────────────────────────────────────────────────
@@ -499,6 +546,15 @@ app.post("/:provider/tg-verify", async (c) => {
       user.id,
       config.social_verify_ttl_days,
     );
+
+    if (await socialLoginNeedsTotp(c.env, user.id, source)) {
+      const pendingKey = await issue2faPending(c.env, {
+        userId: user.id,
+        slug,
+        providerName: source.name,
+      });
+      return c.json({ type: "2fa", pending_key: pendingKey });
+    }
 
     c.executionCtx.waitUntil(
       deliverUserEmailNotifications(
@@ -851,6 +907,21 @@ app.get("/:provider/callback", async (c) => {
       config.social_verify_ttl_days,
     );
 
+    // Untrusted-source gate: if the source is not fully trusted and the
+    // user has TOTP enrolled, stash a pending 2FA state and bounce the
+    // browser to /social-2fa. The connection.login email fires only after
+    // TOTP passes, so an abandoned prompt doesn't spam the user.
+    if (await socialLoginNeedsTotp(c.env, user.id, source)) {
+      const pendingKey = await issue2faPending(c.env, {
+        userId: user.id,
+        slug,
+        providerName: source.name,
+      });
+      return c.redirect(
+        `${c.env.APP_URL}/social-2fa?key=${encodeURIComponent(pendingKey)}`,
+      );
+    }
+
     c.executionCtx.waitUntil(
       deliverUserEmailNotifications(
         c.env,
@@ -1014,6 +1085,18 @@ app.post("/complete", async (c) => {
       completeCfg.social_verify_ttl_days,
     );
 
+    if (
+      completeSource &&
+      (await socialLoginNeedsTotp(c.env, user.id, completeSource))
+    ) {
+      const pendingKey = await issue2faPending(c.env, {
+        userId: user.id,
+        slug: state.provider,
+        providerName: completeSource.name,
+      });
+      return c.json({ type: "2fa", pending_key: pendingKey });
+    }
+
     c.executionCtx.waitUntil(
       deliverUserEmailNotifications(
         c.env,
@@ -1115,6 +1198,82 @@ app.post("/complete", async (c) => {
   }
 
   return c.json({ error: "Invalid action" }, 400);
+});
+
+// ─── Untrusted-provider 2FA step (post-social-login TOTP gate) ───────────────
+// A social login through a source with trusted=0 stashes a pending2fa state
+// and bounces the browser here. The frontend fetches metadata for the prompt
+// (which account, which provider) via GET /2fa/pending/:key and submits the
+// TOTP code via POST /2fa/verify.
+
+app.get("/2fa/pending/:key", async (c) => {
+  const key = c.req.param("key");
+  if (!key.startsWith("social:2fa:"))
+    return c.json({ error: "Invalid or expired session" }, 404);
+  const raw = await c.env.KV_CACHE.get(key);
+  if (!raw) return c.json({ error: "Invalid or expired session" }, 404);
+  const state = JSON.parse(raw) as Pending2faState;
+
+  const user = await c.env.DB.prepare(
+    "SELECT id, username, display_name, avatar_url FROM users WHERE id = ?",
+  )
+    .bind(state.userId)
+    .first<Pick<UserRow, "id" | "username" | "display_name" | "avatar_url">>();
+  if (!user) return c.json({ error: "Invalid or expired session" }, 404);
+
+  return c.json({
+    provider_name: state.providerName,
+    user: {
+      username: user.username,
+      display_name: user.display_name,
+      avatar_url: await proxyImageUrl(c.env.APP_URL, c.env.DB, user.avatar_url),
+    },
+  });
+});
+
+app.post("/2fa/verify", async (c) => {
+  const body = await c.req
+    .json<{ key: string; totp_code: string }>()
+    .catch(() => null);
+  if (!body?.key || !body?.totp_code)
+    return c.json({ error: "Invalid request body" }, 400);
+  if (!body.key.startsWith("social:2fa:"))
+    return c.json({ error: "Invalid or expired session" }, 400);
+
+  const raw = await c.env.KV_CACHE.get(body.key);
+  if (!raw) return c.json({ error: "Invalid or expired session" }, 400);
+  const state = JSON.parse(raw) as Pending2faState;
+
+  const ok = await verifyAnyTotp(c.env, state.userId, body.totp_code);
+  if (!ok) return c.json({ error: "Invalid TOTP code" }, 401);
+
+  // Consume the pending key only after a successful verification — a bad
+  // code leaves the key alive so the user can retry within the 10 minute
+  // KV TTL without restarting the whole social round-trip.
+  await c.env.KV_CACHE.delete(body.key);
+
+  const user = await c.env.DB.prepare("SELECT * FROM users WHERE id = ?")
+    .bind(state.userId)
+    .first<UserRow>();
+  if (!user) return c.json({ error: "User not found" }, 404);
+
+  c.executionCtx.waitUntil(
+    deliverUserEmailNotifications(
+      c.env,
+      user.id,
+      "connection.login",
+      {
+        provider_name: state.providerName,
+        ...notificationActorMetaFromHeaders(c.req.raw.headers),
+      },
+      c.env.APP_URL,
+    ).catch(() => {}),
+  );
+
+  return c.json({
+    token: await issueJWT(c, user),
+    user: await userToProfile(c.env.APP_URL, c.env.DB, user),
+  });
 });
 
 // Refresh profile data for a specific connection by ID
@@ -1625,7 +1784,9 @@ async function issueJWT(
       user.id,
       hash,
       c.req.header("User-Agent") ?? null,
-      c.req.header("CF-Connecting-IP") ?? c.req.header("X-Forwarded-For") ?? "unknown",
+      c.req.header("CF-Connecting-IP") ??
+        c.req.header("X-Forwarded-For") ??
+        "unknown",
       now + ttlSeconds,
       now,
     )

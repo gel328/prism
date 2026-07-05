@@ -134,6 +134,7 @@ const EMPTY_FORM = {
   icon_url: "",
   show_icon: true,
   icon_only: 0 as 0 | 1 | 2,
+  trusted: true,
 };
 
 const EMPTY_EDIT = {
@@ -148,6 +149,7 @@ const EMPTY_EDIT = {
   icon_url: "",
   show_icon: true,
   icon_only: 0 as 0 | 1 | 2,
+  trusted: true,
 };
 
 type DiscoveredUrls = {
@@ -230,6 +232,7 @@ export function AdminConnections() {
         icon_url: form.icon_url || undefined,
         show_icon: form.show_icon,
         icon_only: form.icon_only,
+        trusted: form.trusted,
         ...(isGenericCreate && {
           auth_url: form.auth_url,
           token_url: form.token_url,
@@ -266,6 +269,7 @@ export function AdminConnections() {
       icon_only: (src.icon_only === 1 || src.icon_only === 2
         ? src.icon_only
         : 0) as 0 | 1 | 2,
+      trusted: src.trusted !== 0,
     });
     setEditError("");
     setEditDiscoverError("");
@@ -285,6 +289,7 @@ export function AdminConnections() {
         icon_url: editForm.icon_url,
         show_icon: editForm.show_icon,
         icon_only: editForm.icon_only,
+        trusted: editForm.trusted,
         ...(isGenericEdit && {
           auth_url: editForm.auth_url || undefined,
           token_url: editForm.token_url || undefined,
@@ -496,6 +501,20 @@ export function AdminConnections() {
                 disabled={!form.show_icon}
               />
             </RadioGroup>
+          </Field>
+        </div>
+
+        <div className={styles.formFull}>
+          <Field
+            label={t("admin.oauthTrusted")}
+            hint={t("admin.oauthTrustedHint")}
+          >
+            <Switch
+              checked={form.trusted}
+              onChange={(_, d) =>
+                setForm((f) => ({ ...f, trusted: d.checked }))
+              }
+            />
           </Field>
         </div>
 
@@ -772,6 +791,18 @@ export function AdminConnections() {
                     disabled={!editForm.show_icon}
                   />
                 </RadioGroup>
+              </Field>
+
+              <Field
+                label={t("admin.oauthTrusted")}
+                hint={t("admin.oauthTrustedHint")}
+              >
+                <Switch
+                  checked={editForm.trusted}
+                  onChange={(_, d) =>
+                    setEditForm((f) => ({ ...f, trusted: d.checked }))
+                  }
+                />
               </Field>
 
               {isGenericEdit && (

@@ -1,4 +1,9 @@
-// Social login — confirm new account creation with custom username / display name
+// Social login — TOTP step-up for untrusted providers.
+//
+// A social provider marked trusted=0 (see admin OAuth Sources) short-circuits
+// the callback and bounces the browser here with a pending key. We look up
+// which account is being logged into for context, then submit the TOTP code
+// via POST /connections/2fa/verify to receive the session token.
 
 import {
   Avatar,
@@ -44,15 +49,7 @@ const useStyles = makeStyles({
   },
 });
 
-const PROVIDER_LABELS: Record<string, string> = {
-  github: "GitHub",
-  google: "Google",
-  microsoft: "Microsoft",
-  discord: "Discord",
-  x: "X",
-};
-
-export function SocialConfirm() {
+export function Social2fa() {
   const styles = useStyles();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -60,8 +57,7 @@ export function SocialConfirm() {
   const { t } = useTranslation();
   const key = searchParams.get("key") ?? "";
 
-  const [username, setUsername] = useState("");
-  const [displayName, setDisplayName] = useState("");
+  const [totpCode, setTotpCode] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
@@ -70,8 +66,8 @@ export function SocialConfirm() {
     isLoading,
     error: fetchError,
   } = useQuery({
-    queryKey: ["social-pending", key],
-    queryFn: () => api.connectionPending(key),
+    queryKey: ["social-2fa-pending", key],
+    queryFn: () => api.connectionSocial2faPending(key),
     enabled: !!key,
     retry: false,
   });
@@ -80,43 +76,19 @@ export function SocialConfirm() {
     if (!key) navigate("/login", { replace: true });
   }, [key, navigate]);
 
-  useEffect(() => {
-    if (data && data.type !== "register") {
-      navigate("/login", { replace: true });
-    }
-  }, [data, navigate]);
-
-  // Seed the form draft from the suggested values once per data identity.
-  // Render-time set per React 19's set-state-in-effect rule.
-  const [seededFrom, setSeededFrom] = useState<typeof data>(undefined);
-  if (data && data.type === "register" && data !== seededFrom) {
-    setSeededFrom(data);
-    setUsername(data.suggested_username ?? "");
-    setDisplayName(data.suggested_display_name ?? "");
-  }
-
-  const handleCreate = async (e: React.FormEvent) => {
+  const handleVerify = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     setSubmitting(true);
     try {
-      const res = await api.connectionComplete({
+      const res = await api.connectionSocial2faVerify({
         key,
-        action: "register",
-        username: username.trim(),
-        display_name: displayName.trim(),
+        totp_code: totpCode.trim(),
       });
-      // The register path never returns a 2FA gate — a brand-new account
-      // can't have TOTP enrolled — but the union type on connectionComplete
-      // makes us narrow.
-      if ("token" in res) {
-        setAuth(res.token, res.user);
-        navigate("/", { replace: true });
-      }
+      setAuth(res.token, res.user);
+      navigate("/", { replace: true });
     } catch (err) {
-      setError(
-        err instanceof ApiError ? err.message : "Failed to create account",
-      );
+      setError(err instanceof ApiError ? err.message : t("auth.loginFailed"));
     } finally {
       setSubmitting(false);
     }
@@ -144,34 +116,27 @@ export function SocialConfirm() {
     );
   }
 
-  const providerLabel = PROVIDER_LABELS[data.provider] ?? data.provider;
-
   return (
     <AuthShell maxWidth={420} cardGap={24}>
       <>
-        {data.profile_avatar ? (
-          <Avatar
-            image={{ src: data.profile_avatar }}
-            name={data.profile_name ?? undefined}
-            size={64}
-            style={{ alignSelf: "center" }}
-          />
-        ) : (
-          <Avatar
-            name={data.profile_name ?? providerLabel}
-            size={64}
-            style={{ alignSelf: "center" }}
-          />
-        )}
+        <Avatar
+          image={
+            data.user.avatar_url ? { src: data.user.avatar_url } : undefined
+          }
+          name={data.user.display_name}
+          size={64}
+          style={{ alignSelf: "center" }}
+        />
 
         <div style={{ textAlign: "center" }}>
-          <Title2>{t("auth.createNewAccount")}</Title2>
+          <Title2>{t("auth.social2faTitle")}</Title2>
           <Text
             block
             style={{ color: tokens.colorNeutralForeground3, marginTop: 8 }}
           >
-            {t("auth.signingInVia", {
-              providerName: data.profile_name ?? providerLabel,
+            {t("auth.social2faSubtitle", {
+              providerName: data.provider_name,
+              displayName: data.user.display_name,
             })}
           </Text>
         </div>
@@ -182,27 +147,15 @@ export function SocialConfirm() {
           </MessageBar>
         )}
 
-        <form onSubmit={handleCreate} className={styles.form}>
-          <Field label="Username" required>
+        <form onSubmit={handleVerify} className={styles.form}>
+          <Field label={t("auth.twoFactorCode")}>
             <Input
-              value={username}
-              onChange={(e) =>
-                setUsername(
-                  e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ""),
-                )
-              }
-              placeholder="your_username"
-              maxLength={32}
-              autoComplete="username"
+              value={totpCode}
+              onChange={(e) => setTotpCode(e.target.value)}
+              placeholder={t("auth.twoFactorPlaceholder")}
+              maxLength={11}
+              autoComplete="one-time-code"
               autoFocus
-            />
-          </Field>
-          <Field label="Display name" required>
-            <Input
-              value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
-              placeholder="Your Name"
-              maxLength={64}
             />
           </Field>
 
@@ -210,10 +163,10 @@ export function SocialConfirm() {
             <Button
               appearance="primary"
               type="submit"
-              disabled={submitting || !username.trim() || !displayName.trim()}
+              disabled={submitting || !totpCode.trim()}
               icon={submitting ? <Spinner size="tiny" /> : undefined}
             >
-              {submitting ? t("auth.creating") : t("auth.createAccountAction")}
+              {submitting ? t("auth.signingIn") : t("common.verify")}
             </Button>
             <Button appearance="subtle" onClick={() => navigate("/login")}>
               {t("auth.backToLogin")}

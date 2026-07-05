@@ -128,6 +128,13 @@ export function createRoutes(ctx: RouteContext): RouteObject[] {
           Component: m.SocialSelect,
         })),
     },
+    {
+      path: "/social-2fa",
+      lazy: () =>
+        import("./pages/Social2fa").then((m) => ({
+          Component: m.Social2fa,
+        })),
+    },
 
     // ── Email verification ──────────────────────────────────────────────────
     {

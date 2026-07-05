@@ -74,6 +74,10 @@ export function TgAuthCallback() {
             `/social-select?key=${encodeURIComponent(res.pending_key)}`,
             { replace: true },
           );
+        } else if (res.type === "2fa" && res.pending_key) {
+          navigate(`/social-2fa?key=${encodeURIComponent(res.pending_key)}`, {
+            replace: true,
+          });
         } else {
           navigate("/login?error=token_exchange_failed", { replace: true });
         }

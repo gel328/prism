@@ -677,9 +677,19 @@ export const api = {
           display_name: string;
         },
   ) =>
+    request<
+      | { token: string; user: UserProfile }
+      | { type: "2fa"; pending_key: string }
+    >("POST", "/connections/complete", body),
+  connectionSocial2faPending: (key: string) =>
+    request<Social2faPendingInfo>(
+      "GET",
+      `/connections/2fa/pending/${encodeURIComponent(key)}`,
+    ),
+  connectionSocial2faVerify: (body: { key: string; totp_code: string }) =>
     request<{ token: string; user: UserProfile }>(
       "POST",
-      "/connections/complete",
+      "/connections/2fa/verify",
       body,
     ),
   refreshConnection: (id: string) =>
@@ -1568,6 +1578,7 @@ export const api = {
     icon_url?: string;
     show_icon?: boolean;
     icon_only?: 0 | 1 | 2;
+    trusted?: boolean;
   }) =>
     request<{ source: OAuthSource }>(
       "POST",
@@ -1590,6 +1601,7 @@ export const api = {
       icon_url?: string;
       show_icon?: boolean;
       icon_only?: 0 | 1 | 2;
+      trusted?: boolean;
     },
   ) =>
     request<{ message: string }>(
@@ -2175,6 +2187,15 @@ export interface SocialPendingInfo {
   }>;
 }
 
+export interface Social2faPendingInfo {
+  provider_name: string;
+  user: {
+    username: string;
+    display_name: string;
+    avatar_url: string | null;
+  };
+}
+
 export interface SocialConnection {
   id: string;
   provider: string;
@@ -2523,6 +2544,8 @@ export interface OAuthSource {
   show_icon: number;
   /** 0 = text + icon, 1 = icon-only small, 2 = icon-only large */
   icon_only: number;
+  /** 0 = untrusted (users with TOTP get an extra prompt), 1 = trusted */
+  trusted: number;
 }
 
 export interface SiteInvite {

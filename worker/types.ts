@@ -298,6 +298,11 @@ export interface OAuthSourceRow {
   // (default), 1 = icon only normal size, 2 = icon only large size.
   // Falls back to text when no icon is available.
   icon_only: number;
+  // Added in 0050 — when 0, a login through this source is not fully
+  // trusted: users with TOTP enrolled must additionally pass a TOTP
+  // challenge before a session is issued. Existing rows default to 1
+  // (trusted, fast path).
+  trusted: number;
 }
 
 export interface SiteInviteRow {
