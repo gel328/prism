@@ -3601,6 +3601,13 @@ app.get("/me/team/:teamId/members", async (c) => {
   const resolved = await resolveTeamToken(c, teamId, "member:read");
   if (!resolved) return c.json({ error: "insufficient_scope" }, 403);
 
+  // Require the actor to still hold a member-or-above role in the team.
+  // For OAuth tokens this is capped by the grantor's current role (see
+  // effectiveTeamRole); demote/kick the grantor and the read right drops.
+  const actorRole = await effectiveTeamRole(c.env.DB, teamId, resolved);
+  if (!actorRole || !hasRole(actorRole, "member"))
+    return c.json({ error: "actor is no longer a team member" }, 403);
+
   const { results } = await c.env.DB.prepare(
     `SELECT tm.user_id, tm.role, tm.joined_at
      FROM team_members tm WHERE tm.team_id = ? ORDER BY tm.joined_at ASC`,
