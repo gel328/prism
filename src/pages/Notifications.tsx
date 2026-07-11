@@ -769,7 +769,11 @@ function BulkLevelControls({
           const label = t("notifications.discordAccountLabel", {
             account: handle,
           });
-          const level = getUniformDiscordAccountLevel(eventKeys, rules, conn.id);
+          const level = getUniformDiscordAccountLevel(
+            eventKeys,
+            rules,
+            conn.id,
+          );
           return (
             <AccountLevelRow
               key={`bulk-discord-${conn.id}`}

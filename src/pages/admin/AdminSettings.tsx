@@ -1237,7 +1237,8 @@ export function AdminSettings() {
                     <Dropdown
                       value={
                         telegramSources.find(
-                          (s) => s.slug === (get("tg_notify_source_slug") ?? ""),
+                          (s) =>
+                            s.slug === (get("tg_notify_source_slug") ?? ""),
                         )?.name ?? t("admin.tgNotifyNone")
                       }
                       selectedOptions={[get("tg_notify_source_slug") ?? ""]}
@@ -1312,10 +1313,13 @@ export function AdminSettings() {
                       value={
                         discordSources.find(
                           (s) =>
-                            s.slug === (get("discord_notify_source_slug") ?? ""),
+                            s.slug ===
+                            (get("discord_notify_source_slug") ?? ""),
                         )?.name ?? t("admin.discordNotifyNone")
                       }
-                      selectedOptions={[get("discord_notify_source_slug") ?? ""]}
+                      selectedOptions={[
+                        get("discord_notify_source_slug") ?? "",
+                      ]}
                       onOptionSelect={(_, d) =>
                         set("discord_notify_source_slug", d.optionValue)
                       }

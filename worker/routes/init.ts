@@ -99,7 +99,9 @@ app.post("/", async (c) => {
       userId,
       tokenHash,
       c.req.header("User-Agent") ?? null,
-      c.req.header("CF-Connecting-IP") ?? c.req.header("X-Forwarded-For") ?? "unknown",
+      c.req.header("CF-Connecting-IP") ??
+        c.req.header("X-Forwarded-For") ??
+        "unknown",
       now + sessionTtl,
       now,
     )
