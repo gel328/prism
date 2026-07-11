@@ -23,17 +23,17 @@
 
 ## 技术栈
 
-| 层级         | 技术                              |
-| ------------ | --------------------------------- |
-| 运行时       | Cloudflare Workers                |
-| 路由框架     | Hono v4                           |
-| 数据库       | Cloudflare D1（SQLite）           |
-| 缓存 / 会话  | Cloudflare KV                     |
-| 文件存储     | Cloudflare R2                     |
-| 前端         | React 19 + FluentUI v9            |
-| 前端路由     | React Router v7                   |
-| 状态管理     | Zustand v5 + TanStack Query v5    |
-| PoW 求解器   | Rust → WASM（Web Worker 回退）    |
+| 层级        | 技术                           |
+| ----------- | ------------------------------ |
+| 运行时      | Cloudflare Workers             |
+| 路由框架    | Hono v4                        |
+| 数据库      | Cloudflare D1（SQLite）        |
+| 缓存 / 会话 | Cloudflare KV                  |
+| 文件存储    | Cloudflare R2                  |
+| 前端        | React 19 + FluentUI v9         |
+| 前端路由    | React Router v7                |
+| 状态管理    | Zustand v5 + TanStack Query v5 |
+| PoW 求解器  | Rust → WASM（Web Worker 回退） |
 
 ## 快速开始
 

@@ -1,0 +1,14 @@
+node_modules
+dist
+dist-ssr
+bun.lock
+LICENSE
+THIRD_PARTY_LICENSES
+.wrangler
+wrangler.json
+worker-configuration.d.ts
+pow/target
+public/pow-wasm
+public/pow.wasm
+docs/.vitepress/dist
+docs/.vitepress/cache
