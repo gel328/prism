@@ -162,12 +162,12 @@ bun deploy
 
 Prism 支持三种发送方式与两种接收方式，均在 **Admin → Settings → Email** 中配置。
 
-| Provider     | `email_provider` 值 | 关键字段                  |
-|--------------|---------------------|---------------------------|
+| Provider     | `email_provider` 值 | 关键字段                    |
+| ------------ | ------------------- | --------------------------- |
 | Resend       | `resend`            | `email_api_key`（管理面板） |
 | Mailchannels | `mailchannels`      | `email_api_key`（管理面板） |
-| SMTP         | `smtp`              | 见管理面板                 |
-| 关闭         | `none`              | —                         |
+| SMTP         | `smtp`              | 见管理面板                  |
+| 关闭         | `none`              | —                           |
 
 邮件用于邮箱验证、改密、通知。设置 `require_email_verification = false`（默认）允许用户在未验证邮箱时也登录。
 

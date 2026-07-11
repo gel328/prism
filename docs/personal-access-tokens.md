@@ -55,11 +55,11 @@ Click **Revoke** next to any token in the list. Revocation is immediate — any 
 
 ## Differences from OAuth access tokens
 
-| | Personal Access Token | OAuth Access Token |
-| - | - | - |
-| Created by | User (UI or API) | OAuth authorization flow |
-| Prefix | `prism_pat_` | (none) |
-| Scopes | User-selected at creation | Granted by user at consent screen |
-| Refresh | No — revoke and create a new one | Yes, via `offline_access` scope |
-| Revocation | Profile → Access Tokens page | Profile → Connected Apps page |
-| Use case | Scripts, CI, automation | Third-party apps |
+|            | Personal Access Token            | OAuth Access Token                |
+| ---------- | -------------------------------- | --------------------------------- |
+| Created by | User (UI or API)                 | OAuth authorization flow          |
+| Prefix     | `prism_pat_`                     | (none)                            |
+| Scopes     | User-selected at creation        | Granted by user at consent screen |
+| Refresh    | No — revoke and create a new one | Yes, via `offline_access` scope   |
+| Revocation | Profile → Access Tokens page     | Profile → Connected Apps page     |
+| Use case   | Scripts, CI, automation          | Third-party apps                  |

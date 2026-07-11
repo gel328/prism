@@ -66,7 +66,7 @@ code_challenge = BASE64URL(SHA-256(ASCII(code_verifier)))
 #### Scopes
 
 | Scope                   | Claims / access granted                                |
-|-------------------------|--------------------------------------------------------|
+| ----------------------- | ------------------------------------------------------ |
 | `openid`                | `sub`, `iss`, `aud`, `iat`, `exp` (required for OIDC)  |
 | `profile`               | `name`, `preferred_username`, `picture`                |
 | `profile:write`         | Update the user's profile (name, picture)              |
@@ -103,11 +103,11 @@ code_challenge = BASE64URL(SHA-256(ASCII(code_verifier)))
 Three scope families touch teams, with very different blast radius. Pick the
 narrowest one that fits.
 
-| Tier                  | Example                  | Scope of access                          | Granted by                                                |
-|-----------------------|--------------------------|------------------------------------------|-----------------------------------------------------------|
-| Aggregate (plural)    | `teams:read`             | Every team the user is a member of       | Normal user consent                                       |
-| Single-team (singular)| `team:read`              | Exactly one team, picked at consent time | Normal user consent + team-id picker (admin+ on that team) |
-| Cross-instance        | `site:team:read`         | Every team on the instance               | Admin-only, requires 2FA + confirmation phrase            |
+| Tier                   | Example          | Scope of access                          | Granted by                                                 |
+| ---------------------- | ---------------- | ---------------------------------------- | ---------------------------------------------------------- |
+| Aggregate (plural)     | `teams:read`     | Every team the user is a member of       | Normal user consent                                        |
+| Single-team (singular) | `team:read`      | Exactly one team, picked at consent time | Normal user consent + team-id picker (admin+ on that team) |
+| Cross-instance         | `site:team:read` | Every team on the instance               | Admin-only, requires 2FA + confirmation phrase             |
 
 ##### Aggregate `teams:*`
 
@@ -131,7 +131,7 @@ team:write                      team:member:write
 team:delete                     team:member:profile:read
 ```
 
-These are the scope strings the app *requests*. At consent time the user
+These are the scope strings the app _requests_. At consent time the user
 picks **one specific team** and Prism rewrites them in place — `team:read`
 becomes `team:<team-id>:read` — and only that bound form lives in the issued
 token. The token can only act on that one team.
@@ -191,17 +191,17 @@ that genuinely need to see or touch every team.
 The full list of cross-instance scopes; same admin-only / 2FA / confirmation
 phrase gate as `site:team:*`:
 
-| Scope                  | Grants                                          |
-|------------------------|-------------------------------------------------|
-| `site:user:read`       | Read every user account                         |
-| `site:user:write`      | Modify any user                                 |
-| `site:user:delete`     | Delete any user                                 |
-| `site:team:read`       | Read every team                                 |
-| `site:team:write`      | Modify any team                                 |
-| `site:team:delete`     | Disband any team                                |
-| `site:config:read`     | Read site config                                |
-| `site:config:write`    | Modify site config                              |
-| `site:token:revoke`    | Revoke any user's OAuth tokens                  |
+| Scope               | Grants                         |
+| ------------------- | ------------------------------ |
+| `site:user:read`    | Read every user account        |
+| `site:user:write`   | Modify any user                |
+| `site:user:delete`  | Delete any user                |
+| `site:team:read`    | Read every team                |
+| `site:team:write`   | Modify any team                |
+| `site:team:delete`  | Disband any team               |
+| `site:config:read`  | Read site config               |
+| `site:config:write` | Modify site config             |
+| `site:token:revoke` | Revoke any user's OAuth tokens |
 
 ### Step 2 — User consents
 
@@ -323,7 +323,7 @@ The ID token is a signed JWT (RS256). Verify it using the public key published a
 Standard claims (always present when `openid` scope is requested):
 
 | Claim   | Value                             |
-|---------|-----------------------------------|
+| ------- | --------------------------------- |
 | `iss`   | Your Prism instance URL           |
 | `sub`   | Stable user ID                    |
 | `aud`   | Your `client_id`                  |
@@ -334,15 +334,15 @@ Standard claims (always present when `openid` scope is requested):
 
 Scope-gated claims — `profile` and `email` claims are included whenever the corresponding scope is granted. The remaining claims below also require the application to declare the field name in its `oidc_fields` configuration:
 
-| Scope | Field name | Claim(s) added to ID token |
-| --- | --- | --- |
-| `profile` | _(always)_ | `name`, `preferred_username`, `picture` |
-| `email` | _(always)_ | `email`, `email_verified` |
-| `teams:read` | `teams` | `teams` — array of `{ id, name, role }` objects for the user's team memberships |
-| `apps:read` | `apps` | `apps` — array of `{ id, name, client_id, is_verified }` objects for the user's apps |
-| `domains:read` | `domains` | `domains` — array of `{ id, domain, verified }` objects |
-| `gpg:read` | `gpg_keys` | `gpg_keys` — array of `{ id, fingerprint, key_id, name }` objects |
-| `social:read` | `social_accounts` | `social_accounts` — array of `{ id, provider, provider_user_id }` objects |
+| Scope          | Field name        | Claim(s) added to ID token                                                           |
+| -------------- | ----------------- | ------------------------------------------------------------------------------------ |
+| `profile`      | _(always)_        | `name`, `preferred_username`, `picture`                                              |
+| `email`        | _(always)_        | `email`, `email_verified`                                                            |
+| `teams:read`   | `teams`           | `teams` — array of `{ id, name, role }` objects for the user's team memberships      |
+| `apps:read`    | `apps`            | `apps` — array of `{ id, name, client_id, is_verified }` objects for the user's apps |
+| `domains:read` | `domains`         | `domains` — array of `{ id, domain, verified }` objects                              |
+| `gpg:read`     | `gpg_keys`        | `gpg_keys` — array of `{ id, fingerprint, key_id, name }` objects                    |
+| `social:read`  | `social_accounts` | `social_accounts` — array of `{ id, provider, provider_user_id }` objects            |
 
 To opt an application into a custom claim, include the field name in the app's `oidc_fields` array when creating or updating it via the API:
 
@@ -374,14 +374,14 @@ Content-Type: application/json
 }
 ```
 
-| Field | Required | Description |
-| --- | --- | --- |
-| `client_id` | yes (in Basic or body) | Your OAuth app's client ID |
-| `client_secret` | confidential clients | In Basic auth or body |
-| `redirect_uri` | yes | Must be registered on the OAuth app |
-| `action` | recommended | Human-readable description (≤ 200 chars) of what the user is confirming. Shown verbatim on the Prism page and echoed in the verify response |
-| `nonce` | optional | App-defined opaque value (≤ 256 chars), echoed back. Bind it to the operation (e.g. an order ID) |
-| `code_challenge`, `code_challenge_method` | required for public clients | PKCE — see Authorization Code flow |
+| Field                                     | Required                    | Description                                                                                                                                 |
+| ----------------------------------------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `client_id`                               | yes (in Basic or body)      | Your OAuth app's client ID                                                                                                                  |
+| `client_secret`                           | confidential clients        | In Basic auth or body                                                                                                                       |
+| `redirect_uri`                            | yes                         | Must be registered on the OAuth app                                                                                                         |
+| `action`                                  | recommended                 | Human-readable description (≤ 200 chars) of what the user is confirming. Shown verbatim on the Prism page and echoed in the verify response |
+| `nonce`                                   | optional                    | App-defined opaque value (≤ 256 chars), echoed back. Bind it to the operation (e.g. an order ID)                                            |
+| `code_challenge`, `code_challenge_method` | required for public clients | PKCE — see Authorization Code flow                                                                                                          |
 
 #### Response
 
@@ -544,17 +544,17 @@ You can use Prism as a generic OIDC identity provider for [Cloudflare Access](ht
 
 In [Cloudflare Zero Trust](https://one.dash.cloudflare.com/), go to **Integrations → Identity providers → Add new → OpenID Connect** and fill in:
 
-| Field | Value |
-| --- | --- |
-| Name | Prism (or any label) |
-| App ID | Your Prism **Client ID** |
-| Client secret | Your Prism **Client Secret** |
-| Auth URL | `https://your-prism-domain/api/oauth/authorize` |
-| Token URL | `https://your-prism-domain/api/oauth/token` |
-| Certificate URL | `https://your-prism-domain/.well-known/jwks.json` |
-| PKCE | Enabled (recommended) |
-| Scopes | `openid email` (add `profile teams:read` etc. as needed) |
-| OIDC Claims | One per line — the claim names you want usable in policies |
+| Field           | Value                                                      |
+| --------------- | ---------------------------------------------------------- |
+| Name            | Prism (or any label)                                       |
+| App ID          | Your Prism **Client ID**                                   |
+| Client secret   | Your Prism **Client Secret**                               |
+| Auth URL        | `https://your-prism-domain/api/oauth/authorize`            |
+| Token URL       | `https://your-prism-domain/api/oauth/token`                |
+| Certificate URL | `https://your-prism-domain/.well-known/jwks.json`          |
+| PKCE            | Enabled (recommended)                                      |
+| Scopes          | `openid email` (add `profile teams:read` etc. as needed)   |
+| OIDC Claims     | One per line — the claim names you want usable in policies |
 
 Under **OIDC Claims**, enter the names of the custom claims Prism returns, for example:
 
@@ -581,10 +581,10 @@ After saving, use **Test** to verify. A successful test shows the claims under `
 
 In your Access application policy, use the **OIDC Claim** selector:
 
-| Selector | Claim name | Claim value | Effect |
-| --- | --- | --- | --- |
-| OIDC Claim | `role` | `admin` | Prism admins only |
-| OIDC Claim | `in_team_<team-id>` | `true` | Members of a specific team |
-| OIDC Claim | `role_in_team_<team-id>` | `owner` | Team owners only |
+| Selector   | Claim name               | Claim value | Effect                     |
+| ---------- | ------------------------ | ----------- | -------------------------- |
+| OIDC Claim | `role`                   | `admin`     | Prism admins only          |
+| OIDC Claim | `in_team_<team-id>`      | `true`      | Members of a specific team |
+| OIDC Claim | `role_in_team_<team-id>` | `owner`     | Team owners only           |
 
 > **Note:** Cloudflare Access reads custom claims from the **ID token** (RS256-signed JWT). The claim names listed under OIDC Claims in the dashboard must exactly match what Prism embeds in the token, which is controlled by the app's `oidc_fields` setting.

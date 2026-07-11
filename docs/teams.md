@@ -12,12 +12,12 @@ member leaving the team.
 
 ## Roles
 
-| Role       | Can manage members | Can edit team settings | Can manage apps/domains | Can transfer ownership | Can disband |
-|------------|--------------------|------------------------|-------------------------|------------------------|-------------|
-| `owner`    | yes                | yes                    | yes                     | yes (to a co-owner)    | yes         |
-| `co-owner` | yes (except owner) | yes                    | yes                     | no                     | no          |
-| `admin`    | yes (member only)  | no                     | yes                     | no                     | no          |
-| `member`   | no                 | no                     | yes (read; write apps the team allows) | no    | no          |
+| Role       | Can manage members | Can edit team settings | Can manage apps/domains                | Can transfer ownership | Can disband |
+| ---------- | ------------------ | ---------------------- | -------------------------------------- | ---------------------- | ----------- |
+| `owner`    | yes                | yes                    | yes                                    | yes (to a co-owner)    | yes         |
+| `co-owner` | yes (except owner) | yes                    | yes                                    | no                     | no          |
+| `admin`    | yes (member only)  | no                     | yes                                    | no                     | no          |
+| `member`   | no                 | no                     | yes (read; write apps the team allows) | no                     | no          |
 
 There is exactly one owner per team. Transferring ownership is a single,
 audited operation; the previous owner is demoted to co-owner.
@@ -39,10 +39,10 @@ again whenever a member tries to drop below the bar). Admins can also enforce a
 **site floor** — a minimum every team is forced to require, regardless of the
 team-level flag.
 
-| Requirement              | Team flag                  | Site floor key                          |
-|--------------------------|----------------------------|-----------------------------------------|
-| At least one TOTP authenticator or passkey | `teams.require_2fa`        | `default_team_require_2fa`             |
-| Verified primary email   | `teams.require_verified_email` | `default_team_require_verified_email`  |
+| Requirement                                | Team flag                      | Site floor key                        |
+| ------------------------------------------ | ------------------------------ | ------------------------------------- |
+| At least one TOTP authenticator or passkey | `teams.require_2fa`            | `default_team_require_2fa`            |
+| Verified primary email                     | `teams.require_verified_email` | `default_team_require_verified_email` |
 
 Effective requirement = team flag **OR** site floor. Owners can opt their team
 in further than the floor but cannot opt out below it. The team-settings UI
@@ -91,7 +91,7 @@ ancestor to every team underneath it (each can be turned off independently
 in site config):
 
 1. **Membership** (`inherit_team_membership`, default on) — a member of team
-   **A** has *at least* their A-role on every descendant of A. A direct
+   **A** has _at least_ their A-role on every descendant of A. A direct
    membership on a sub-team stacks on top: the effective role is
    `max(direct, inherited)`. Useful for "department head is an admin of
    every project sub-team" without duplicating rows. When the toggle is off,
@@ -113,13 +113,13 @@ All sub-team behavior is driven by site config (admin → **Settings → Teams
 & App Limits**). Each value is also surfaced on the unauthenticated
 `/api/site` payload so SDK clients can mirror the gates in their UIs.
 
-| Key                                       | Type    | Default | Effect                                                                 |
-|-------------------------------------------|---------|---------|------------------------------------------------------------------------|
-| `enable_sub_teams`                        | bool    | `true`  | Master switch — when `false` the sub-team endpoints reject every request and the UI hides the Sub-teams tab. |
-| `max_team_depth`                          | int     | `5`     | Server-enforced cap on nesting depth. Validated 1–20 on the admin API.|
-| `inherit_team_membership`                 | bool    | `true`  | Cascade member roles to descendants.                                  |
-| `inherit_team_domains`                    | bool    | `true`  | Surface ancestor-owned domains on sub-team listings + auto-verify.    |
-| `default_team_profile_show_sub_teams`     | bool    | `true`  | Public-profile default for the sub-team listing section.              |
+| Key                                   | Type | Default | Effect                                                                                                       |
+| ------------------------------------- | ---- | ------- | ------------------------------------------------------------------------------------------------------------ |
+| `enable_sub_teams`                    | bool | `true`  | Master switch — when `false` the sub-team endpoints reject every request and the UI hides the Sub-teams tab. |
+| `max_team_depth`                      | int  | `5`     | Server-enforced cap on nesting depth. Validated 1–20 on the admin API.                                       |
+| `inherit_team_membership`             | bool | `true`  | Cascade member roles to descendants.                                                                         |
+| `inherit_team_domains`                | bool | `true`  | Surface ancestor-owned domains on sub-team listings + auto-verify.                                           |
+| `default_team_profile_show_sub_teams` | bool | `true`  | Public-profile default for the sub-team listing section.                                                     |
 
 The per-team override `profile_show_sub_teams` (column on `teams`) follows
 the same `null`/`0`/`1` convention as every other `profile_show_*` flag:
@@ -128,7 +128,7 @@ the same `null`/`0`/`1` convention as every other `profile_show_*` flag:
 ### Managing sub-teams
 
 - **Create**: `POST /api/teams/:parentId/sub-teams` (admin+ on the parent —
-  direct *or* inherited counts) or the equivalent **Teams → \<team\> →
+  direct _or_ inherited counts) or the equivalent **Teams → \<team\> →
   Sub-teams → New sub-team** button. The creator becomes the new sub-team's
   owner.
 - **List**: `GET /api/teams/:id/sub-teams` returns the immediate children with
@@ -155,7 +155,7 @@ the same `null`/`0`/`1` convention as every other `profile_show_*` flag:
   - `team.ancestors` — `[{id, name, avatar_url}]` from immediate parent to
     root, useful for breadcrumbs.
   - `team.sub_teams` — immediate children with member counts.
-  - `team.my_role` — the *effective* role; `team.inherited_from` carries the
+  - `team.my_role` — the _effective_ role; `team.inherited_from` carries the
     ancestor id when the role came from inheritance.
   - `members` — direct members only (inherited members are visible by
     inspecting ancestor teams, surfacing them here would multiply listings).
@@ -194,7 +194,7 @@ which sections to expose. Site-wide defaults and the master `enable_public_profi
 kill switch live in [Configuration](configuration.md#public-profiles). See
 [Public Profiles](public-profile.md) for the full per-section breakdown.
 
-A team's public page links to the owner's `/u/<username>` page only when *both*
+A team's public page links to the owner's `/u/<username>` page only when _both_
 profiles are public. If the owner's profile is private, the team page shows the
 display name without a link.
 
@@ -210,12 +210,12 @@ short version:
 Acts on **every team the user is a member of** at once. One consent covers all
 of them. Endpoints under `/api/oauth/me/teams[/...]`.
 
-| Scope          | Grants                                       |
-|----------------|----------------------------------------------|
-| `teams:read`   | List team memberships and roles              |
-| `teams:create` | Create a new team                            |
+| Scope          | Grants                                                               |
+| -------------- | -------------------------------------------------------------------- |
+| `teams:read`   | List team memberships and roles                                      |
+| `teams:create` | Create a new team                                                    |
 | `teams:write`  | Update team settings; add and remove members across the user's teams |
-| `teams:delete` | Delete a team (owner only — checked at request time) |
+| `teams:delete` | Delete a team (owner only — checked at request time)                 |
 
 Right shape for: "what teams is this user in?" use cases — workspace pickers,
 syncing membership lists, OIDC IdP claims for Cloudflare Access policies.
@@ -227,13 +227,13 @@ rewrites `team:read` → `team:<team-id>:read` (via `bindTeamScopes()`) before
 issuing the token, so the token can only ever touch that team. Endpoints
 under `/api/oauth/me/team/:teamId/...`.
 
-| Requested      | Bound form                | Grants                                                |
-|----------------|---------------------------|-------------------------------------------------------|
-| `team:read`    | `team:<id>:read`          | Read the team's settings                              |
-| `team:write`   | `team:<id>:write`         | Update the team's settings                            |
-| `team:delete`  | `team:<id>:delete`        | Disband the team                                      |
-| `team:member:read`   | `team:<id>:member:read` | List members and their roles                       |
-| `team:member:write`  | `team:<id>:member:write`| Add/remove members and change roles                |
+| Requested                  | Bound form                      | Grants                                         |
+| -------------------------- | ------------------------------- | ---------------------------------------------- |
+| `team:read`                | `team:<id>:read`                | Read the team's settings                       |
+| `team:write`               | `team:<id>:write`               | Update the team's settings                     |
+| `team:delete`              | `team:<id>:delete`              | Disband the team                               |
+| `team:member:read`         | `team:<id>:member:read`         | List members and their roles                   |
+| `team:member:write`        | `team:<id>:member:write`        | Add/remove members and change roles            |
 | `team:member:profile:read` | `team:<id>:member:profile:read` | Read a member's profile through the team scope |
 
 Two extra rules at consent time (see `worker/routes/oauth.ts:830-859`):

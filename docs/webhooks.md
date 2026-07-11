@@ -31,7 +31,7 @@ Any authenticated user can manage personal webhooks from **Settings → Webhooks
 the dashboard.
 
 | Field    | Description                                                                                |
-|----------|--------------------------------------------------------------------------------------------|
+| -------- | ------------------------------------------------------------------------------------------ |
 | Name     | A human-readable label for this webhook                                                    |
 | Endpoint | The HTTPS URL that will receive the POST requests                                          |
 | Secret   | Used to sign the payload. Leave blank to have Prism auto-generate a 32-byte random secret. |
@@ -42,7 +42,7 @@ The secret is shown only once at creation time — store it somewhere safe.
 ### User events
 
 | Event             | Triggered when                                |
-|-------------------|-----------------------------------------------|
+| ----------------- | --------------------------------------------- |
 | `*`               | Wildcard — matches every user event below     |
 | `app.created`     | You created an OAuth application              |
 | `app.updated`     | You updated an OAuth application              |
@@ -58,7 +58,7 @@ User webhooks can also be managed programmatically using OAuth Bearer tokens or 
 Access Tokens with the appropriate scopes:
 
 | Scope            | Grants                                                       |
-|------------------|--------------------------------------------------------------|
+| ---------------- | ------------------------------------------------------------ |
 | `webhooks:read`  | List webhooks and view delivery history                      |
 | `webhooks:write` | Create, update, delete, and send test pings to your webhooks |
 
@@ -112,7 +112,7 @@ These fire on audit log events and are not visible to regular users.
 ### Admin events
 
 | Event                 | Triggered when                                    |
-|-----------------------|---------------------------------------------------|
+| --------------------- | ------------------------------------------------- |
 | `*`                   | Wildcard — matches every admin event below        |
 | `admin.config.update` | Site configuration was changed                    |
 | `admin.user.update`   | An admin updated a user account                   |
@@ -131,7 +131,7 @@ These fire on audit log events and are not visible to regular users.
 ### Admin webhook API
 
 | Scope                   | Grants                                          |
-|-------------------------|-------------------------------------------------|
+| ----------------------- | ----------------------------------------------- |
 | `admin:webhooks:read`   | List webhooks and view delivery history         |
 | `admin:webhooks:write`  | Create, update, and send test pings to webhooks |
 | `admin:webhooks:delete` | Permanently delete webhooks                     |
@@ -178,7 +178,7 @@ Both user and admin webhooks send the same JSON structure:
 ```
 
 | Field       | Type   | Description                                         |
-|-------------|--------|-----------------------------------------------------|
+| ----------- | ------ | --------------------------------------------------- |
 | `event`     | string | The event type that triggered this delivery         |
 | `timestamp` | number | Unix timestamp (seconds) of when the event occurred |
 | `data`      | object | Event context — IDs, names, and other metadata      |
@@ -200,9 +200,8 @@ To verify in Node.js:
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 function verifySignature(secret, rawBody, signatureHeader) {
-  const expected = "sha256=" + createHmac("sha256", secret)
-    .update(rawBody)
-    .digest("hex");
+  const expected =
+    "sha256=" + createHmac("sha256", secret).update(rawBody).digest("hex");
   return timingSafeEqual(Buffer.from(expected), Buffer.from(signatureHeader));
 }
 ```

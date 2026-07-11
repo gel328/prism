@@ -10,11 +10,11 @@ a user grants or revokes your app's access, or when a user's profile changes.
 
 Three delivery channels are available:
 
-| Channel   | Best for                                              |
-|-----------|-------------------------------------------------------|
-| Webhook   | Server-to-server push; fire-and-forget per event      |
-| SSE       | Server-side streaming (Node.js, Bun, Workers)         |
-| WebSocket | Bidirectional; works in browsers too                  |
+| Channel   | Best for                                         |
+| --------- | ------------------------------------------------ |
+| Webhook   | Server-to-server push; fire-and-forget per event |
+| SSE       | Server-side streaming (Node.js, Bun, Workers)    |
+| WebSocket | Bidirectional; works in browsers too             |
 
 All channels share the same event types and payload format.
 
@@ -34,12 +34,12 @@ Webhook management endpoints require a **user Bearer token** with write access t
 
 ## Events
 
-| Event type           | Triggered when                                                  |
-|----------------------|-----------------------------------------------------------------|
+| Event type           | Triggered when                                                     |
+| -------------------- | ------------------------------------------------------------------ |
 | `user.token_granted` | A user completes the OAuth consent flow and grants your app access |
-| `user.token_revoked` | A user revokes your app's access from their settings           |
-| `user.updated`       | A user who has granted your app access updates their profile    |
-| `*`                  | Wildcard — subscribe to all of the above                        |
+| `user.token_revoked` | A user revokes your app's access from their settings               |
+| `user.updated`       | A user who has granted your app access updates their profile       |
+| `*`                  | Wildcard — subscribe to all of the above                           |
 
 ### Payload format
 
@@ -160,9 +160,8 @@ The digest is HMAC-SHA256 of the raw request body using your webhook secret.
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 function verifySignature(secret, rawBody, signatureHeader) {
-  const expected = "sha256=" + createHmac("sha256", secret)
-    .update(rawBody)
-    .digest("hex");
+  const expected =
+    "sha256=" + createHmac("sha256", secret).update(rawBody).digest("hex");
   return timingSafeEqual(Buffer.from(expected), Buffer.from(signatureHeader));
 }
 ```
@@ -265,7 +264,7 @@ Each message frame:
 ```js
 const ws = new WebSocket(
   `wss://your-prism.example/api/apps/${appId}/events/ws` +
-  `?client_id=${clientId}&client_secret=${clientSecret}`
+    `?client_id=${clientId}&client_secret=${clientSecret}`,
 );
 
 ws.addEventListener("message", (e) => {

@@ -15,8 +15,8 @@
     "docs:dev": "vitepress dev docs",
     "docs:build": "vitepress build docs",
     "docs:preview": "vitepress preview docs",
-    "format": "prettier -c worker src",
-    "format:fix": "prettier -w worker src"
+    "format": "prettier -c worker src docs",
+    "format:fix": "prettier -w worker src docs"
   },
   "dependencies": {
     "@fluentui/react-components": "^9.73.8",

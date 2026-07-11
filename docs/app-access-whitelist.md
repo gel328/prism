@@ -38,11 +38,11 @@ Toggle **Enable access whitelist** to on.
 
 Click **Add rule** and choose:
 
-| Field             | Description                                                                   |
-|-------------------|-------------------------------------------------------------------------------|
-| Rule type         | **Team** — all members of a team can access. **User** — a single user can access. |
-| Target            | Select a team from the dropdown, or enter a user ID.                          |
-| Minimum role      | (Team only) The lowest role a member must have. Choose from owner, co-owner, admin, or member. |
+| Field        | Description                                                                                    |
+| ------------ | ---------------------------------------------------------------------------------------------- |
+| Rule type    | **Team** — all members of a team can access. **User** — a single user can access.              |
+| Target       | Select a team from the dropdown, or enter a user ID.                                           |
+| Minimum role | (Team only) The lowest role a member must have. Choose from owner, co-owner, admin, or member. |
 
 You can add as many rules as you need. A user needs to match at least one rule
 to pass the whitelist check.

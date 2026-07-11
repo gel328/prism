@@ -31,11 +31,11 @@ app:<应用A的client_id>:<内部范围>
 
 在仪表盘中打开应用，进入 **权限** 标签页，添加权限范围定义。每条定义包含：
 
-| 字段       | 说明                                                             |
-|------------|------------------------------------------------------------------|
-| 范围标识符  | 简短标识符，例如 `read_posts`（字母、数字、`-`、`_`）            |
-| 标题        | 在授权界面显示的可读名称                                         |
-| 描述        | 在标题下方显示的一句话说明                                       |
+| 字段       | 说明                                                  |
+| ---------- | ----------------------------------------------------- |
+| 范围标识符 | 简短标识符，例如 `read_posts`（字母、数字、`-`、`_`） |
+| 标题       | 在授权界面显示的可读名称                              |
+| 描述       | 在标题下方显示的一句话说明                            |
 
 或通过 API（需要具有应用 A 写权限的用户令牌）：
 
@@ -95,19 +95,19 @@ await prism.appScopePermissions.upsertDefinitionAsSelf(appA_id, {
 
 #### 所有者规则——谁可以将您的范围加入其 `allowed_scopes`
 
-| 规则类型        | 效果                                                   |
-|-----------------|--------------------------------------------------------|
-| `owner_allow`   | 白名单：仅这些用户 ID 可以注册您的权限范围             |
-| `owner_deny`    | 黑名单：这些用户 ID 永远不能注册您的权限范围           |
+| 规则类型      | 效果                                         |
+| ------------- | -------------------------------------------- |
+| `owner_allow` | 白名单：仅这些用户 ID 可以注册您的权限范围   |
+| `owner_deny`  | 黑名单：这些用户 ID 永远不能注册您的权限范围 |
 
 存在任意 `owner_allow` 规则时，列表切换为白名单模式（未列出的用户均被拒绝）。
 
 #### 应用规则——哪些应用可以在 OAuth 时请求您的范围
 
-| 规则类型    | 效果                                                        |
-|-------------|-------------------------------------------------------------|
-| `app_allow` | 白名单：仅这些 `client_id` 可以请求您的权限范围             |
-| `app_deny`  | 黑名单：这些 `client_id` 永远不能请求您的权限范围           |
+| 规则类型    | 效果                                              |
+| ----------- | ------------------------------------------------- |
+| `app_allow` | 白名单：仅这些 `client_id` 可以请求您的权限范围   |
+| `app_deny`  | 黑名单：这些 `client_id` 永远不能请求您的权限范围 |
 
 ```bash
 # 仅允许特定合作应用在 OAuth 时请求您的权限范围
@@ -150,15 +150,15 @@ Node.js 示例：
 async function requireAppScope(
   accessToken: string,
   prismBase: string,
-  requiredScope: string,           // 例如 "app:prism_xxxxx:read_posts"
-  expectedClientId?: string,       // 可选：只接受来自应用 B 的令牌
+  requiredScope: string, // 例如 "app:prism_xxxxx:read_posts"
+  expectedClientId?: string, // 可选：只接受来自应用 B 的令牌
 ): Promise<{ userId: string; clientId: string }> {
   const res = await fetch(`${prismBase}/api/oauth/introspect`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({ token: accessToken }),
   });
-  const data = await res.json() as {
+  const data = (await res.json()) as {
     active: boolean;
     scope?: string;
     client_id?: string;

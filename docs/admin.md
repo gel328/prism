@@ -13,12 +13,12 @@ The first admin is created during first-run setup. Additional admins are promote
 
 Shows four summary stats:
 
-| Stat             | Description                          |
-|------------------|--------------------------------------|
-| Total users      | All registered accounts              |
-| OAuth apps       | All registered applications          |
-| Verified domains | Domains that passed verification     |
-| Active tokens    | Non-expired OAuth access tokens      |
+| Stat             | Description                      |
+| ---------------- | -------------------------------- |
+| Total users      | All registered accounts          |
+| OAuth apps       | All registered applications      |
+| Verified domains | Domains that passed verification |
+| Active tokens    | Non-expired OAuth access tokens  |
 
 A panel under the stats surfaces operational warnings — most importantly, when
 [`SECRETS_KEY`](configuration.md#secrets_key-setup) is bound but the D1 data
@@ -64,7 +64,7 @@ Settings are grouped into tabs. All changes take effect immediately — no redep
 Choose one captcha provider:
 
 | Provider             | Notes                                                                |
-|----------------------|----------------------------------------------------------------------|
+| -------------------- | -------------------------------------------------------------------- |
 | None                 | No bot protection                                                    |
 | Cloudflare Turnstile | Requires a Turnstile site key + secret. Free tier available.         |
 | hCaptcha             | Requires an hCaptcha site key + secret.                              |
@@ -194,18 +194,18 @@ migration and is idempotent — re-running is safe.
 
 ## OAuth Sources
 
-**Admin → OAuth Sources** is where all social login providers are configured. Unlike a simple per-provider on/off toggle, each *source* is an independently named OAuth connection with its own slug, credentials, and display name. This allows multiple sources of the same provider type (e.g. two GitHub apps, or a Keycloak instance alongside Google).
+**Admin → OAuth Sources** is where all social login providers are configured. Unlike a simple per-provider on/off toggle, each _source_ is an independently named OAuth connection with its own slug, credentials, and display name. This allows multiple sources of the same provider type (e.g. two GitHub apps, or a Keycloak instance alongside Google).
 
 ### Source fields
 
-| Field         | Description                                                                         |
-|---------------|-------------------------------------------------------------------------------------|
-| Slug          | Unique URL key — appears in the callback URL as `/api/connections/<slug>/callback`  |
+| Field         | Description                                                                                      |
+| ------------- | ------------------------------------------------------------------------------------------------ |
+| Slug          | Unique URL key — appears in the callback URL as `/api/connections/<slug>/callback`               |
 | Provider      | Base OAuth type (GitHub, Google, Microsoft, Discord, Telegram, X, Generic OIDC, Generic OAuth 2) |
-| Display name  | Label shown on login/register buttons                                               |
-| Client ID     | OAuth application client ID                                                         |
-| Client Secret | OAuth application client secret                                                     |
-| Enabled       | Toggle to show/hide the source on login without deleting it                         |
+| Display name  | Label shown on login/register buttons                                                            |
+| Client ID     | OAuth application client ID                                                                      |
+| Client Secret | OAuth application client secret                                                                  |
+| Enabled       | Toggle to show/hide the source on login without deleting it                                      |
 
 ### Generic OIDC sources
 
@@ -251,7 +251,7 @@ The user table is searchable and sortable. Click a user row to open the detail v
 ### Actions on a user
 
 | Action              | Effect                                                                                          |
-|---------------------|-------------------------------------------------------------------------------------------------|
+| ------------------- | ----------------------------------------------------------------------------------------------- |
 | Change role         | Toggle between `user` and `admin`                                                               |
 | Deactivate          | Prevents login; existing tokens remain valid until expiry                                       |
 | Mark email verified | Manually verify without sending an email                                                        |
@@ -271,7 +271,7 @@ The app table lists all OAuth apps across all users, including:
 ### App moderation
 
 | Action     | Effect                                                                                      |
-|------------|---------------------------------------------------------------------------------------------|
+| ---------- | ------------------------------------------------------------------------------------------- |
 | Verify     | Marks the app with a verified badge visible on the consent screen                           |
 | Deactivate | Prevents the app from completing new authorization flows. Existing tokens continue to work. |
 
@@ -283,10 +283,10 @@ have been reviewed by an admin.
 **Admin → Teams** lists every team across the instance with its owner, member
 count, and join-requirement flags.
 
-| Action                | Effect                                                                       |
-|-----------------------|------------------------------------------------------------------------------|
-| Inspect               | View members, owned apps, and verified domains for the team                  |
-| Disband               | Remove the team. Team-owned apps are reassigned to the team's owner so they survive the cascade |
+| Action  | Effect                                                                                          |
+| ------- | ----------------------------------------------------------------------------------------------- |
+| Inspect | View members, owned apps, and verified domains for the team                                     |
+| Disband | Remove the team. Team-owned apps are reassigned to the team's owner so they survive the cascade |
 
 `disable_user_create_team` hides the "New team" button from non-admins. With it
 on, only admins can create teams (existing teams keep working).
@@ -319,42 +319,42 @@ kept before the cron sweeps them.
 
 The audit log is a paginated, append-only list of significant events:
 
-| Event                       | Triggered by                                              |
-|-----------------------------|-----------------------------------------------------------|
-| `user.register`             | Successful registration                                   |
-| `user.login`                | Successful login                                          |
-| `user.login.failed`         | Failed login attempt                                      |
-| `user.logout`               | Logout                                                    |
-| `user.delete`               | Account deletion                                          |
-| `user.password_changed`     | Password changed via Profile → Security                   |
-| `totp.enabled`              | TOTP authenticator setup completed                        |
-| `totp.disabled`             | TOTP authenticator removed                                |
-| `passkey.registered`        | New passkey added                                         |
-| `passkey.deleted`           | Passkey removed                                           |
-| `gpg.key_added`             | GPG public key registered                                 |
-| `gpg.key_deleted`           | GPG public key removed                                    |
-| `gpg.login`                 | Signed-in via GPG challenge                               |
-| `oauth.authorize`           | User approved an OAuth app                                |
-| `oauth.token`               | Token issued                                              |
-| `oauth.consent_revoked`     | User revoked an app's access                              |
-| `oauth.2fa.verify`          | Step-up 2FA confirmed                                     |
-| `oauth.2fa.sudo_revoked`    | User revoked a sudo grace window                          |
-| `team.created`              | Team created                                              |
-| `team.member_added`         | Member joined a team (invite or admin add)                |
-| `team.member_removed`       | Member left or was removed                                |
-| `team.transferred`          | Team ownership transferred                                |
-| `domain.added` / `verified` / `deleted` | Domain lifecycle                              |
-| `connection.added` / `removed` | Social connection lifecycle                            |
-| `webhook.create` / `update` / `delete` | Webhook lifecycle                              |
-| `oauth_source.create` / `update` / `delete` | OAuth source lifecycle                    |
-| `invite.create` / `revoke`  | Site invite lifecycle                                     |
-| `admin.config.update`       | Site config changed                                       |
-| `admin.user.update`         | Admin changed a user                                      |
-| `admin.user.delete`         | Admin deleted a user                                      |
-| `admin.app.update`          | Admin verified or deactivated an app                      |
-| `admin.team.delete`         | Admin disbanded a team                                    |
-| `admin.secrets.migrate`     | Site-config or D1 secrets migration ran                   |
-| `admin.reset.*`             | Site-reset request / cancel / confirm                     |
+| Event                                       | Triggered by                               |
+| ------------------------------------------- | ------------------------------------------ |
+| `user.register`                             | Successful registration                    |
+| `user.login`                                | Successful login                           |
+| `user.login.failed`                         | Failed login attempt                       |
+| `user.logout`                               | Logout                                     |
+| `user.delete`                               | Account deletion                           |
+| `user.password_changed`                     | Password changed via Profile → Security    |
+| `totp.enabled`                              | TOTP authenticator setup completed         |
+| `totp.disabled`                             | TOTP authenticator removed                 |
+| `passkey.registered`                        | New passkey added                          |
+| `passkey.deleted`                           | Passkey removed                            |
+| `gpg.key_added`                             | GPG public key registered                  |
+| `gpg.key_deleted`                           | GPG public key removed                     |
+| `gpg.login`                                 | Signed-in via GPG challenge                |
+| `oauth.authorize`                           | User approved an OAuth app                 |
+| `oauth.token`                               | Token issued                               |
+| `oauth.consent_revoked`                     | User revoked an app's access               |
+| `oauth.2fa.verify`                          | Step-up 2FA confirmed                      |
+| `oauth.2fa.sudo_revoked`                    | User revoked a sudo grace window           |
+| `team.created`                              | Team created                               |
+| `team.member_added`                         | Member joined a team (invite or admin add) |
+| `team.member_removed`                       | Member left or was removed                 |
+| `team.transferred`                          | Team ownership transferred                 |
+| `domain.added` / `verified` / `deleted`     | Domain lifecycle                           |
+| `connection.added` / `removed`              | Social connection lifecycle                |
+| `webhook.create` / `update` / `delete`      | Webhook lifecycle                          |
+| `oauth_source.create` / `update` / `delete` | OAuth source lifecycle                     |
+| `invite.create` / `revoke`                  | Site invite lifecycle                      |
+| `admin.config.update`                       | Site config changed                        |
+| `admin.user.update`                         | Admin changed a user                       |
+| `admin.user.delete`                         | Admin deleted a user                       |
+| `admin.app.update`                          | Admin verified or deactivated an app       |
+| `admin.team.delete`                         | Admin disbanded a team                     |
+| `admin.secrets.migrate`                     | Site-config or D1 secrets migration ran    |
+| `admin.reset.*`                             | Site-reset request / cancel / confirm      |
 
 Each entry records the acting `user_id` (or `null` for system actions), the
 `action`, optional `resource_type` / `resource_id`, a `metadata` JSON object,

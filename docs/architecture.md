@@ -240,7 +240,7 @@ clamped up by the site floor when set), and the **`parent_team_id`** that
 makes nesting work.
 
 - `parent_team_id` is a self-FK with `ON DELETE CASCADE` (`migration
-  0047_sub_teams.sql`). Index on `parent_team_id` keeps the
+0047_sub_teams.sql`). Index on `parent_team_id` keeps the
   `WHERE parent_team_id = ?` lookups cheap. Top-level teams have it `NULL`;
   cycles and over-depth nests are rejected at the API layer (server-enforced
   cap = `max_team_depth`, default 5, hard outer guard
@@ -274,12 +274,12 @@ domains tagged with `inherited_from` (subject to `inherit_team_domains`).
 
 #### Sub-team semantics at a glance
 
-| Behavior                          | Toggle                                  | Default | When off                                                                 |
-|-----------------------------------|-----------------------------------------|---------|--------------------------------------------------------------------------|
-| Feature available at all          | `enable_sub_teams`                      | `true`  | Every sub-team endpoint returns 403; `parent_team_id` rows are preserved but ignored. |
-| Member role cascades down         | `inherit_team_membership`               | `true`  | Effective role = direct row only.                                        |
-| Verified domains cascade down     | `inherit_team_domains`                  | `true`  | Sub-team domain listing + auto-verify see only own-team rows.            |
-| Sub-teams listed on public profile | `default_team_profile_show_sub_teams` + per-team `profile_show_sub_teams` | `true` | The public team profile omits the `sub_teams` array. |
+| Behavior                           | Toggle                                                                    | Default | When off                                                                              |
+| ---------------------------------- | ------------------------------------------------------------------------- | ------- | ------------------------------------------------------------------------------------- |
+| Feature available at all           | `enable_sub_teams`                                                        | `true`  | Every sub-team endpoint returns 403; `parent_team_id` rows are preserved but ignored. |
+| Member role cascades down          | `inherit_team_membership`                                                 | `true`  | Effective role = direct row only.                                                     |
+| Verified domains cascade down      | `inherit_team_domains`                                                    | `true`  | Sub-team domain listing + auto-verify see only own-team rows.                         |
+| Sub-teams listed on public profile | `default_team_profile_show_sub_teams` + per-team `profile_show_sub_teams` | `true`  | The public team profile omits the `sub_teams` array.                                  |
 
 Disbanding a team uses the recursive `dissolveTeam` helper: deepest-first,
 each level reassigns its OAuth apps to its own owner (or, if none, to the
@@ -400,11 +400,11 @@ The PoW system is an alternative to third-party captcha services.
 Sensitive values fall into two categories with different storage strategies,
 both rooted in the `SECRETS_KEY` Cloudflare Secrets Store binding:
 
-- **Reversible (AES-GCM envelope)** — values the worker needs to *read back*:
+- **Reversible (AES-GCM envelope)** — values the worker needs to _read back_:
   OAuth/source `client_secret`s, captcha secret keys, SMTP/IMAP passwords, the
   GitHub README site PAT. Ciphertext rows start with `__ENC_v1__`.
 - **Verify-only (keyed HMAC-SHA256)** — bearer-style values the worker only
-  ever needs to *compare* against a candidate: PATs, OAuth access/refresh
+  ever needs to _compare_ against a candidate: PATs, OAuth access/refresh
   tokens, OAuth codes, invite tokens, email-verify tokens, 2FA codes,
   individual backup codes. Hash rows start with `__HASH_v1__`. The HMAC subkey
   is HKDF-derived from `SECRETS_KEY` (info `prism:hash-subkey:v1`) for domain

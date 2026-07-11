@@ -21,16 +21,16 @@ The 404 response is identical for non-existent users and private users, so the e
 
 ## Available fields — user profile
 
-| Field | What it shows | Default |
-| - | - | - |
-| Display name | The user's display name | Public |
-| Avatar | The user's avatar image | Public |
-| Email | The user's primary email address | **Private** |
-| Join date | When the account was created | Public |
-| GPG public keys | Fingerprint, key ID, and label of each registered GPG key | Public |
-| Authorized apps | Apps the user has granted OAuth access to (name, icon, website) | **Private** |
-| User-owned apps | OAuth apps the user has registered (name, icon, description) | Public |
-| Verified domains | Domains the user owns and has verified | Public |
+| Field            | What it shows                                                   | Default     |
+| ---------------- | --------------------------------------------------------------- | ----------- |
+| Display name     | The user's display name                                         | Public      |
+| Avatar           | The user's avatar image                                         | Public      |
+| Email            | The user's primary email address                                | **Private** |
+| Join date        | When the account was created                                    | Public      |
+| GPG public keys  | Fingerprint, key ID, and label of each registered GPG key       | Public      |
+| Authorized apps  | Apps the user has granted OAuth access to (name, icon, website) | **Private** |
+| User-owned apps  | OAuth apps the user has registered (name, icon, description)    | Public      |
+| Verified domains | Domains the user owns and has verified                          | Public      |
 
 The "default" column is the out-of-the-box site default — admins can flip any of them.
 
@@ -42,16 +42,16 @@ The list of services a user has connected is sensitive (it reveals what they use
 
 Teams have their own visibility flags, controlled by **team owners and admins** (not site admins). The same per-section opt-in model applies; teams are private by default.
 
-| Field | What it shows | Default |
-| - | - | - |
-| Description | The team's description | Public |
-| Avatar | The team avatar | Public |
-| Owner | The team owner's username (linked to their public profile if also public) | **Private** |
-| Member count | Number of team members (a number, not the list) | Public |
-| Team-owned apps | OAuth apps registered to this team | Public |
-| Verified domains | Domains owned by the team | Public |
-| Member list | Each individual member (each member's own `profile_show_joined_teams` also applies) | **Private** |
-| Sub-teams | Immediate sub-teams that have *themselves* opted into a public profile | Public |
+| Field            | What it shows                                                                       | Default     |
+| ---------------- | ----------------------------------------------------------------------------------- | ----------- |
+| Description      | The team's description                                                              | Public      |
+| Avatar           | The team avatar                                                                     | Public      |
+| Owner            | The team owner's username (linked to their public profile if also public)           | **Private** |
+| Member count     | Number of team members (a number, not the list)                                     | Public      |
+| Team-owned apps  | OAuth apps registered to this team                                                  | Public      |
+| Verified domains | Domains owned by the team                                                           | Public      |
+| Member list      | Each individual member (each member's own `profile_show_joined_teams` also applies) | **Private** |
+| Sub-teams        | Immediate sub-teams that have _themselves_ opted into a public profile              | Public      |
 
 When a team is a sub-team, its public page also surfaces a small "Sub-team
 of `<parent>`" breadcrumb at the top — but **only when the parent is itself
@@ -64,7 +64,7 @@ hierarchy).
 A team's owner is a specific user. Showing their username on a public team page would surface that person even when their own user profile is private. The team owner has to explicitly opt in.
 :::
 
-The team page at `/t/<team-id>` will only link to the owner's `/u/<username>` page if the owner has also made *their* profile public. If they haven't, the team page shows just the owner's display name with no link.
+The team page at `/t/<team-id>` will only link to the owner's `/u/<username>` page if the owner has also made _their_ profile public. If they haven't, the team page shows just the owner's display name with no link.
 
 ## User settings
 
@@ -90,7 +90,7 @@ Members can always see the team's own public-profile page even when private — 
 
 Admins configure the feature in **Admin → Settings → Public profiles** (in the General tab).
 
-- **Enable public profiles** — master kill switch. Off = the feature is unavailable site-wide for both users *and* teams.
+- **Enable public profiles** — master kill switch. Off = the feature is unavailable site-wide for both users _and_ teams.
 - **Default visibility for each field** (user profiles) — applies to every user who hasn't set their own preference for that field.
 - **Default visibility for each section** (team profiles) — applies to every team that hasn't set its own preference. Edited by team owners/admins, not site admins.
 
@@ -139,9 +139,7 @@ curl https://your-prism-domain/api/users/alice
         "created_at": 1730000000
       }
     ],
-    "domains": [
-      { "domain": "alice.example", "verified_at": 1730000000 }
-    ]
+    "domains": [{ "domain": "alice.example", "verified_at": 1730000000 }]
   }
 }
 ```
@@ -182,14 +180,12 @@ curl https://your-prism-domain/api/public/teams/team_abc123
         "created_at": 1730000000
       }
     ],
-    "domains": [
-      { "domain": "acme.example", "verified_at": 1730000000 }
-    ]
+    "domains": [{ "domain": "acme.example", "verified_at": 1730000000 }]
   }
 }
 ```
 
-When the team owner has opted into showing themselves but their *own* user profile is private, `owner.username` and `owner.avatar_url` are `null` — only `display_name` is exposed, with no link out.
+When the team owner has opted into showing themselves but their _own_ user profile is private, `owner.username` and `owner.avatar_url` are `null` — only `display_name` is exposed, with no link out.
 
 ### Behavior
 
@@ -226,37 +222,37 @@ Both calls return `null` (instead of throwing) when the profile is missing or pr
 
 ### `users`
 
-| Column | Type | Meaning |
-| - | - | - |
-| `profile_is_public` | `INTEGER NOT NULL DEFAULT 0` | `1` = the user has opted in. No NULL state — admins can never silently flip this. |
-| `profile_show_display_name` | `INTEGER` (nullable) | `NULL` = follow site default; `0`/`1` = explicit user choice. |
-| `profile_show_avatar` | `INTEGER` (nullable) | Same. |
-| `profile_show_email` | `INTEGER` (nullable) | Same. |
-| `profile_show_joined_at` | `INTEGER` (nullable) | Same. |
-| `profile_show_gpg_keys` | `INTEGER` (nullable) | Same. |
-| `profile_show_authorized_apps` | `INTEGER` (nullable) | Same. |
-| `profile_show_owned_apps` | `INTEGER` (nullable) | Same. |
-| `profile_show_domains` | `INTEGER` (nullable) | Same. |
+| Column                         | Type                         | Meaning                                                                           |
+| ------------------------------ | ---------------------------- | --------------------------------------------------------------------------------- |
+| `profile_is_public`            | `INTEGER NOT NULL DEFAULT 0` | `1` = the user has opted in. No NULL state — admins can never silently flip this. |
+| `profile_show_display_name`    | `INTEGER` (nullable)         | `NULL` = follow site default; `0`/`1` = explicit user choice.                     |
+| `profile_show_avatar`          | `INTEGER` (nullable)         | Same.                                                                             |
+| `profile_show_email`           | `INTEGER` (nullable)         | Same.                                                                             |
+| `profile_show_joined_at`       | `INTEGER` (nullable)         | Same.                                                                             |
+| `profile_show_gpg_keys`        | `INTEGER` (nullable)         | Same.                                                                             |
+| `profile_show_authorized_apps` | `INTEGER` (nullable)         | Same.                                                                             |
+| `profile_show_owned_apps`      | `INTEGER` (nullable)         | Same.                                                                             |
+| `profile_show_domains`         | `INTEGER` (nullable)         | Same.                                                                             |
 
 ### `teams`
 
-| Column | Type | Meaning |
-| - | - | - |
-| `profile_is_public` | `INTEGER NOT NULL DEFAULT 0` | Set by team owner/admin. Same no-NULL guarantee. |
-| `profile_show_description` | `INTEGER` (nullable) | `NULL` = follow site default; `0`/`1` = explicit team choice. |
-| `profile_show_avatar` | `INTEGER` (nullable) | Same. |
-| `profile_show_owner` | `INTEGER` (nullable) | Same. |
-| `profile_show_member_count` | `INTEGER` (nullable) | Same. |
-| `profile_show_apps` | `INTEGER` (nullable) | Same. |
-| `profile_show_domains` | `INTEGER` (nullable) | Same. |
-| `profile_show_members` | `INTEGER` (nullable) | Same. |
-| `profile_show_sub_teams` | `INTEGER` (nullable) | Same. Added in `0048_sub_team_config.sql`. |
-| `parent_team_id` | `TEXT` (nullable, self-FK `ON DELETE CASCADE`) | Set when the team is a sub-team. Drives both the public breadcrumb and inheritance. |
+| Column                      | Type                                           | Meaning                                                                             |
+| --------------------------- | ---------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `profile_is_public`         | `INTEGER NOT NULL DEFAULT 0`                   | Set by team owner/admin. Same no-NULL guarantee.                                    |
+| `profile_show_description`  | `INTEGER` (nullable)                           | `NULL` = follow site default; `0`/`1` = explicit team choice.                       |
+| `profile_show_avatar`       | `INTEGER` (nullable)                           | Same.                                                                               |
+| `profile_show_owner`        | `INTEGER` (nullable)                           | Same.                                                                               |
+| `profile_show_member_count` | `INTEGER` (nullable)                           | Same.                                                                               |
+| `profile_show_apps`         | `INTEGER` (nullable)                           | Same.                                                                               |
+| `profile_show_domains`      | `INTEGER` (nullable)                           | Same.                                                                               |
+| `profile_show_members`      | `INTEGER` (nullable)                           | Same.                                                                               |
+| `profile_show_sub_teams`    | `INTEGER` (nullable)                           | Same. Added in `0048_sub_team_config.sql`.                                          |
+| `parent_team_id`            | `TEXT` (nullable, self-FK `ON DELETE CASCADE`) | Set when the team is a sub-team. Drives both the public breadcrumb and inheritance. |
 
 ### `site_config`
 
-| Key | Meaning |
-| - | - |
-| `enable_public_profiles` | Master kill switch covering both users and teams. |
-| `default_profile_show_*` | Per-field defaults for user profiles. |
-| `default_team_profile_show_*` | Per-section defaults for team profiles. |
+| Key                           | Meaning                                           |
+| ----------------------------- | ------------------------------------------------- |
+| `enable_public_profiles`      | Master kill switch covering both users and teams. |
+| `default_profile_show_*`      | Per-field defaults for user profiles.             |
+| `default_team_profile_show_*` | Per-section defaults for team profiles.           |

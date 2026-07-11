@@ -35,11 +35,11 @@ App A is the _provider_: it defines what scopes exist and controls who can use t
 Open the app in the dashboard, go to the **Permissions** tab, and add scope definitions.
 Each definition has:
 
-| Field        | Purpose                                                      |
-|--------------|--------------------------------------------------------------|
-| Scope ID     | Short identifier, e.g. `read_posts` (alphanumeric, `-`, `_`)|
-| Title        | Human-readable name shown on the consent screen              |
-| Description  | One-sentence explanation shown below the title               |
+| Field       | Purpose                                                      |
+| ----------- | ------------------------------------------------------------ |
+| Scope ID    | Short identifier, e.g. `read_posts` (alphanumeric, `-`, `_`) |
+| Title       | Human-readable name shown on the consent screen              |
+| Description | One-sentence explanation shown below the title               |
 
 Or via API (requires a user token with write access to App A):
 
@@ -103,19 +103,19 @@ Use access rules to restrict this.
 
 #### Owner rules — who can add your scopes to their `allowed_scopes`
 
-| Rule type      | Effect                                                          |
-|----------------|-----------------------------------------------------------------|
-| `owner_allow`  | Allowlist: only these user IDs may register your scopes         |
-| `owner_deny`   | Denylist: these user IDs may never register your scopes         |
+| Rule type     | Effect                                                  |
+| ------------- | ------------------------------------------------------- |
+| `owner_allow` | Allowlist: only these user IDs may register your scopes |
+| `owner_deny`  | Denylist: these user IDs may never register your scopes |
 
 If any `owner_allow` rule exists, it becomes an allowlist (all others are denied).
 
 #### App rules — which apps can request your scopes at OAuth time
 
-| Rule type   | Effect                                                             |
-|-------------|--------------------------------------------------------------------|
-| `app_allow` | Allowlist: only these `client_id`s may request your scopes         |
-| `app_deny`  | Denylist: these `client_id`s may never request your scopes         |
+| Rule type   | Effect                                                     |
+| ----------- | ---------------------------------------------------------- |
+| `app_allow` | Allowlist: only these `client_id`s may request your scopes |
+| `app_deny`  | Denylist: these `client_id`s may never request your scopes |
 
 ```bash
 # Allow only a specific partner app to request your scopes at OAuth time
@@ -159,15 +159,15 @@ Node.js example:
 async function requireAppScope(
   accessToken: string,
   prismBase: string,
-  requiredScope: string,           // e.g. "app:prism_xxxxx:read_posts"
-  expectedClientId?: string,       // optional: only accept tokens from App B
+  requiredScope: string, // e.g. "app:prism_xxxxx:read_posts"
+  expectedClientId?: string, // optional: only accept tokens from App B
 ): Promise<{ userId: string; clientId: string }> {
   const res = await fetch(`${prismBase}/api/oauth/introspect`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({ token: accessToken }),
   });
-  const data = await res.json() as {
+  const data = (await res.json()) as {
     active: boolean;
     scope?: string;
     client_id?: string;

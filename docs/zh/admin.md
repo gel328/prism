@@ -12,7 +12,7 @@ description: 在 Prism 管理面板中管理用户、应用、OAuth 来源、设
 显示四个汇总统计数据：
 
 | 统计项       | 说明                    |
-|--------------|-------------------------|
+| ------------ | ----------------------- |
 | 总用户数     | 所有已注册账号          |
 | OAuth 应用数 | 所有已注册应用          |
 | 已验证域名数 | 通过验证的域名          |
@@ -50,11 +50,11 @@ description: 在 Prism 管理面板中管理用户、应用、OAuth 来源、设
 
 选择一个验证码提供商：
 
-| 提供商               | 说明                                              |
-|----------------------|---------------------------------------------------|
-| 无                   | 不启用机器人防护                                  |
+| 提供商               | 说明                                               |
+| -------------------- | -------------------------------------------------- |
+| 无                   | 不启用机器人防护                                   |
 | Cloudflare Turnstile | 需要 Turnstile 站点密钥 + 密钥，提供免费套餐       |
-| hCaptcha             | 需要 hCaptcha 站点密钥 + 密钥                     |
+| hCaptcha             | 需要 hCaptcha 站点密钥 + 密钥                      |
 | reCAPTCHA v3         | 需要 Google reCAPTCHA v3 站点密钥 + 密钥，无感验证 |
 | 工作量证明           | 无需第三方服务，难度 20 在现代硬件上约需 0.1–2 秒  |
 
@@ -139,14 +139,14 @@ description: 在 Prism 管理面板中管理用户、应用、OAuth 来源、设
 
 ### 来源字段
 
-| 字段          | 说明                                                                      |
-|---------------|---------------------------------------------------------------------------|
-| Slug          | 唯一 URL 键 — 出现在回调 URL 中，格式为 `/api/connections/<slug>/callback` |
-| 提供商        | 基础 OAuth 类型（GitHub、Google、Microsoft、Discord、Telegram、X、通用 OIDC、通用 OAuth 2）   |
-| 显示名称      | 显示在登录/注册按钮上的标签                                               |
-| Client ID     | OAuth 应用的客户端 ID                                                     |
-| Client Secret | OAuth 应用的客户端密钥                                                    |
-| 启用          | 切换是否在登录页面显示该来源，禁用不会删除数据                             |
+| 字段          | 说明                                                                                        |
+| ------------- | ------------------------------------------------------------------------------------------- |
+| Slug          | 唯一 URL 键 — 出现在回调 URL 中，格式为 `/api/connections/<slug>/callback`                  |
+| 提供商        | 基础 OAuth 类型（GitHub、Google、Microsoft、Discord、Telegram、X、通用 OIDC、通用 OAuth 2） |
+| 显示名称      | 显示在登录/注册按钮上的标签                                                                 |
+| Client ID     | OAuth 应用的客户端 ID                                                                       |
+| Client Secret | OAuth 应用的客户端密钥                                                                      |
+| 启用          | 切换是否在登录页面显示该来源，禁用不会删除数据                                              |
 
 ### 通用 OIDC 来源
 
@@ -191,11 +191,11 @@ https://<your-prism-domain>/api/connections/<slug>/callback
 
 ### 用户操作
 
-| 操作           | 效果                                               |
-|----------------|----------------------------------------------------|
-| 更改角色       | 在 `user` 和 `admin` 之间切换                      |
-| 停用           | 阻止登录；现有令牌在过期前仍然有效                  |
-| 标记邮箱已验证 | 手动验证而无需发送邮件                             |
+| 操作           | 效果                                                   |
+| -------------- | ------------------------------------------------------ |
+| 更改角色       | 在 `user` 和 `admin` 之间切换                          |
+| 停用           | 阻止登录；现有令牌在过期前仍然有效                     |
+| 标记邮箱已验证 | 手动验证而无需发送邮件                                 |
 | 删除           | 永久删除用户及其所有数据（级联删除会话、应用、关联等） |
 
 删除用户不可逆。其 OAuth 应用也会一并删除，这将导致使用这些应用的所有第三方集成失效。
@@ -210,9 +210,9 @@ https://<your-prism-domain>/api/connections/<slug>/callback
 
 ### 应用审核
 
-| 操作 | 效果                                      |
-|------|-------------------------------------------|
-| 验证 | 在授权页面上为应用添加已验证徽章          |
+| 操作 | 效果                                       |
+| ---- | ------------------------------------------ |
+| 验证 | 在授权页面上为应用添加已验证徽章           |
 | 停用 | 阻止应用完成新的授权流程，现有令牌继续有效 |
 
 已验证的应用在授权页面上显示对勾标记，表示已由管理员审核。
@@ -221,10 +221,10 @@ https://<your-prism-domain>/api/connections/<slug>/callback
 
 **Admin → Teams** 列出全实例所有团队，包含所有者、成员数和加入门槛标记。
 
-| 操作  | 效果                                                                                       |
-|-------|--------------------------------------------------------------------------------------------|
-| 查看  | 浏览成员、所属应用、已验证域名                                                             |
-| 解散  | 删除团队。团队拥有的应用会先被重新分配给团队所有者，避免被级联删除                         |
+| 操作 | 效果                                                               |
+| ---- | ------------------------------------------------------------------ |
+| 查看 | 浏览成员、所属应用、已验证域名                                     |
+| 解散 | 删除团队。团队拥有的应用会先被重新分配给团队所有者，避免被级联删除 |
 
 `disable_user_create_team` 会对非管理员隐藏「新建团队」按钮 — 启用后只有管理员能创建团队（已存在的团队继续工作）。
 
@@ -248,42 +248,42 @@ https://<your-prism-domain>/api/connections/<slug>/callback
 
 审计日志是一个分页的追加型重要事件列表：
 
-| 事件                                       | 触发条件                                            |
-|--------------------------------------------|-----------------------------------------------------|
-| `user.register`                            | 成功注册                                            |
-| `user.login`                               | 成功登录                                            |
-| `user.login.failed`                        | 登录失败                                            |
-| `user.logout`                              | 退出登录                                            |
-| `user.delete`                              | 账号删除                                            |
-| `user.password_changed`                    | 通过 资料 → 安全 改密                              |
-| `totp.enabled`                             | TOTP 认证器启用                                    |
-| `totp.disabled`                            | TOTP 认证器移除                                    |
-| `passkey.registered`                       | 新 Passkey 已添加                                  |
-| `passkey.deleted`                          | Passkey 已删除                                      |
-| `gpg.key_added`                            | 注册了 GPG 公钥                                    |
-| `gpg.key_deleted`                          | 删除了 GPG 公钥                                    |
-| `gpg.login`                                | 通过 GPG 签名挑战登录                              |
-| `oauth.authorize`                          | 用户批准了 OAuth 应用                              |
-| `oauth.token`                              | 令牌已颁发                                          |
-| `oauth.consent_revoked`                    | 用户撤销了应用授权                                  |
-| `oauth.2fa.verify`                         | 步骤提升 2FA 完成                                  |
-| `oauth.2fa.sudo_revoked`                   | 用户主动结束了 sudo 宽限期                          |
-| `team.created`                             | 团队创建                                            |
-| `team.member_added`                        | 成员加入（邀请或管理员添加）                        |
-| `team.member_removed`                      | 成员退出或被移除                                    |
-| `team.transferred`                         | 团队所有权转移                                      |
-| `domain.added` / `verified` / `deleted`    | 域名生命周期                                        |
-| `connection.added` / `removed`             | 社交账号绑定生命周期                                |
-| `webhook.create` / `update` / `delete`     | Webhook 生命周期                                    |
-| `oauth_source.create` / `update` / `delete`| OAuth 源生命周期                                    |
-| `invite.create` / `revoke`                 | 站点邀请生命周期                                    |
-| `admin.config.update`                      | 站点配置已更改                                      |
-| `admin.user.update`                        | 管理员修改了用户                                    |
-| `admin.user.delete`                        | 管理员删除了用户                                    |
-| `admin.app.update`                         | 管理员验证或停用了应用                              |
-| `admin.team.delete`                        | 管理员解散了团队                                    |
-| `admin.secrets.migrate`                    | 触发了 site_config 或 D1 secrets 的迁移            |
-| `admin.reset.*`                            | 站点重置请求 / 取消 / 确认                         |
+| 事件                                        | 触发条件                                |
+| ------------------------------------------- | --------------------------------------- |
+| `user.register`                             | 成功注册                                |
+| `user.login`                                | 成功登录                                |
+| `user.login.failed`                         | 登录失败                                |
+| `user.logout`                               | 退出登录                                |
+| `user.delete`                               | 账号删除                                |
+| `user.password_changed`                     | 通过 资料 → 安全 改密                   |
+| `totp.enabled`                              | TOTP 认证器启用                         |
+| `totp.disabled`                             | TOTP 认证器移除                         |
+| `passkey.registered`                        | 新 Passkey 已添加                       |
+| `passkey.deleted`                           | Passkey 已删除                          |
+| `gpg.key_added`                             | 注册了 GPG 公钥                         |
+| `gpg.key_deleted`                           | 删除了 GPG 公钥                         |
+| `gpg.login`                                 | 通过 GPG 签名挑战登录                   |
+| `oauth.authorize`                           | 用户批准了 OAuth 应用                   |
+| `oauth.token`                               | 令牌已颁发                              |
+| `oauth.consent_revoked`                     | 用户撤销了应用授权                      |
+| `oauth.2fa.verify`                          | 步骤提升 2FA 完成                       |
+| `oauth.2fa.sudo_revoked`                    | 用户主动结束了 sudo 宽限期              |
+| `team.created`                              | 团队创建                                |
+| `team.member_added`                         | 成员加入（邀请或管理员添加）            |
+| `team.member_removed`                       | 成员退出或被移除                        |
+| `team.transferred`                          | 团队所有权转移                          |
+| `domain.added` / `verified` / `deleted`     | 域名生命周期                            |
+| `connection.added` / `removed`              | 社交账号绑定生命周期                    |
+| `webhook.create` / `update` / `delete`      | Webhook 生命周期                        |
+| `oauth_source.create` / `update` / `delete` | OAuth 源生命周期                        |
+| `invite.create` / `revoke`                  | 站点邀请生命周期                        |
+| `admin.config.update`                       | 站点配置已更改                          |
+| `admin.user.update`                         | 管理员修改了用户                        |
+| `admin.user.delete`                         | 管理员删除了用户                        |
+| `admin.app.update`                          | 管理员验证或停用了应用                  |
+| `admin.team.delete`                         | 管理员解散了团队                        |
+| `admin.secrets.migrate`                     | 触发了 site_config 或 D1 secrets 的迁移 |
+| `admin.reset.*`                             | 站点重置请求 / 取消 / 确认              |
 
 每条记录包含操作的 `user_id`（系统操作为 `null`）、`action`、可选的 `resource_type` / `resource_id`、`metadata` JSON 以及 `ip_address`。
 

@@ -193,7 +193,7 @@ Prism supports three send providers and two receive providers, configured in
 **Admin → Settings → Email**.
 
 | Provider     | `email_provider` value | Key variable               |
-|--------------|------------------------|----------------------------|
+| ------------ | ---------------------- | -------------------------- |
 | Resend       | `resend`               | `email_api_key` (Admin UI) |
 | Mailchannels | `mailchannels`         | `email_api_key` (Admin UI) |
 | SMTP         | `smtp`                 | See UI                     |

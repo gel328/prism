@@ -21,16 +21,16 @@ Prism 用户可以启用 `/u/<username>` 路径下的公开资料页面，团队
 
 ## 用户资料的可分享字段
 
-| 字段 | 含义 | 默认 |
-| - | - | - |
-| 显示名称 | 用户显示名 | 公开 |
-| 头像 | 用户头像 | 公开 |
-| 邮箱 | 用户主邮箱 | **私密** |
-| 加入日期 | 账号创建时间 | 公开 |
-| GPG 公钥 | 每个已注册 GPG 公钥的指纹、Key ID 和标签 | 公开 |
-| 已授权应用 | 用户已通过 OAuth 授权的应用（名称、图标、网址） | **私密** |
-| 用户创建的应用 | 用户注册的 OAuth 应用（名称、图标、描述） | 公开 |
-| 已验证域名 | 用户拥有并已验证的域名 | 公开 |
+| 字段           | 含义                                            | 默认     |
+| -------------- | ----------------------------------------------- | -------- |
+| 显示名称       | 用户显示名                                      | 公开     |
+| 头像           | 用户头像                                        | 公开     |
+| 邮箱           | 用户主邮箱                                      | **私密** |
+| 加入日期       | 账号创建时间                                    | 公开     |
+| GPG 公钥       | 每个已注册 GPG 公钥的指纹、Key ID 和标签        | 公开     |
+| 已授权应用     | 用户已通过 OAuth 授权的应用（名称、图标、网址） | **私密** |
+| 用户创建的应用 | 用户注册的 OAuth 应用（名称、图标、描述）       | 公开     |
+| 已验证域名     | 用户拥有并已验证的域名                          | 公开     |
 
 ::: tip 为何已授权应用默认私密
 用户连接的服务列表较为敏感（会暴露其使用习惯）。即使整个资料是公开的，该字段仍默认隐藏。
@@ -40,16 +40,16 @@ Prism 用户可以启用 `/u/<username>` 路径下的公开资料页面，团队
 
 团队拥有独立的可见性开关，由**团队的所有者和管理员**（而非站点管理员）控制。规则与用户资料相同：默认私密，按分区开启。
 
-| 分区 | 含义 | 默认 |
-| - | - | - |
-| 描述 | 团队描述 | 公开 |
-| 头像 | 团队头像 | 公开 |
-| 所有者 | 团队所有者的用户名（若所有者本人也公开了资料，则附带链接） | **私密** |
-| 成员数 | 团队成员的数量（仅数字，不显示成员列表） | 公开 |
-| 团队应用 | 注册到团队的 OAuth 应用 | 公开 |
-| 已验证域名 | 团队拥有的域名 | 公开 |
-| 成员列表 | 各成员逐一展示（每位成员的 `profile_show_joined_teams` 同样适用） | **私密** |
-| 子团队 | 直接子团队中**自身也已开启公开资料**的那些 | 公开 |
+| 分区       | 含义                                                              | 默认     |
+| ---------- | ----------------------------------------------------------------- | -------- |
+| 描述       | 团队描述                                                          | 公开     |
+| 头像       | 团队头像                                                          | 公开     |
+| 所有者     | 团队所有者的用户名（若所有者本人也公开了资料，则附带链接）        | **私密** |
+| 成员数     | 团队成员的数量（仅数字，不显示成员列表）                          | 公开     |
+| 团队应用   | 注册到团队的 OAuth 应用                                           | 公开     |
+| 已验证域名 | 团队拥有的域名                                                    | 公开     |
+| 成员列表   | 各成员逐一展示（每位成员的 `profile_show_joined_teams` 同样适用） | **私密** |
+| 子团队     | 直接子团队中**自身也已开启公开资料**的那些                        | 公开     |
 
 当一个团队本身是子团队时，它的公开页面顶部还会显示一条小型“XX 的子团队”面包屑 —— 但**仅当父团队自身也是公开的**。父团队私密时面包屑会被省略，避免通过子团队顺带泄露父团队的存在。这条面包屑没有按团队的开关，是层级关系本身的固有产物。
 
@@ -132,9 +132,7 @@ curl https://your-prism-domain/api/users/alice
         "created_at": 1730000000
       }
     ],
-    "domains": [
-      { "domain": "alice.example", "verified_at": 1730000000 }
-    ]
+    "domains": [{ "domain": "alice.example", "verified_at": 1730000000 }]
   }
 }
 ```
@@ -175,9 +173,7 @@ curl https://your-prism-domain/api/public/teams/team_abc123
         "created_at": 1730000000
       }
     ],
-    "domains": [
-      { "domain": "acme.example", "verified_at": 1730000000 }
-    ]
+    "domains": [{ "domain": "acme.example", "verified_at": 1730000000 }]
   }
 }
 ```
@@ -219,37 +215,37 @@ console.log(profile?.display_name, team?.member_count);
 
 ### `users`
 
-| 字段 | 类型 | 含义 |
-| - | - | - |
-| `profile_is_public` | `INTEGER NOT NULL DEFAULT 0` | `1` 表示用户已选择公开。无 NULL 状态——管理员永远无法隐式翻转此字段。 |
-| `profile_show_display_name` | `INTEGER`（可空） | `NULL` 表示沿用站点默认；`0`/`1` 表示用户的明确选择。 |
-| `profile_show_avatar` | `INTEGER`（可空） | 同上。 |
-| `profile_show_email` | `INTEGER`（可空） | 同上。 |
-| `profile_show_joined_at` | `INTEGER`（可空） | 同上。 |
-| `profile_show_gpg_keys` | `INTEGER`（可空） | 同上。 |
-| `profile_show_authorized_apps` | `INTEGER`（可空） | 同上。 |
-| `profile_show_owned_apps` | `INTEGER`（可空） | 同上。 |
-| `profile_show_domains` | `INTEGER`（可空） | 同上。 |
+| 字段                           | 类型                         | 含义                                                                 |
+| ------------------------------ | ---------------------------- | -------------------------------------------------------------------- |
+| `profile_is_public`            | `INTEGER NOT NULL DEFAULT 0` | `1` 表示用户已选择公开。无 NULL 状态——管理员永远无法隐式翻转此字段。 |
+| `profile_show_display_name`    | `INTEGER`（可空）            | `NULL` 表示沿用站点默认；`0`/`1` 表示用户的明确选择。                |
+| `profile_show_avatar`          | `INTEGER`（可空）            | 同上。                                                               |
+| `profile_show_email`           | `INTEGER`（可空）            | 同上。                                                               |
+| `profile_show_joined_at`       | `INTEGER`（可空）            | 同上。                                                               |
+| `profile_show_gpg_keys`        | `INTEGER`（可空）            | 同上。                                                               |
+| `profile_show_authorized_apps` | `INTEGER`（可空）            | 同上。                                                               |
+| `profile_show_owned_apps`      | `INTEGER`（可空）            | 同上。                                                               |
+| `profile_show_domains`         | `INTEGER`（可空）            | 同上。                                                               |
 
 ### `teams`
 
-| 字段 | 类型 | 含义 |
-| - | - | - |
-| `profile_is_public` | `INTEGER NOT NULL DEFAULT 0` | 由团队所有者/管理员设置；同样无 NULL 状态。 |
-| `profile_show_description` | `INTEGER`（可空） | `NULL` 表示沿用站点默认；`0`/`1` 表示团队的明确选择。 |
-| `profile_show_avatar` | `INTEGER`（可空） | 同上。 |
-| `profile_show_owner` | `INTEGER`（可空） | 同上。 |
-| `profile_show_member_count` | `INTEGER`（可空） | 同上。 |
-| `profile_show_apps` | `INTEGER`（可空） | 同上。 |
-| `profile_show_domains` | `INTEGER`（可空） | 同上。 |
-| `profile_show_members` | `INTEGER`（可空） | 同上。 |
-| `profile_show_sub_teams` | `INTEGER`（可空） | 同上。`0048_sub_team_config.sql` 加入。 |
-| `parent_team_id` | `TEXT`（可空，自引用外键 `ON DELETE CASCADE`） | 团队为子团队时设置。驱动公开面包屑与继承。 |
+| 字段                        | 类型                                           | 含义                                                  |
+| --------------------------- | ---------------------------------------------- | ----------------------------------------------------- |
+| `profile_is_public`         | `INTEGER NOT NULL DEFAULT 0`                   | 由团队所有者/管理员设置；同样无 NULL 状态。           |
+| `profile_show_description`  | `INTEGER`（可空）                              | `NULL` 表示沿用站点默认；`0`/`1` 表示团队的明确选择。 |
+| `profile_show_avatar`       | `INTEGER`（可空）                              | 同上。                                                |
+| `profile_show_owner`        | `INTEGER`（可空）                              | 同上。                                                |
+| `profile_show_member_count` | `INTEGER`（可空）                              | 同上。                                                |
+| `profile_show_apps`         | `INTEGER`（可空）                              | 同上。                                                |
+| `profile_show_domains`      | `INTEGER`（可空）                              | 同上。                                                |
+| `profile_show_members`      | `INTEGER`（可空）                              | 同上。                                                |
+| `profile_show_sub_teams`    | `INTEGER`（可空）                              | 同上。`0048_sub_team_config.sql` 加入。               |
+| `parent_team_id`            | `TEXT`（可空，自引用外键 `ON DELETE CASCADE`） | 团队为子团队时设置。驱动公开面包屑与继承。            |
 
 ### `site_config`
 
-| Key | 含义 |
-| - | - |
-| `enable_public_profiles` | 同时控制用户与团队公开资料的总开关。 |
-| `default_profile_show_*` | 用户资料各字段的默认值。 |
-| `default_team_profile_show_*` | 团队资料各分区的默认值。 |
+| Key                           | 含义                                 |
+| ----------------------------- | ------------------------------------ |
+| `enable_public_profiles`      | 同时控制用户与团队公开资料的总开关。 |
+| `default_profile_show_*`      | 用户资料各字段的默认值。             |
+| `default_team_profile_show_*` | 团队资料各分区的默认值。             |

@@ -25,7 +25,7 @@ https://<your-prism-domain>/api/connections/<slug>/callback
 2. Fill in the form:
 
    | Field                      | Value                                                       |
-   |----------------------------|-------------------------------------------------------------|
+   | -------------------------- | ----------------------------------------------------------- |
    | Application name           | Your site name                                              |
    | Homepage URL               | `https://your-prism-domain`                                 |
    | Authorization callback URL | `https://your-prism-domain/api/connections/<slug>/callback` |
@@ -39,7 +39,7 @@ https://<your-prism-domain>/api/connections/<slug>/callback
 Go to **Admin → OAuth Sources → Add source**:
 
 | Field         | Value                            |
-|---------------|----------------------------------|
+| ------------- | -------------------------------- |
 | Slug          | `github` (or any unique key)     |
 | Provider      | **GitHub**                       |
 | Display name  | `GitHub` (shown on login button) |
@@ -67,7 +67,7 @@ Save. The button appears on the login page immediately.
 4. Fill in **Create OAuth client ID**:
 
    | Field                         | Value                                                       |
-   |-------------------------------|-------------------------------------------------------------|
+   | ----------------------------- | ----------------------------------------------------------- |
    | Application type              | **Web application**                                         |
    | Authorized JavaScript origins | `https://your-prism-domain`                                 |
    | Authorized redirect URIs      | `https://your-prism-domain/api/connections/<slug>/callback` |
@@ -92,7 +92,7 @@ Go to **Admin → OAuth Sources → Add source**, choose **Provider: Google**, s
 2. Fill in the form:
 
    | Field                   | Value                                                                           |
-   |-------------------------|---------------------------------------------------------------------------------|
+   | ----------------------- | ------------------------------------------------------------------------------- |
    | Name                    | Your site name                                                                  |
    | Supported account types | **Accounts in any organizational directory and personal Microsoft accounts**    |
    | Redirect URI            | Platform: **Web** — `https://your-prism-domain/api/connections/<slug>/callback` |
@@ -162,13 +162,13 @@ You must set the domain in BotFather **before** attempting a Telegram login. Log
 
 Go to **Admin → OAuth Sources → Add source**:
 
-| Field         | Value                                             |
-|---------------|---------------------------------------------------|
-| Slug          | `telegram` (or any unique key)                    |
-| Provider      | **Telegram**                                      |
-| Display name  | `Telegram` (shown on login button)                |
+| Field         | Value                                               |
+| ------------- | --------------------------------------------------- |
+| Slug          | `telegram` (or any unique key)                      |
+| Provider      | **Telegram**                                        |
+| Display name  | `Telegram` (shown on login button)                  |
 | Client ID     | Bot numeric ID (the number before `:` in the token) |
-| Client Secret | Full bot token (`123456789:ABCdef...`)             |
+| Client Secret | Full bot token (`123456789:ABCdef...`)              |
 
 Save. The button appears on the login page immediately.
 
@@ -197,11 +197,11 @@ X uses OAuth 2.0 with mandatory PKCE. Prism generates and sends a `code_challeng
 
 Go to **Admin → OAuth Sources → Add source**:
 
-| Field         | Value                          |
-|---------------|--------------------------------|
-| Slug          | `x` (or any unique key)        |
-| Provider      | **X (Twitter)**                |
-| Display name  | `X` (shown on login button)    |
+| Field         | Value                             |
+| ------------- | --------------------------------- |
+| Slug          | `x` (or any unique key)           |
+| Provider      | **X (Twitter)**                   |
+| Display name  | `X` (shown on login button)       |
 | Client ID     | Paste from the X Developer Portal |
 | Client Secret | Paste from the X Developer Portal |
 
@@ -223,7 +223,7 @@ Use **Provider: Generic OpenID Connect** to add any OIDC-compliant identity prov
 When adding a Generic OIDC source, enter the **Issuer URL** and click **Discover**. Prism will fetch `{issuer}/.well-known/openid-configuration` and auto-fill the three endpoint URLs.
 
 | Field        | Example                        |
-|--------------|--------------------------------|
+| ------------ | ------------------------------ |
 | Issuer URL   | `https://accounts.example.com` |
 | Auth URL     | Auto-filled from discovery     |
 | Token URL    | Auto-filled from discovery     |
@@ -234,7 +234,7 @@ When adding a Generic OIDC source, enter the **Issuer URL** and click **Discover
 If your provider does not publish a discovery document, fill in the three URLs directly:
 
 | Field        | Example                                         |
-|--------------|-------------------------------------------------|
+| ------------ | ----------------------------------------------- |
 | Auth URL     | `https://accounts.example.com/oauth2/authorize` |
 | Token URL    | `https://accounts.example.com/oauth2/token`     |
 | Userinfo URL | `https://accounts.example.com/oauth2/userinfo`  |
@@ -248,7 +248,7 @@ The **Scopes** field defaults to `openid email profile` if left empty. Set a cus
 Prism maps the userinfo response using standard OIDC claims:
 
 | Prism field  | OIDC claim                    |
-|--------------|-------------------------------|
+| ------------ | ----------------------------- |
 | Provider ID  | `sub`                         |
 | Display name | `name` → `preferred_username` |
 | Username     | `preferred_username` → `sub`  |
@@ -274,7 +274,7 @@ Unlike Generic OIDC, there is no discovery — all three endpoint URLs must be e
 Each source has an independent slug, client ID, and secret. You can add as many sources of the same provider type as needed:
 
 | Slug           | Provider | Display name       |
-|----------------|----------|--------------------|
+| -------------- | -------- | ------------------ |
 | `github-work`  | GitHub   | GitHub (Work)      |
 | `github-oss`   | GitHub   | GitHub (Personal)  |
 | `google`       | Google   | Google             |

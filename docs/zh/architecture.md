@@ -189,12 +189,12 @@ WebAuthn 凭据。`credential_id` 用 base64url。每次成功认证后更新 `c
 
 #### 子团队语义速览
 
-| 行为                              | 开关                                            | 默认值 | 关闭时                                                                 |
-|-----------------------------------|-------------------------------------------------|--------|------------------------------------------------------------------------|
-| 整个特性是否可用                  | `enable_sub_teams`                              | `true` | 所有子团队接口返回 403；`parent_team_id` 行保留但被忽略。              |
-| 成员角色向下级联                  | `inherit_team_membership`                       | `true` | 有效角色 = 仅直接行。                                                  |
-| 已验证域名向下级联                | `inherit_team_domains`                          | `true` | 子团队域名列表和自动验证只看本团队拥有的行。                           |
-| 公开资料中展示子团队              | `default_team_profile_show_sub_teams` + 团队的 `profile_show_sub_teams` | `true` | 公开团队资料省略 `sub_teams` 数组。                                    |
+| 行为                 | 开关                                                                    | 默认值 | 关闭时                                                    |
+| -------------------- | ----------------------------------------------------------------------- | ------ | --------------------------------------------------------- |
+| 整个特性是否可用     | `enable_sub_teams`                                                      | `true` | 所有子团队接口返回 403；`parent_team_id` 行保留但被忽略。 |
+| 成员角色向下级联     | `inherit_team_membership`                                               | `true` | 有效角色 = 仅直接行。                                     |
+| 已验证域名向下级联   | `inherit_team_domains`                                                  | `true` | 子团队域名列表和自动验证只看本团队拥有的行。              |
+| 公开资料中展示子团队 | `default_team_profile_show_sub_teams` + 团队的 `profile_show_sub_teams` | `true` | 公开团队资料省略 `sub_teams` 数组。                       |
 
 解散团队走递归的 `dissolveTeam`：自下而上，每一层先把它的 OAuth 应用重新分配给该层自己的 owner（若没有则给执行删除的用户），再删除 `kind = 'team'` 的 user 行，最后才删 `teams` 行。`parent_team_id` 上的数据库级联是“双保险”的第二道防线 —— 真正负责在级联过程中不让团队应用被 `oauth_apps.owner_id → users.id ON DELETE CASCADE` 顺带删掉的是应用层的这个循环。
 

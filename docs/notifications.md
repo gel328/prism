@@ -24,18 +24,18 @@ for backwards compatibility and read in the absence of a ruleset.
 
 ## Events
 
-| Event                       | Triggered when                                                  |
-|-----------------------------|-----------------------------------------------------------------|
-| `app.created` / `updated` / `deleted` | Your OAuth app changed                                |
-| `domain.added` / `verified` / `deleted` | Your domain changed                                 |
-| `connection.added` / `removed` | Social connection added or removed                          |
-| `connection.login`          | A login completed via a linked social connection                |
-| `profile.updated`           | Display name, avatar, etc. changed                              |
-| `security.passkey_added` / `_removed` | Passkey added/removed                                |
-| `security.totp_enabled` / `_disabled` | TOTP authenticator enrolled/removed                  |
-| `token.created` / `revoked` | Personal access token created/revoked                           |
-| `team.member_added` / `_removed` | You were added to or removed from a team                   |
-| `oauth.consent_granted` / `_revoked` | OAuth consent granted to or revoked from an app       |
+| Event                                   | Triggered when                                   |
+| --------------------------------------- | ------------------------------------------------ |
+| `app.created` / `updated` / `deleted`   | Your OAuth app changed                           |
+| `domain.added` / `verified` / `deleted` | Your domain changed                              |
+| `connection.added` / `removed`          | Social connection added or removed               |
+| `connection.login`                      | A login completed via a linked social connection |
+| `profile.updated`                       | Display name, avatar, etc. changed               |
+| `security.passkey_added` / `_removed`   | Passkey added/removed                            |
+| `security.totp_enabled` / `_disabled`   | TOTP authenticator enrolled/removed              |
+| `token.created` / `revoked`             | Personal access token created/revoked            |
+| `team.member_added` / `_removed`        | You were added to or removed from a team         |
+| `oauth.consent_granted` / `_revoked`    | OAuth consent granted to or revoked from an app  |
 
 The set is mirrored in `worker/lib/notifications.ts → USER_NOTIFICATION_EVENTS`.
 Webhooks subscribe to the same names — this catalogue is the single source of
@@ -53,9 +53,9 @@ Each delivery has a level:
 
 ## Channels
 
-| Channel  | Configured via                                                                                                |
-|----------|---------------------------------------------------------------------------------------------------------------|
-| Email    | The user's verified primary email plus any verified secondary emails on `user_emails`. The HTML body is XSS-safe by construction (every interpolated string is HTML-escaped). |
+| Channel  | Configured via                                                                                                                                                                      |
+| -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Email    | The user's verified primary email plus any verified secondary emails on `user_emails`. The HTML body is XSS-safe by construction (every interpolated string is HTML-escaped).       |
 | Telegram | A linked Telegram social connection — its bot token (configured via `tg_notify_source_slug`) is reused to message the user. Requires admin to set up a Telegram OAuth source first. |
 
 If `tg_notify_source_slug` is empty, Telegram delivery is disabled site-wide
@@ -112,16 +112,16 @@ delivery list to actually send to.
 }
 ```
 
-| Field           | Meaning                                                                                              |
-|-----------------|------------------------------------------------------------------------------------------------------|
-| `id`            | Stable rule identifier (server-generated)                                                            |
-| `name`          | Human-readable label (≤ 64 chars, optional)                                                          |
-| `enabled`       | `false` skips the rule without affecting state                                                       |
-| `match.event`   | Glob: `*` matches everything, `?` matches one character, otherwise literal. Anchored — `app` matches `app`, not `appx` |
-| `match.accounts`| Optional. Each entry is `email:<email_id>` or `tg:<connection_id>`. Limits the rule's *effect* to those accounts only |
-| `action.type`   | `send` (append channels) or `drop` (clear delivery so far)                                           |
-| `action.channels` (send only) | Array of `{ kind: "email", email_id, level }` or `{ kind: "tg", connection_id, level }` |
-| `stop`          | `true` halts evaluation after this rule fires                                                        |
+| Field                         | Meaning                                                                                                                |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `id`                          | Stable rule identifier (server-generated)                                                                              |
+| `name`                        | Human-readable label (≤ 64 chars, optional)                                                                            |
+| `enabled`                     | `false` skips the rule without affecting state                                                                         |
+| `match.event`                 | Glob: `*` matches everything, `?` matches one character, otherwise literal. Anchored — `app` matches `app`, not `appx` |
+| `match.accounts`              | Optional. Each entry is `email:<email_id>` or `tg:<connection_id>`. Limits the rule's _effect_ to those accounts only  |
+| `action.type`                 | `send` (append channels) or `drop` (clear delivery so far)                                                             |
+| `action.channels` (send only) | Array of `{ kind: "email", email_id, level }` or `{ kind: "tg", connection_id, level }`                                |
+| `stop`                        | `true` halts evaluation after this rule fires                                                                          |
 
 ### Evaluation rules
 
@@ -130,7 +130,7 @@ delivery list to actually send to.
 - `drop` clears the delivery set built up so far. Combined with a more
   permissive rule above, this lets you say "everything to my main email,
   except domain events to the burner."
-- `match.accounts` filters the *effect* of the rule, not its match condition.
+- `match.accounts` filters the _effect_ of the rule, not its match condition.
   A `send` rule with scoped accounts silently skips channels that don't belong
   to those accounts. A `drop` rule with scoped accounts only clears the listed
   accounts — others pass through as if the rule hadn't fired.
@@ -156,7 +156,9 @@ delivery list to actually send to.
     "match": { "event": "app.*" },
     "action": {
       "type": "send",
-      "channels": [{ "kind": "tg", "connection_id": "tg_abc", "level": "brief" }]
+      "channels": [
+        { "kind": "tg", "connection_id": "tg_abc", "level": "brief" }
+      ]
     }
   },
   {

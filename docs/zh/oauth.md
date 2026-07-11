@@ -64,48 +64,48 @@ code_challenge = BASE64URL(SHA-256(ASCII(code_verifier)))
 
 #### 权限范围
 
-| 范围 | 包含的声明 / 授权的访问 |
-| --- | --- |
-| `openid` | `sub`、`iss`、`aud`、`iat`、`exp`（OIDC 必须） |
-| `profile` | `name`、`preferred_username`、`picture` |
-| `profile:write` | 更新用户的个人资料（名称、头像） |
-| `email` | `email`、`email_verified` |
-| `apps:read` | 用户拥有的应用列表 |
-| `apps:write` | 创建、更新和删除用户的应用 |
-| `teams:read` | 列出用户的团队 |
-| `teams:write` | 更新团队设置和管理成员 |
-| `teams:create` | 创建新团队 |
-| `teams:delete` | 删除团队 |
-| `domains:read` | 列出用户的自定义域名 |
-| `domains:write` | 添加和删除自定义域名 |
-| `gpg:read` | 列出用户已注册的 GPG 公钥 |
-| `gpg:write` | 添加或删除用户的 GPG 公钥 |
-| `social:read` | 列出用户已关联的社交提供商账号 |
-| `social:write` | 断开社交提供商账号关联 |
-| `webhooks:read` | 列出用户的 Webhook |
-| `webhooks:write` | 创建、更新和删除 Webhook |
-| `admin:users:read` | 读取所有用户账号（仅限管理员） |
-| `admin:users:write` | 修改用户账号（仅限管理员） |
-| `admin:users:delete` | 删除用户账号（仅限管理员） |
-| `admin:config:read` | 读取实例配置（仅限管理员） |
-| `admin:config:write` | 更新实例配置（仅限管理员） |
-| `admin:invites:read` | 列出邀请（仅限管理员） |
-| `admin:invites:create` | 创建邀请（仅限管理员） |
-| `admin:invites:delete` | 删除邀请（仅限管理员） |
-| `admin:webhooks:read` | 列出实例级别的 Webhook（仅限管理员） |
-| `admin:webhooks:write` | 创建和更新实例级别的 Webhook（仅限管理员） |
-| `admin:webhooks:delete` | 删除实例级别的 Webhook（仅限管理员） |
-| `offline_access` | 启用刷新令牌颁发 |
+| 范围                    | 包含的声明 / 授权的访问                        |
+| ----------------------- | ---------------------------------------------- |
+| `openid`                | `sub`、`iss`、`aud`、`iat`、`exp`（OIDC 必须） |
+| `profile`               | `name`、`preferred_username`、`picture`        |
+| `profile:write`         | 更新用户的个人资料（名称、头像）               |
+| `email`                 | `email`、`email_verified`                      |
+| `apps:read`             | 用户拥有的应用列表                             |
+| `apps:write`            | 创建、更新和删除用户的应用                     |
+| `teams:read`            | 列出用户的团队                                 |
+| `teams:write`           | 更新团队设置和管理成员                         |
+| `teams:create`          | 创建新团队                                     |
+| `teams:delete`          | 删除团队                                       |
+| `domains:read`          | 列出用户的自定义域名                           |
+| `domains:write`         | 添加和删除自定义域名                           |
+| `gpg:read`              | 列出用户已注册的 GPG 公钥                      |
+| `gpg:write`             | 添加或删除用户的 GPG 公钥                      |
+| `social:read`           | 列出用户已关联的社交提供商账号                 |
+| `social:write`          | 断开社交提供商账号关联                         |
+| `webhooks:read`         | 列出用户的 Webhook                             |
+| `webhooks:write`        | 创建、更新和删除 Webhook                       |
+| `admin:users:read`      | 读取所有用户账号（仅限管理员）                 |
+| `admin:users:write`     | 修改用户账号（仅限管理员）                     |
+| `admin:users:delete`    | 删除用户账号（仅限管理员）                     |
+| `admin:config:read`     | 读取实例配置（仅限管理员）                     |
+| `admin:config:write`    | 更新实例配置（仅限管理员）                     |
+| `admin:invites:read`    | 列出邀请（仅限管理员）                         |
+| `admin:invites:create`  | 创建邀请（仅限管理员）                         |
+| `admin:invites:delete`  | 删除邀请（仅限管理员）                         |
+| `admin:webhooks:read`   | 列出实例级别的 Webhook（仅限管理员）           |
+| `admin:webhooks:write`  | 创建和更新实例级别的 Webhook（仅限管理员）     |
+| `admin:webhooks:delete` | 删除实例级别的 Webhook（仅限管理员）           |
+| `offline_access`        | 启用刷新令牌颁发                               |
 
 #### 团队相关 scope —— 三个层级
 
 涉及团队的 scope 分三类，作用范围差异巨大。请按需选最窄的那一类。
 
-| 层级       | 示例              | 访问范围                                         | 授予方式                                                         |
-|------------|-------------------|--------------------------------------------------|------------------------------------------------------------------|
-| 聚合（复数）| `teams:read`      | 用户加入的所有团队                                | 普通用户同意                                                     |
-| 单团队（单数）| `team:read`     | 同意时选定的某一个团队                            | 普通用户同意 + 团队选择器（用户须是该团队 admin 及以上）          |
-| 跨实例     | `site:team:read`  | 实例上所有团队                                    | 仅管理员，且需通过 2FA + 输入确认短语                            |
+| 层级           | 示例             | 访问范围               | 授予方式                                                 |
+| -------------- | ---------------- | ---------------------- | -------------------------------------------------------- |
+| 聚合（复数）   | `teams:read`     | 用户加入的所有团队     | 普通用户同意                                             |
+| 单团队（单数） | `team:read`      | 同意时选定的某一个团队 | 普通用户同意 + 团队选择器（用户须是该团队 admin 及以上） |
+| 跨实例         | `site:team:read` | 实例上所有团队         | 仅管理员，且需通过 2FA + 输入确认短语                    |
 
 ##### 聚合 `teams:*`
 
@@ -156,17 +156,17 @@ site:team:read   site:team:write   site:team:delete
 
 完整的跨实例 scope 列表；与 `site:team:*` 共用 admin-only / 2FA / 确认短语 的同一道关卡：
 
-| Scope                  | 权限                                  |
-|------------------------|---------------------------------------|
-| `site:user:read`       | 读取任意用户                          |
-| `site:user:write`      | 修改任意用户                          |
-| `site:user:delete`     | 删除任意用户                          |
-| `site:team:read`       | 读取任意团队                          |
-| `site:team:write`      | 修改任意团队                          |
-| `site:team:delete`     | 解散任意团队                          |
-| `site:config:read`     | 读取站点配置                          |
-| `site:config:write`    | 修改站点配置                          |
-| `site:token:revoke`    | 撤销任意用户的 OAuth token            |
+| Scope               | 权限                       |
+| ------------------- | -------------------------- |
+| `site:user:read`    | 读取任意用户               |
+| `site:user:write`   | 修改任意用户               |
+| `site:user:delete`  | 删除任意用户               |
+| `site:team:read`    | 读取任意团队               |
+| `site:team:write`   | 修改任意团队               |
+| `site:team:delete`  | 解散任意团队               |
+| `site:config:read`  | 读取站点配置               |
+| `site:config:write` | 修改站点配置               |
+| `site:token:revoke` | 撤销任意用户的 OAuth token |
 
 ### 第二步 — 用户授权
 
@@ -285,27 +285,27 @@ ID 令牌是一个签名的 JWT（RS256）。可通过 `/.well-known/jwks.json` 
 
 标准声明（请求 `openid` 权限范围时始终包含）：
 
-| 声明 | 值 |
-| --- | --- |
-| `iss` | 你的 Prism 实例 URL |
-| `sub` | 稳定的用户 ID |
-| `aud` | 你的 `client_id` |
-| `iat` | 颁发时间戳 |
-| `exp` | 过期时间戳 |
-| `role` | 用户角色（`user` 或 `admin`） |
-| `nonce` | 从授权请求中原样返回 |
+| 声明    | 值                            |
+| ------- | ----------------------------- |
+| `iss`   | 你的 Prism 实例 URL           |
+| `sub`   | 稳定的用户 ID                 |
+| `aud`   | 你的 `client_id`              |
+| `iat`   | 颁发时间戳                    |
+| `exp`   | 过期时间戳                    |
+| `role`  | 用户角色（`user` 或 `admin`） |
+| `nonce` | 从授权请求中原样返回          |
 
 范围关联声明 — `profile` 和 `email` 声明在授予对应权限范围时自动包含。下表中其余声明还需要应用在 `oidc_fields` 配置中声明对应的字段名：
 
-| 权限范围 | 字段名 | 添加到 ID 令牌的声明 |
-| --- | --- | --- |
-| `profile` | _（始终包含）_ | `name`、`preferred_username`、`picture` |
-| `email` | _（始终包含）_ | `email`、`email_verified` |
-| `teams:read` | `teams` | `teams` — `{ id, name, role }` 对象数组，表示用户的团队成员身份 |
-| `apps:read` | `apps` | `apps` — `{ id, name, client_id, is_verified }` 对象数组，表示用户拥有的应用 |
-| `domains:read` | `domains` | `domains` — `{ id, domain, verified }` 对象数组 |
-| `gpg:read` | `gpg_keys` | `gpg_keys` — `{ id, fingerprint, key_id, name }` 对象数组 |
-| `social:read` | `social_accounts` | `social_accounts` — `{ id, provider, provider_user_id }` 对象数组 |
+| 权限范围       | 字段名            | 添加到 ID 令牌的声明                                                         |
+| -------------- | ----------------- | ---------------------------------------------------------------------------- |
+| `profile`      | _（始终包含）_    | `name`、`preferred_username`、`picture`                                      |
+| `email`        | _（始终包含）_    | `email`、`email_verified`                                                    |
+| `teams:read`   | `teams`           | `teams` — `{ id, name, role }` 对象数组，表示用户的团队成员身份              |
+| `apps:read`    | `apps`            | `apps` — `{ id, name, client_id, is_verified }` 对象数组，表示用户拥有的应用 |
+| `domains:read` | `domains`         | `domains` — `{ id, domain, verified }` 对象数组                              |
+| `gpg:read`     | `gpg_keys`        | `gpg_keys` — `{ id, fingerprint, key_id, name }` 对象数组                    |
+| `social:read`  | `social_accounts` | `social_accounts` — `{ id, provider, provider_user_id }` 对象数组            |
 
 通过 API 创建或更新应用时，在 `oidc_fields` 数组中声明所需字段，即可为该应用启用相应的自定义声明：
 
@@ -337,14 +337,14 @@ Content-Type: application/json
 }
 ```
 
-| 字段 | 是否必填 | 说明 |
-| --- | --- | --- |
-| `client_id` | 必填（Basic 或请求体） | OAuth 应用的 client ID |
-| `client_secret` | 机密客户端必填 | 通过 Basic 或请求体提供 |
-| `redirect_uri` | 必填 | 必须已在应用上注册 |
-| `action` | 推荐 | 用户要确认的操作的人类可读描述（≤ 200 字符）。在 Prism 页面原样展示，并在 verify 响应中回传 |
-| `nonce` | 可选 | 应用自定义的不透明值（≤ 256 字符），原样回传。建议绑定到具体操作（如订单 ID） |
-| `code_challenge`, `code_challenge_method` | 公开客户端必填 | PKCE — 见授权码流程 |
+| 字段                                      | 是否必填               | 说明                                                                                        |
+| ----------------------------------------- | ---------------------- | ------------------------------------------------------------------------------------------- |
+| `client_id`                               | 必填（Basic 或请求体） | OAuth 应用的 client ID                                                                      |
+| `client_secret`                           | 机密客户端必填         | 通过 Basic 或请求体提供                                                                     |
+| `redirect_uri`                            | 必填                   | 必须已在应用上注册                                                                          |
+| `action`                                  | 推荐                   | 用户要确认的操作的人类可读描述（≤ 200 字符）。在 Prism 页面原样展示，并在 verify 响应中回传 |
+| `nonce`                                   | 可选                   | 应用自定义的不透明值（≤ 256 字符），原样回传。建议绑定到具体操作（如订单 ID）               |
+| `code_challenge`, `code_challenge_method` | 公开客户端必填         | PKCE — 见授权码流程                                                                         |
 
 #### 响应
 
@@ -490,17 +490,17 @@ Content-Type: application/json
 
 在 [Cloudflare Zero Trust](https://one.dash.cloudflare.com/) 中，前往 **Integrations → Identity providers → Add new → OpenID Connect**，填写以下内容：
 
-| 字段 | 值 |
-| --- | --- |
-| Name | Prism（或任意名称） |
-| App ID | 你的 Prism **Client ID** |
-| Client secret | 你的 Prism **Client Secret** |
-| Auth URL | `https://your-prism-domain/api/oauth/authorize` |
-| Token URL | `https://your-prism-domain/api/oauth/token` |
-| Certificate URL | `https://your-prism-domain/.well-known/jwks.json` |
-| PKCE | 启用（推荐） |
-| Scopes | `openid email`（按需添加 `profile teams:read` 等） |
-| OIDC Claims | 每行一个 — 需要在策略中使用的声明名 |
+| 字段            | 值                                                 |
+| --------------- | -------------------------------------------------- |
+| Name            | Prism（或任意名称）                                |
+| App ID          | 你的 Prism **Client ID**                           |
+| Client secret   | 你的 Prism **Client Secret**                       |
+| Auth URL        | `https://your-prism-domain/api/oauth/authorize`    |
+| Token URL       | `https://your-prism-domain/api/oauth/token`        |
+| Certificate URL | `https://your-prism-domain/.well-known/jwks.json`  |
+| PKCE            | 启用（推荐）                                       |
+| Scopes          | `openid email`（按需添加 `profile teams:read` 等） |
+| OIDC Claims     | 每行一个 — 需要在策略中使用的声明名                |
 
 在 **OIDC Claims** 中填入 Prism 返回的自定义声明名，例如：
 
@@ -527,11 +527,11 @@ role_in_team_<team-id>
 
 在 Access 应用策略中使用 **OIDC Claim** 选择器：
 
-| 选择器 | Claim name | Claim value | 效果 |
-| --- | --- | --- | --- |
-| OIDC Claim | `role` | `admin` | 仅限 Prism 管理员 |
-| OIDC Claim | `in_team_<team-id>` | `true` | 指定团队成员 |
-| OIDC Claim | `role_in_team_<team-id>` | `owner` | 仅限团队所有者 |
+| 选择器     | Claim name               | Claim value | 效果              |
+| ---------- | ------------------------ | ----------- | ----------------- |
+| OIDC Claim | `role`                   | `admin`     | 仅限 Prism 管理员 |
+| OIDC Claim | `in_team_<team-id>`      | `true`      | 指定团队成员      |
+| OIDC Claim | `role_in_team_<team-id>` | `owner`     | 仅限团队所有者    |
 
 > **注意：** Cloudflare Access 从 **ID 令牌**（RS256 签名的 JWT）中读取自定义声明。Dashboard 中填写的声明名必须与 Prism 实际嵌入令牌的字段名完全一致，后者由应用的 `oidc_fields` 配置决定。
 
