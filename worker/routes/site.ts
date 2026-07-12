@@ -86,7 +86,9 @@ app.get("/site", async (c) => {
     initialized: config.initialized,
     r2_enabled: !!c.env.R2_ASSETS,
     tg_notify_source_slug: config.tg_notify_source_slug,
-    discord_notify_source_slug: config.discord_notify_source_slug,
+    discord_notify_source_slug: config.discord_bot_token
+      ? config.discord_notify_source_slug
+      : "",
     enable_public_profiles: config.enable_public_profiles,
     default_profile_show_display_name: config.default_profile_show_display_name,
     default_profile_show_avatar: config.default_profile_show_avatar,

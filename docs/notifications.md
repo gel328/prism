@@ -1,6 +1,6 @@
 ---
 title: Notifications
-description: Email and Telegram notifications fired on user-account events. Per-event preferences, named rulesets, and the rule engine.
+description: Email, Telegram, and Discord notifications fired on user-account events. Per-event preferences, named rulesets, and the rule engine.
 ---
 
 # Notifications
@@ -8,8 +8,8 @@ description: Email and Telegram notifications fired on user-account events. Per-
 Prism delivers notifications to users on the same events that drive [user
 webhooks](webhooks.md) — app changes, domain lifecycle, security factor
 changes, OAuth consent grants/revokes, team membership, and more — but to
-end-user channels (email, Telegram) instead of arbitrary URLs. Every user picks
-which events fire and where.
+end-user channels (email, Telegram, Discord) instead of arbitrary URLs. Every
+user picks which events fire and where.
 
 Two ways to configure exist side-by-side:
 
@@ -53,14 +53,17 @@ Each delivery has a level:
 
 ## Channels
 
-| Channel  | Configured via                                                                                                                                                                      |
-| -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Email    | The user's verified primary email plus any verified secondary emails on `user_emails`. The HTML body is XSS-safe by construction (every interpolated string is HTML-escaped).       |
-| Telegram | A linked Telegram social connection — its bot token (configured via `tg_notify_source_slug`) is reused to message the user. Requires admin to set up a Telegram OAuth source first. |
+| Channel  | Configured via                                                                                                                                                                |
+| -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Email    | The user's verified primary email plus any verified secondary emails on `user_emails`. The HTML body is XSS-safe by construction (every interpolated string is HTML-escaped). |
+| Telegram | A linked Telegram social connection. Prism sends with the bot token from the enabled Telegram OAuth source selected by `tg_notify_source_slug`.                               |
+| Discord  | A linked Discord social connection. Prism uses the Discord OAuth source selected by `discord_notify_source_slug` for user IDs, and sends DMs with `discord_bot_token`.        |
 
 If `tg_notify_source_slug` is empty, Telegram delivery is disabled site-wide
-even when users have Telegram channels in their rules. The site's email
-provider must be configured for email delivery to function.
+even when users have Telegram channels in their rules. If either
+`discord_notify_source_slug` or `discord_bot_token` is empty, Discord delivery
+is disabled site-wide. The site's email provider must be configured for email
+delivery to function.
 
 ## Flat preferences
 
@@ -112,16 +115,16 @@ delivery list to actually send to.
 }
 ```
 
-| Field                         | Meaning                                                                                                                |
-| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `id`                          | Stable rule identifier (server-generated)                                                                              |
-| `name`                        | Human-readable label (≤ 64 chars, optional)                                                                            |
-| `enabled`                     | `false` skips the rule without affecting state                                                                         |
-| `match.event`                 | Glob: `*` matches everything, `?` matches one character, otherwise literal. Anchored — `app` matches `app`, not `appx` |
-| `match.accounts`              | Optional. Each entry is `email:<email_id>` or `tg:<connection_id>`. Limits the rule's _effect_ to those accounts only  |
-| `action.type`                 | `send` (append channels) or `drop` (clear delivery so far)                                                             |
-| `action.channels` (send only) | Array of `{ kind: "email", email_id, level }` or `{ kind: "tg", connection_id, level }`                                |
-| `stop`                        | `true` halts evaluation after this rule fires                                                                          |
+| Field                         | Meaning                                                                                                                                           |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                          | Stable rule identifier (server-generated)                                                                                                         |
+| `name`                        | Human-readable label (≤ 64 chars, optional)                                                                                                       |
+| `enabled`                     | `false` skips the rule without affecting state                                                                                                    |
+| `match.event`                 | Glob: `*` matches everything, `?` matches one character, otherwise literal. Anchored — `app` matches `app`, not `appx`                            |
+| `match.accounts`              | Optional. Each entry is `email:<email_id>`, `tg:<connection_id>`, or `discord:<connection_id>`. Limits the rule's _effect_ to those accounts only |
+| `action.type`                 | `send` (append channels) or `drop` (clear delivery so far)                                                                                        |
+| `action.channels` (send only) | Array of `{ kind: "email", email_id, level }`, `{ kind: "tg", connection_id, level }`, or `{ kind: "discord", connection_id, level }`             |
+| `stop`                        | `true` halts evaluation after this rule fires                                                                                                     |
 
 ### Evaluation rules
 
@@ -192,21 +195,47 @@ DELETE /api/user/me/notification-rulesets/:id
 
 ## Telegram setup
 
-Telegram delivery reuses the bot from a Telegram OAuth source.
+Telegram login and Telegram notification delivery use the same bot token. The
+token lives in the Telegram OAuth source as its `client_secret`.
 
-1. Add a Telegram source as described in
-   [Social Login Setup → Telegram](social-login.md#telegram). The source has a
-   bot token in its `client_secret` and is enabled.
-2. In **Admin → Settings → Notifications**, set
-   `tg_notify_source_slug` to that source's slug.
-3. Each user who wants Telegram delivery binds their Telegram account at
-   **Profile → Linked Accounts** (using the same bot domain registered with
-   BotFather). The connection's `provider_user_id` is the chat ID Prism sends
-   to.
-4. Add a Telegram channel to the user's rules / preferences.
+1. Open Telegram and chat with `@BotFather`.
+2. Run `/newbot`, choose a display name and username, then copy the HTTP API token.
+3. Run `/setdomain`, select the bot, and enter the public Prism domain, for example `prism.example.com`. Telegram Login will reject callbacks from domains not registered here.
+4. In Prism, go to **Admin → OAuth Sources → Add Source**.
+5. Select **Telegram**, set a slug such as `telegram`, paste the bot token into the secret/token field, and keep the source enabled.
+6. Go to **Admin → Settings → Third-party** and enable **Telegram push**.
+7. Select the Telegram OAuth source in **Notification bot** and save. This sets `tg_notify_source_slug`.
+8. Each user who wants Telegram delivery opens **Linked Accounts**, connects Telegram through the same bot/domain, then enables Telegram channels on **Notifications**.
+
+Delivery details:
+
+- Prism sends with `https://api.telegram.org/bot<TOKEN>/sendMessage`.
+- The linked Telegram connection's `provider_user_id` is used as `chat_id`.
+- Users usually need to have authorized the Telegram Login widget for Prism before Prism can message them.
 
 Telegram messages are plain text with an inline link back to the relevant page
 in Prism.
+
+## Discord setup
+
+Discord OAuth login and Discord bot delivery are separate Discord credentials.
+The OAuth source stores the OAuth client ID/secret used to link accounts. The
+notification sender must use a bot token from the same Discord application, set
+as `discord_bot_token` in Prism.
+
+1. Open the [Discord Developer Portal](https://discord.com/developers/applications) and create or select the application used for Prism Discord login.
+2. Under **OAuth2 → General**, copy the **Client ID** and **Client Secret**. Add this redirect URL: `https://your-domain/api/connections/<slug>/callback`.
+3. In Prism, go to **Admin → OAuth Sources → Add Source**, select **Discord**, set a slug such as `discord`, paste the OAuth Client ID/Secret, and keep the source enabled.
+4. Back in Discord Developer Portal, open **Bot** for the same application.
+5. Create a bot if one does not exist, click **Reset Token** if needed, and copy the bot token. This token is not the OAuth client secret.
+6. In Prism, go to **Admin → Settings → Third-party**, enable **Discord push**, select the Discord OAuth source, paste the bot token into **Discord bot token**, and save. This sets `discord_notify_source_slug` and `discord_bot_token`.
+7. Each user who wants Discord delivery opens **Linked Accounts**, connects Discord, then enables Discord channels on **Notifications**.
+
+Delivery details:
+
+- Prism first calls `POST /users/@me/channels` with `Authorization: Bot <token>` and the linked user's Discord ID.
+- Prism then posts the notification to the returned DM channel.
+- Discord can reject DMs if the user blocks the bot, disables DMs from shared servers, or if Discord's platform policy/rate limits prevent opening a DM. Prism silently skips failed DM attempts because notifications run asynchronously.
 
 ## Email rendering
 

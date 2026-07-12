@@ -1187,17 +1187,16 @@ async function sendDiscordNotification(
   const db = env.DB;
   const config = await getConfig(db);
   const sourceSlug = config.discord_notify_source_slug;
-  if (!sourceSlug) return;
+  if (!sourceSlug || !config.discord_bot_token) return;
 
   const source = await db
     .prepare(
-      "SELECT client_secret FROM oauth_sources WHERE slug = ? AND provider = 'discord' AND enabled = 1",
+      "SELECT 1 FROM oauth_sources WHERE slug = ? AND provider = 'discord' AND enabled = 1",
     )
     .bind(sourceSlug)
-    .first<{ client_secret: string }>();
+    .first<Record<string, unknown>>();
   if (!source) return;
-  // The bot token is stored in client_secret and may be encrypted at rest.
-  const botToken = await decryptSecret(env, source.client_secret);
+  const botToken = await decryptSecret(env, config.discord_bot_token);
   if (!botToken) return;
 
   const conn = await db

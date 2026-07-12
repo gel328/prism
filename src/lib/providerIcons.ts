@@ -11,12 +11,12 @@ export const PROVIDER_COLORS: Record<string, string> = {
 };
 
 export const PROVIDER_ICON_URLS: Record<string, string> = {
-  github: "https://cdn.simpleicons.org/github",
+  github: "https://cdn.simpleicons.org/github/000000",
   google: "https://cdn.simpleicons.org/google",
   microsoft: "https://cdn.simpleicons.org/microsoft",
   discord: "https://cdn.simpleicons.org/discord",
   telegram: "https://cdn.simpleicons.org/telegram",
-  x: "https://cdn.simpleicons.org/x",
+  x: "https://cdn.simpleicons.org/x/000000",
 };
 
 /** Pick the icon URL for a provider entry on the login / connections page.

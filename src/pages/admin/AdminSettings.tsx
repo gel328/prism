@@ -382,18 +382,19 @@ export function AdminSettings() {
   // buttons on the third-party notifications tab). Keeps its own pending
   // flag so one platform's spinner doesn't block the other.
   const [savingThirdParty, setSavingThirdParty] = useState<string | null>(null);
-  const saveConfigKey = async (key: keyof SiteConfig) => {
-    setSavingThirdParty(key as string);
+  const saveConfigKeys = async (label: string, keys: (keyof SiteConfig)[]) => {
+    setSavingThirdParty(label);
     try {
-      await api.adminUpdateConfig({ [key]: get(key) } as Record<
-        string,
-        unknown
-      >);
+      const updates: Record<string, unknown> = {};
+      for (const key of keys) {
+        if (key in localConfig) updates[key] = get(key);
+      }
+      await api.adminUpdateConfig(updates);
       await qc.invalidateQueries({ queryKey: ["admin-config"] });
       await qc.invalidateQueries({ queryKey: ["site"] });
       setLocalConfig((c) => {
         const next = { ...c };
-        delete next[key];
+        for (const key of keys) delete next[key];
         return next;
       });
       showMsg("success", t("admin.thirdPartySaved"));
@@ -406,6 +407,8 @@ export function AdminSettings() {
       setSavingThirdParty(null);
     }
   };
+  const saveConfigKey = async (key: keyof SiteConfig) =>
+    saveConfigKeys(key as string, [key]);
 
   if (isLoading) return <SkeletonFormCard rows={6} />;
 
@@ -1308,29 +1311,40 @@ export function AdminSettings() {
                   {t("admin.discordNotifyDesc")}
                 </Text>
                 {!!get("discord_notify_source_slug") && (
-                  <Field label={t("admin.discordNotifyBot")}>
-                    <Dropdown
-                      value={
-                        discordSources.find(
-                          (s) =>
-                            s.slug ===
-                            (get("discord_notify_source_slug") ?? ""),
-                        )?.name ?? t("admin.discordNotifyNone")
-                      }
-                      selectedOptions={[
-                        get("discord_notify_source_slug") ?? "",
-                      ]}
-                      onOptionSelect={(_, d) =>
-                        set("discord_notify_source_slug", d.optionValue)
-                      }
-                    >
-                      {discordSources.map((s) => (
-                        <Option key={s.slug} value={s.slug}>
-                          {s.name}
-                        </Option>
-                      ))}
-                    </Dropdown>
-                  </Field>
+                  <>
+                    <Field label={t("admin.discordNotifySource")}>
+                      <Dropdown
+                        value={
+                          discordSources.find(
+                            (s) =>
+                              s.slug ===
+                              (get("discord_notify_source_slug") ?? ""),
+                          )?.name ?? t("admin.discordNotifyNone")
+                        }
+                        selectedOptions={[
+                          get("discord_notify_source_slug") ?? "",
+                        ]}
+                        onOptionSelect={(_, d) =>
+                          set("discord_notify_source_slug", d.optionValue)
+                        }
+                      >
+                        {discordSources.map((s) => (
+                          <Option key={s.slug} value={s.slug}>
+                            {s.name}
+                          </Option>
+                        ))}
+                      </Dropdown>
+                    </Field>
+                    <Field label={t("admin.discordBotToken")}>
+                      <PasswordInput
+                        value={get("discord_bot_token") ?? ""}
+                        onChange={(e) =>
+                          set("discord_bot_token", e.target.value)
+                        }
+                        placeholder={t("admin.unchanged")}
+                      />
+                    </Field>
+                  </>
                 )}
                 {discordSources.length === 0 && (
                   <Text
@@ -1345,11 +1359,17 @@ export function AdminSettings() {
                     appearance="primary"
                     disabled={
                       savingThirdParty !== null ||
-                      !("discord_notify_source_slug" in localConfig)
+                      (!("discord_notify_source_slug" in localConfig) &&
+                        !("discord_bot_token" in localConfig))
                     }
-                    onClick={() => saveConfigKey("discord_notify_source_slug")}
+                    onClick={() =>
+                      saveConfigKeys("discord", [
+                        "discord_notify_source_slug",
+                        "discord_bot_token",
+                      ])
+                    }
                   >
-                    {savingThirdParty === "discord_notify_source_slug" ? (
+                    {savingThirdParty === "discord" ? (
                       <Spinner size="tiny" />
                     ) : (
                       t("common.saveChanges")
