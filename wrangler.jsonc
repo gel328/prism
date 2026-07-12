@@ -1,5 +1,6 @@
 {
   "name": "prism",
+  // kyoumoe.com
   // Source pointer for the @cloudflare/vite-plugin, which validates this at
   // config-load time. Vite then builds the worker into dist/prism/index.js
   // and writes a deploy-ready dist/prism/wrangler.json next to it.
