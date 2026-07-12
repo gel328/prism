@@ -60,7 +60,7 @@
   "secrets_store_secrets": [
     {
       "binding": "SECRETS_KEY",
-      "store_id": "5ffcfaec1c6c4599989fb6a761d9583f",
+      "store_id": "d09672a731dc4030ab9342422be93634",
       "secret_name": "prism-secrets-key",
     },
   ],
