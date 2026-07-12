@@ -46,6 +46,7 @@ const REDACTED_FIELDS = new Set([
   "google_client_secret",
   "microsoft_client_secret",
   "discord_client_secret",
+  "discord_bot_token",
 ]);
 
 const REDACTED = "[REDACTED]";
@@ -64,6 +65,10 @@ function redactHeaders(headers: Headers): Record<string, string> {
     out[k] = REDACTED_FIELDS.has(k.toLowerCase()) ? REDACTED : v;
   });
   return out;
+}
+
+function redactUrl(url: string): string {
+  return url.replace(/\/bot[^/]+\/sendMessage/g, `/bot${REDACTED}/sendMessage`);
 }
 
 function parseBody(text: string, contentType: string | null): unknown {
@@ -96,6 +101,97 @@ function parseResBody(text: string, contentType: string | null): unknown {
     }
   }
   return text.slice(0, 2048);
+}
+
+function methodFromRequest(req: Request): string {
+  return req.method.toUpperCase();
+}
+
+async function isOutboundLoggingEnabled(kv: KVNamespace): Promise<boolean> {
+  return (await kv.get("system:outbound_request_logging_enabled")) === "true";
+}
+
+async function writeOutboundLog(
+  env: Env,
+  req: Request,
+  res: Response | null,
+  durationMs: number,
+  error: unknown,
+): Promise<void> {
+  if (!(await isOutboundLoggingEnabled(env.KV_SESSIONS))) return;
+
+  const reqBodyText = await req
+    .clone()
+    .text()
+    .catch(() => "");
+  const resBodyText = res
+    ? await res
+        .clone()
+        .text()
+        .catch(() => "")
+    : "";
+  const reqUrl = redactUrl(req.url);
+  const details = JSON.stringify({
+    outbound: true,
+    req: {
+      url: reqUrl,
+      method: methodFromRequest(req),
+      headers: redactHeaders(req.headers),
+      body: parseBody(reqBodyText, req.headers.get("content-type")),
+    },
+    res: res
+      ? {
+          status: res.status,
+          status_text: res.statusText,
+          headers: redactHeaders(res.headers),
+          body: parseResBody(resBodyText, res.headers.get("content-type")),
+        }
+      : null,
+    error:
+      error instanceof Error ? error.message : error ? String(error) : null,
+  });
+
+  await env.DB.prepare(
+    "INSERT INTO request_logs (id, method, path, status, duration_ms, ip_address, user_agent, user_id, details, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+  )
+    .bind(
+      crypto.randomUUID(),
+      methodFromRequest(req),
+      reqUrl,
+      res?.status ?? 0,
+      durationMs,
+      null,
+      "outbound-fetch",
+      null,
+      details,
+      Math.floor(Date.now() / 1000),
+    )
+    .run();
+}
+
+export async function loggedFetch(
+  env: Env,
+  input: RequestInfo | URL,
+  init?: RequestInit,
+): Promise<Response> {
+  const req = new Request(input, init);
+  const start = Date.now();
+  try {
+    const res = await fetch(req.clone());
+    await writeOutboundLog(
+      env,
+      req,
+      res.clone(),
+      Date.now() - start,
+      null,
+    ).catch(() => {});
+    return res;
+  } catch (err) {
+    await writeOutboundLog(env, req, null, Date.now() - start, err).catch(
+      () => {},
+    );
+    throw err;
+  }
 }
 
 // ─── Module-level KV flag cache (avoids a KV read on every request) ───────────

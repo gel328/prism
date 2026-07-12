@@ -18,6 +18,7 @@ import {
   isSecretsKeyConfigured,
 } from "../lib/secretCrypto";
 import { sendEmail } from "../lib/email";
+import { loggedFetch } from "../lib/logger";
 import { verifyAnyTotp } from "../lib/totp";
 import { PRISM_INTERNAL_CLIENT_ID, grantSudo, isSudoActive } from "../lib/sudo";
 import { requireAdmin } from "../middleware/auth";
@@ -73,6 +74,7 @@ app.get("/config", async (c) => {
     google_client_secret: "***",
     microsoft_client_secret: "***",
     discord_client_secret: "***",
+    discord_bot_token: config.discord_bot_token ? "***" : "",
     email_api_key: "***",
     smtp_password: "***",
     imap_password: "***",
@@ -107,6 +109,7 @@ app.patch("/config", async (c) => {
     "microsoft_client_secret",
     "discord_client_id",
     "discord_client_secret",
+    "discord_bot_token",
     "email_provider",
     "email_verify_methods",
     "email_receive_host",
@@ -2188,6 +2191,7 @@ app.get("/debug", async (c) => {
     spectatePath,
     exceptPattern,
     logIp,
+    outboundEnabled,
   ] = await Promise.all([
     c.env.KV_SESSIONS.get("system:request_logging_enabled"),
     c.env.KV_SESSIONS.get("system:force_log_all"),
@@ -2195,10 +2199,12 @@ app.get("/debug", async (c) => {
     c.env.KV_SESSIONS.get("system:spectate_path"),
     c.env.KV_SESSIONS.get("system:log_except_pattern"),
     c.env.KV_SESSIONS.get("system:log_ip"),
+    c.env.KV_SESSIONS.get("system:outbound_request_logging_enabled"),
   ]);
   return c.json({
     logging_enabled: enabled === "true",
     force_log_all: forceAll === "true",
+    outbound_logging_enabled: outboundEnabled === "true",
     spectate_user_id: spectateUserId ?? null,
     spectate_path: spectatePath ?? null,
     log_except_pattern: exceptPattern ?? null,
@@ -2210,6 +2216,7 @@ app.post("/debug", async (c) => {
   const body = await c.req.json<{
     logging_enabled?: boolean;
     force_log_all?: boolean;
+    outbound_logging_enabled?: boolean;
     spectate_user_id?: string | null;
     spectate_path?: string | null;
     log_except_pattern?: string | null;
@@ -2227,6 +2234,12 @@ app.post("/debug", async (c) => {
       ? c.env.KV_SESSIONS.put(
           "system:force_log_all",
           body.force_log_all ? "true" : "false",
+        )
+      : Promise.resolve(),
+    body.outbound_logging_enabled !== undefined
+      ? c.env.KV_SESSIONS.put(
+          "system:outbound_request_logging_enabled",
+          body.outbound_logging_enabled ? "true" : "false",
         )
       : Promise.resolve(),
     "spectate_user_id" in body
@@ -2478,7 +2491,7 @@ app.get("/oauth-sources/discover", async (c) => {
 
   let doc: Record<string, unknown>;
   try {
-    const res = await fetch(discoveryUrl, {
+    const res = await loggedFetch(c.env, discoveryUrl, {
       headers: { Accept: "application/json" },
       signal: AbortSignal.timeout(8_000),
     });
@@ -3042,7 +3055,7 @@ app.post("/webhooks/:id/test", async (c) => {
   let success = false;
 
   try {
-    const res = await fetch(wh.url, {
+    const res = await loggedFetch(c.env, wh.url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

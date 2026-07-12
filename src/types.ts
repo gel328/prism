@@ -43,6 +43,7 @@ export interface SiteConfig {
   disable_ssr: boolean;
   tg_notify_source_slug: string;
   discord_notify_source_slug: string;
+  discord_bot_token: string;
   sudo_mode_ttl_minutes: number;
   require_captcha_for_2fa: boolean;
   enable_public_profiles: boolean;

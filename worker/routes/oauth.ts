@@ -33,6 +33,7 @@ import {
   validateRedirectUriForRegistration,
 } from "../lib/redirectUri";
 import { validateOutboundUrl } from "../lib/safeFetch";
+import { loggedFetch } from "../lib/logger";
 import {
   parseAppScope,
   parseUnboundTeamScope,
@@ -3134,7 +3135,8 @@ app.post("/me/domains/:domain/verify", async (c) => {
   // DNS TXT lookup via Cloudflare DNS-over-HTTPS
   let verified: boolean;
   try {
-    const resp = await fetch(
+    const resp = await loggedFetch(
+      c.env,
       `https://cloudflare-dns.com/dns-query?name=_prism-verify.${domain}&type=TXT`,
       { headers: { Accept: "application/dns-json" } },
     );
@@ -4219,7 +4221,7 @@ app.post("/me/admin/webhooks/:id/test", async (c) => {
   let success = false;
 
   try {
-    const res = await fetch(wh.url, {
+    const res = await loggedFetch(c.env, wh.url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

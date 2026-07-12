@@ -51,6 +51,7 @@ const DEFAULT_CONFIG: SiteConfig = {
   disable_ssr: false,
   tg_notify_source_slug: "",
   discord_notify_source_slug: "",
+  discord_bot_token: "",
   sudo_mode_ttl_minutes: 5,
   require_captcha_for_2fa: false,
   enable_public_profiles: true,

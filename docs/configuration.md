@@ -148,11 +148,13 @@ respects ETag and serves stale-on-error.
 | ---------------------- | ------ | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `gpg_challenge_prefix` | string | `""`    | Extra lines inserted between the site header and the random challenge in the clearsign payload. Use this to add a human-readable marker so users can verify the challenge they're signing comes from your site |
 
-## Telegram notifications
+## Third-party notifications
 
-| Key                     | Type   | Default | Description                                                                                                                                                                                             |
-| ----------------------- | ------ | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `tg_notify_source_slug` | string | `""`    | Slug of an enabled Telegram OAuth source whose bot is used to deliver Telegram notifications. Leave empty to disable Telegram delivery. The source's bot token doubles as the bot used to message users |
+| Key                          | Type   | Default | Description                                                                                                                                                                                             |
+| ---------------------------- | ------ | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tg_notify_source_slug`      | string | `""`    | Slug of an enabled Telegram OAuth source whose bot is used to deliver Telegram notifications. Leave empty to disable Telegram delivery. The source's bot token doubles as the bot used to message users |
+| `discord_notify_source_slug` | string | `""`    | Slug of an enabled Discord OAuth source used to identify linked Discord users for notification DMs. Leave empty to disable Discord delivery                                                             |
+| `discord_bot_token`          | string | `""`    | Discord bot token used to open DM channels and send notification messages. This is separate from the Discord OAuth source client secret                                                                 |
 
 ## Social login
 

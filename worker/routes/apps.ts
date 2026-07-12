@@ -897,6 +897,7 @@ app.post("/:id/webhooks/:wid/test", async (c) => {
   const payload = JSON.stringify({ event: "ping", timestamp: now, data: {} });
   const signingSecret = (await decryptSecret(c.env, wh.secret)) ?? wh.secret;
   const result = await deliver(
+    c.env,
     wh.url,
     signingSecret,
     deliveryId,

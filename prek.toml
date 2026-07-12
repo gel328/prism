@@ -8,7 +8,7 @@ repo = "local"
 [[repos.hooks]]
 id = "prettier"
 name = "prettier (format whole repo)"
-entry = "bunx prettier -w ."
+entry = "sh -c 'bunx prettier -w . && git add -u'"
 language = "system"
 pass_filenames = false
 always_run = true

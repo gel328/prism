@@ -196,13 +196,28 @@ function DebugControls() {
           disabled={!(data?.logging_enabled ?? false)}
           onChange={(_, d) => mut.mutate({ force_log_all: d.checked })}
         />
+        <Switch
+          label={t("admin.logs.outboundLogging")}
+          checked={data?.outbound_logging_enabled ?? false}
+          onChange={(_, d) =>
+            mut.mutate({ outbound_logging_enabled: d.checked })
+          }
+        />
       </div>
-      {data?.force_log_all && (
+      {data?.logging_enabled && data?.force_log_all && (
         <Text
           size={200}
           style={{ color: tokens.colorPaletteMarigoldForeground1 }}
         >
           {t("admin.logs.forceLogAllHint")}
+        </Text>
+      )}
+      {data?.outbound_logging_enabled && (
+        <Text
+          size={200}
+          style={{ color: tokens.colorPaletteMarigoldForeground1 }}
+        >
+          {t("admin.logs.outboundLoggingHint")}
         </Text>
       )}
 

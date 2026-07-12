@@ -53,6 +53,7 @@ export const SENSITIVE_CONFIG_KEYS: ReadonlySet<string> = new Set([
   "imap_password",
   "smtp_password",
   "github_readme_token",
+  "discord_bot_token",
 ]);
 
 interface KeyPair {

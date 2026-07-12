@@ -482,9 +482,12 @@ export interface SiteConfig {
    *  cutting D1 read load during incidents. */
   disable_ssr: boolean;
   tg_notify_source_slug: string;
-  /** Slug of the enabled Discord oauth_source whose bot token is used to send
-   *  direct-message notifications. Empty disables Discord DM notifications. */
+  /** Slug of the enabled Discord oauth_source used to identify linked Discord
+   *  recipients. Empty disables Discord DM notifications. */
   discord_notify_source_slug: string;
+  /** Discord bot token used for notification DMs. This is separate from the
+   *  Discord OAuth source client secret. Empty disables Discord DM delivery. */
+  discord_bot_token: string;
   /** How long, in minutes, a successful 2FA step-up grants a sudo grace period
    *  during which subsequent challenges from the same app on the same session
    *  bypass TOTP/passkey re-prompting. 0 disables sudo mode entirely. */

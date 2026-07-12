@@ -930,6 +930,7 @@ export const api = {
     request<{
       logging_enabled: boolean;
       force_log_all: boolean;
+      outbound_logging_enabled: boolean;
       spectate_user_id: string | null;
       spectate_path: string | null;
       log_except_pattern: string | null;
@@ -938,6 +939,7 @@ export const api = {
   adminSetDebug: (body: {
     logging_enabled?: boolean;
     force_log_all?: boolean;
+    outbound_logging_enabled?: boolean;
     spectate_user_id?: string | null;
     spectate_path?: string | null;
     log_except_pattern?: string | null;
