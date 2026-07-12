@@ -66,11 +66,11 @@
   ],
   // Environment variables (non-secret)
   "vars": {
-    "APP_URL": "https://prism.siiway.org",
+    "APP_URL": "https://auth.kyoumoe.com",
   },
   "routes": [
     {
-      "pattern": "prism.siiway.org",
+      "pattern": "auth.kyoumoe.com",
       "custom_domain": true,
     },
   ],
