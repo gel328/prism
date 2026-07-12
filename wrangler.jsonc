@@ -29,7 +29,7 @@
     {
       "binding": "DB",
       "database_name": "prism-db",
-      "database_id": "5790c075-635c-470f-a166-8b9f145ec311",
+      "database_id": "dc87f913-26a1-4988-9fe2-589790c57b09",
       "migrations_dir": "worker/db/migrations",
     },
   ],
@@ -37,22 +37,20 @@
   "kv_namespaces": [
     {
       "binding": "KV_SESSIONS",
-      "id": "e76739c67270401e8f7b5283cf22d2dd",
+      "id": "bcd376c026f546ed820eac82e6632156",
     },
     {
       "binding": "KV_CACHE",
-      "id": "db4d8187fc3f48eabc412a3f5654fa69",
+      "id": "24e23c8dafb04ff9b07a82bb07582427",
     },
   ],
   // R2 Bucket
-  /*
   "r2_buckets": [
     {
       "binding": "R2_ASSETS",
       "bucket_name": "prism-assets",
     },
   ],
-  */
   // Cloudflare Secrets Store. After creating a 32-byte
   // base64url-encoded AES-GCM key in the dashboard, redeploy and use
   // Admin Panel → Settings → Danger Zone → "Migrate secrets to Secret
