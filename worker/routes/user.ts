@@ -16,6 +16,7 @@ import {
 } from "../lib/proxyImage";
 import { validateImageUrl } from "../lib/imageValidation";
 import { validateOutboundUrl } from "../lib/safeFetch";
+import { loggedFetch } from "../lib/logger";
 import { hmacSign, deliverUserWebhooks } from "../lib/webhooks";
 import {
   deliverUserEmailNotifications,
@@ -1253,7 +1254,7 @@ app.post("/webhooks/:id/test", async (c) => {
   let success = false;
 
   try {
-    const res = await fetch(wh.url, {
+    const res = await loggedFetch(c.env, wh.url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

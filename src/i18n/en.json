@@ -1091,6 +1091,8 @@
       "noDetails": "No body details recorded. Enable \"Force log all\" or a spectate mode to capture full request/response bodies.",
       "forceLogAll": "Force log all (capture req/res bodies for every request)",
       "forceLogAllHint": "Full request and response bodies are being recorded for all requests. Sensitive fields are redacted.",
+      "outboundLogging": "Log outbound requests",
+      "outboundLoggingHint": "Outbound requests to external APIs are being recorded with redacted headers, request bodies, and response bodies.",
       "exceptPattern": "Except path",
       "exceptPatternPlaceholder": "/api/oauth/token",
       "exceptPatternHint": "Requests whose path contains this substring are skipped entirely.",

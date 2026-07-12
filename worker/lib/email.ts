@@ -1,6 +1,7 @@
 // Email sending via Resend, Mailchannels, or SMTP
 
 import { decryptSecret } from "./secretCrypto";
+import { loggedFetch } from "./logger";
 
 export interface EmailOptions {
   to: string;
@@ -37,7 +38,7 @@ export async function sendEmail(
   };
 
   if (config.provider === "resend") {
-    const res = await fetch("https://api.resend.com/emails", {
+    const res = await loggedFetch(env, "https://api.resend.com/emails", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -56,19 +57,23 @@ export async function sendEmail(
   }
 
   if (config.provider === "mailchannels") {
-    const res = await fetch("https://api.mailchannels.net/tx/v1/send", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        personalizations: [{ to: [{ email: opts.to }] }],
-        from: { email: config.from },
-        subject: opts.subject,
-        content: [
-          { type: "text/html", value: opts.html },
-          ...(opts.text ? [{ type: "text/plain", value: opts.text }] : []),
-        ],
-      }),
-    });
+    const res = await loggedFetch(
+      env,
+      "https://api.mailchannels.net/tx/v1/send",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          personalizations: [{ to: [{ email: opts.to }] }],
+          from: { email: config.from },
+          subject: opts.subject,
+          content: [
+            { type: "text/html", value: opts.html },
+            ...(opts.text ? [{ type: "text/plain", value: opts.text }] : []),
+          ],
+        }),
+      },
+    );
     if (!res.ok) throw new Error(`Mailchannels error: ${await res.text()}`);
     return;
   }

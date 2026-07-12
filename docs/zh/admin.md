@@ -240,6 +240,8 @@ https://<your-prism-domain>/api/connections/<slug>/callback
 
 请求日志独立于审计日志：一次请求可能未引发任何审计动作，cron 触发的审计也没有对应的请求行。
 
+**记录出站请求** 是单独的调试开关，用于记录 Worker 发往外部 API 的请求，例如 Telegram 和 Discord 通知投递。开启后，Prism 会把这些调用写入 `request_logs`，用外部 URL 作为 `path`，并在详情中保存已脱敏的请求 / 响应正文。除非正在排查第三方投递失败，否则请保持关闭，因为它会记录消息内容并让每次出站调用额外读取一次 KV。
+
 ## 登录错误
 
 **Admin → Login Errors** 列出所有失败的认证尝试（密码错误、TOTP 错误、挑战过期等），含 error_code、identifier、IP、metadata。`login_error_retention_days` 控制保留时长，超时由 cron 清理。

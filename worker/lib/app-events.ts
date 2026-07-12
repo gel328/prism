@@ -53,6 +53,7 @@ export async function deliverAppEvent(
       const deliveryId = randomId();
       const signingSecret = (await decryptSecret(env, wh.secret)) ?? wh.secret;
       const result = await deliverOnce(
+        env,
         wh.url,
         signingSecret,
         deliveryId,

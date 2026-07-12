@@ -1,6 +1,7 @@
 // Webhook delivery — HMAC-signed HTTP POST to registered endpoints
 
 import { decryptSecret } from "./secretCrypto";
+import { loggedFetch } from "./logger";
 
 const DELIVERY_TIMEOUT_MS = 10_000;
 
@@ -30,6 +31,7 @@ export interface DeliveryResult {
 }
 
 export async function deliverOnce(
+  env: Env,
   url: string,
   secret: string,
   deliveryId: string,
@@ -41,7 +43,7 @@ export async function deliverOnce(
   let response: string | null;
 
   try {
-    const res = await fetch(url, {
+    const res = await loggedFetch(env, url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -89,6 +91,7 @@ async function deliverToMatching(
       // through unchanged.
       const signingSecret = (await decryptSecret(env, wh.secret)) ?? wh.secret;
       const result = await deliverOnce(
+        env,
         wh.url,
         signingSecret,
         deliveryId,
