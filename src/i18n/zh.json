@@ -92,6 +92,7 @@
     "errorInvalidToken": "此链接无效或已过期，请重新登录。",
     "errorNoToken": "未提供认证令牌，请重新登录。",
     "errorGeneric": "发生错误，请重新登录。",
+    "errorInviteRequired": "注册需要有效的邀请，请使用您的邀请链接进行注册。",
     "inviteToken": "邀请令牌",
     "inviteTokenHint": "在此站点创建账户需要邀请令牌",
     "inviteTokenPlaceholder": "粘贴您的邀请令牌",

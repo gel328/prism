@@ -101,7 +101,9 @@ export function Login() {
           ? "auth.errorInvalidToken"
           : errorParam === "no_token"
             ? "auth.errorNoToken"
-            : "auth.errorGeneric",
+            : errorParam === "invite_required"
+              ? "auth.errorInviteRequired"
+              : "auth.errorGeneric",
       )
     : null;
 
