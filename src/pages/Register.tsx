@@ -208,7 +208,15 @@ export function Register() {
                   provider={p}
                   onClick={() =>
                     api
-                      .connectionBegin(p.slug, { mode: "login" })
+                      .connectionBegin(p.slug, {
+                        mode: "login",
+                        // Carry the invite token through the OAuth round-trip so
+                        // invite-only mode is enforced when a social login
+                        // creates a new account.
+                        ...(form.invite_token
+                          ? { invite: form.invite_token }
+                          : {}),
+                      })
                       .then(({ redirect }) => (window.location.href = redirect))
                   }
                 />

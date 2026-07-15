@@ -46,6 +46,7 @@ import {
   notificationActorMetaFromHeaders,
 } from "../lib/notifications";
 import { teamsBlockingDowngrade } from "../lib/teamRequirements";
+import { validateSiteInvite, consumeSiteInvite } from "../lib/siteInvite";
 import type {
   AuthUser,
   PasskeyRow,
@@ -159,36 +160,18 @@ app.post("/register", async (c) => {
     pow_nonce?: number;
   }>();
 
-  // Invite-only mode: validate the invite token before anything else
+  // Invite-only mode: validate the invite token before anything else.
+  // Shared with the social/OAuth registration path (routes/connections.ts)
+  // via validateSiteInvite so both entry points enforce invites identically.
   let usedInvite: SiteInviteRow | null = null;
   if (config.invite_only) {
-    if (!body.invite_token)
-      return c.json({ error: "An invite token is required to register" }, 403);
-
-    const now = Math.floor(Date.now() / 1000);
-    const inviteLookup = await hashLookupCandidate(c.env, body.invite_token);
-    if (!inviteLookup) return c.json({ error: "Invalid invite token" }, 403);
-    const invite = await c.env.DB.prepare(
-      "SELECT * FROM site_invites WHERE token = ? OR token = ?",
-    )
-      .bind(body.invite_token, inviteLookup)
-      .first<SiteInviteRow>();
-
-    if (!invite) return c.json({ error: "Invalid invite token" }, 403);
-    if (invite.expires_at !== null && invite.expires_at < now)
-      return c.json({ error: "Invite token has expired" }, 403);
-    if (invite.max_uses !== null && invite.use_count >= invite.max_uses)
-      return c.json({ error: "Invite token has reached its usage limit" }, 403);
-    if (
-      invite.email &&
-      invite.email.toLowerCase() !== (body.email ?? "").toLowerCase().trim()
-    )
-      return c.json(
-        { error: "This invite is for a different email address" },
-        403,
-      );
-
-    usedInvite = invite;
+    const result = await validateSiteInvite(
+      c.env,
+      body.invite_token,
+      body.email,
+    );
+    if (!result.ok) return c.json({ error: result.error }, result.status);
+    usedInvite = result.invite;
   }
 
   const captchaOk = await verifyCaptchaToken(
@@ -246,11 +229,7 @@ app.post("/register", async (c) => {
 
   // Mark invite as used
   if (usedInvite) {
-    await c.env.DB.prepare(
-      "UPDATE site_invites SET use_count = use_count + 1 WHERE id = ?",
-    )
-      .bind(usedInvite.id)
-      .run();
+    await consumeSiteInvite(c.env, usedInvite);
   }
 
   if (verifyToken && config.email_provider !== "none") {

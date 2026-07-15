@@ -10,6 +10,7 @@ import {
 } from "../lib/crypto";
 import { getConfig, getJwtSecret } from "../lib/config";
 import { decryptSecret, encryptSecret } from "../lib/secretCrypto";
+import { validateSiteInvite, consumeSiteInvite } from "../lib/siteInvite";
 import { requireAuth, optionalAuth } from "../middleware/auth";
 import { signJWT } from "../lib/jwt";
 import { setSessionCookie } from "../lib/cookies";
@@ -32,6 +33,11 @@ interface PendingState {
   refreshToken: string | null;
   tokenExpiresAt: number | null;
   profileData: Record<string, unknown>;
+  // Invite token passed through from GET /:provider/begin (?invite=…) so that
+  // invite-only mode can be enforced on the social/OAuth registration path,
+  // the same way it is on the password path. Null for login flows and for
+  // sign-ups made while invite-only mode is off.
+  inviteToken?: string | null;
   users?: Array<{
     id: string;
     username: string;
@@ -41,6 +47,7 @@ interface PendingState {
 }
 import type {
   OAuthSourceRow,
+  SiteInviteRow,
   SocialConnectionRow,
   UserRow,
   Variables,
@@ -289,6 +296,10 @@ app.get("/:provider/begin", optionalAuth, async (c) => {
 
   const nonce = randomBase64url(24);
   const mode = c.req.query("mode") ?? "login"; // 'login' | 'connect'
+  // Optional invite token, carried through the whole OAuth round-trip so that
+  // invite-only mode can be enforced when a social login results in a new
+  // account. Ignored for connect mode and when invite-only mode is off.
+  const inviteToken = c.req.query("invite") ?? null;
 
   // For connect mode, userId comes from a pre-issued intent token stored in KV
   let userId = c.get("user")?.id ?? null;
@@ -320,6 +331,7 @@ app.get("/:provider/begin", optionalAuth, async (c) => {
       mode,
       userId,
       codeVerifier,
+      inviteToken,
     }),
     { expirationTtl: 600 },
   );
@@ -408,9 +420,10 @@ app.post("/:provider/tg-verify", async (c) => {
   if (!stateData) return c.json({ error: "invalid_state" }, 400);
   await c.env.KV_CACHE.delete(`social:state:${body.nonce}`);
 
-  const { mode, userId } = JSON.parse(stateData) as {
+  const { mode, userId, inviteToken } = JSON.parse(stateData) as {
     mode: string;
     userId: string | null;
+    inviteToken?: string | null;
   };
 
   // Verify HMAC-SHA256(data_check_string, SHA256(bot_token))
@@ -516,6 +529,15 @@ app.post("/:provider/tg-verify", async (c) => {
     if (!config.allow_registration)
       return c.json({ error: "registration_disabled" }, 403);
 
+    // Invite-only mode: reject early so the user sees the failure before the
+    // confirm screen. /complete re-validates authoritatively. Telegram never
+    // exposes an email, so email-bound invites can't match here — that's
+    // intentional and consistent with /complete (providerEmail is null).
+    if (config.invite_only) {
+      const result = await validateSiteInvite(c.env, inviteToken, null);
+      if (!result.ok) return c.json({ error: result.error }, result.status);
+    }
+
     const pendingKey = `social:pending:${randomBase64url(24)}`;
     await c.env.KV_CACHE.put(
       pendingKey,
@@ -528,6 +550,7 @@ app.post("/:provider/tg-verify", async (c) => {
         refreshToken: null,
         tokenExpiresAt: null,
         profileData,
+        inviteToken,
       } satisfies PendingState),
       { expirationTtl: 600 },
     );
@@ -627,12 +650,15 @@ app.get("/:provider/callback", async (c) => {
     return c.redirect(`${c.env.APP_URL}/connections?error=invalid_state`);
   await c.env.KV_CACHE.delete(`social:state:${state}`);
 
-  const { provider, mode, userId, codeVerifier } = JSON.parse(stateData) as {
+  const { provider, mode, userId, codeVerifier, inviteToken } = JSON.parse(
+    stateData,
+  ) as {
     slug: string;
     provider: string;
     mode: string;
     userId: string | null;
     codeVerifier?: string | null;
+    inviteToken?: string | null;
   };
 
   const redirectUri = `${c.env.APP_URL}/api/connections/${slug}/callback`;
@@ -858,6 +884,16 @@ app.get("/:provider/callback", async (c) => {
     if (!allowReg)
       return c.redirect(`${c.env.APP_URL}/login?error=registration_disabled`);
 
+    // Invite-only mode: reject early (before the confirm screen) if the
+    // invite is missing/invalid. /complete re-validates authoritatively and
+    // consumes the invite. Unlike Telegram, providerEmail may be present here,
+    // so email-bound invites are matched against it.
+    if (config.invite_only) {
+      const result = await validateSiteInvite(c.env, inviteToken, providerEmail);
+      if (!result.ok)
+        return c.redirect(`${c.env.APP_URL}/login?error=invite_required`);
+    }
+
     const pendingKey = `social:pending:${randomBase64url(24)}`;
     await c.env.KV_CACHE.put(
       pendingKey,
@@ -870,6 +906,7 @@ app.get("/:provider/callback", async (c) => {
         refreshToken,
         tokenExpiresAt,
         profileData,
+        inviteToken,
       } satisfies PendingState),
       { expirationTtl: 600 },
     );
@@ -1130,6 +1167,22 @@ app.post("/complete", async (c) => {
     );
     if (!allowReg) return c.json({ error: "Registration is disabled" }, 403);
 
+    // Authoritative invite-only enforcement for the social/OAuth path. This is
+    // the single point where the account is actually created, so it must be
+    // validated here regardless of the earlier (best-effort) checks in
+    // /callback and /tg-verify. The invite is consumed only after the user row
+    // is successfully inserted below, mirroring the password path in auth.ts.
+    let usedInvite: SiteInviteRow | null = null;
+    if (completeCfg.invite_only) {
+      const result = await validateSiteInvite(
+        c.env,
+        state.inviteToken,
+        state.providerEmail,
+      );
+      if (!result.ok) return c.json({ error: result.error }, result.status);
+      usedInvite = result.invite;
+    }
+
     const username = (body.username ?? "")
       .trim()
       .toLowerCase()
@@ -1195,6 +1248,11 @@ app.post("/complete", async (c) => {
       .bind(newUserId)
       .first<UserRow>();
     if (!user) return c.json({ error: "Failed to create user" }, 500);
+
+    // Consume the invite only after the account exists, matching auth.ts.
+    if (usedInvite) {
+      await consumeSiteInvite(c.env, usedInvite);
+    }
 
     return c.json({
       token: await issueJWT(c, user),
