@@ -74,6 +74,10 @@
       "pattern": "auth.kyoumoe.com",
       "custom_domain": true,
     },
+    {
+      "pattern": "auth.kyoumoe.cc.cd",
+      "custom_domain": true
+    },
   ],
   // Re-verify domains every 6 hours
   "triggers": {
