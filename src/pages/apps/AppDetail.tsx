@@ -47,9 +47,11 @@ import {
   ApiError,
   type AppScopeDefinition,
   type AppScopeAccessRule,
+  type RedirectUri,
 } from "../../lib/api";
 import { useToastMessage } from "../../lib/useToastMessage";
 import { ImageUrlInput } from "../../components/ImageUrlInput";
+import { RedirectUriEditor } from "../../components/RedirectUriEditor";
 import {
   SkeletonFormCard,
   SkeletonTableRows,
@@ -1161,7 +1163,7 @@ export function AppDetail() {
     description: string;
     icon_url: string;
     website_url: string;
-    redirect_uris: string;
+    redirect_uris: RedirectUri[];
     allowed_scopes: string[];
     optional_scopes: string[];
     is_public: boolean;
@@ -1187,7 +1189,7 @@ export function AppDetail() {
       description: app.description,
       icon_url: app.unproxied_icon_url ?? "",
       website_url: app.website_url ?? "",
-      redirect_uris: app.redirect_uris.join("\n"),
+      redirect_uris: app.redirect_uris,
       allowed_scopes: app.allowed_scopes,
       optional_scopes: app.optional_scopes ?? [],
       is_public: app.is_public,
@@ -1206,10 +1208,7 @@ export function AppDetail() {
         description: form.description,
         icon_url: form.icon_url || undefined,
         website_url: form.website_url || undefined,
-        redirect_uris: form.redirect_uris
-          .split("\n")
-          .map((s) => s.trim())
-          .filter(Boolean),
+        redirect_uris: form.redirect_uris,
         allowed_scopes: form.allowed_scopes,
         optional_scopes: form.optional_scopes,
         is_public: form.is_public,
@@ -1380,18 +1379,11 @@ export function AppDetail() {
                 }
               />
             </Field>
-            <Field
+            <RedirectUriEditor
               label={t("apps.redirectUris")}
-              hint={t("apps.redirectUrisHint")}
-            >
-              <Textarea
-                value={form.redirect_uris}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f!, redirect_uris: e.target.value }))
-                }
-                rows={4}
-              />
-            </Field>
+              value={form.redirect_uris}
+              onChange={(v) => setForm((f) => ({ ...f!, redirect_uris: v }))}
+            />
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               <ScopePickerField
                 label={t("apps.allowedScopes")}

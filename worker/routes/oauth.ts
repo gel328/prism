@@ -29,6 +29,7 @@ import {
 import { hmacSign } from "../lib/webhooks";
 import { proxyImageUrl } from "../lib/proxyImage";
 import {
+  parseRedirectUris,
   redirectUriMatchesRegistered,
   validateRedirectUriForRegistration,
 } from "../lib/redirectUri";
@@ -641,7 +642,7 @@ app.get("/app-info", optionalAuth, async (c) => {
     .first<OAuthAppRow>();
   if (!oauthApp) return c.json({ error: "invalid_client" }, 400);
 
-  const redirectUris = JSON.parse(oauthApp.redirect_uris) as string[];
+  const redirectUris = parseRedirectUris(oauthApp.redirect_uris);
   if (!redirectUriMatchesRegistered(redirect_uri, redirectUris))
     return c.json({ error: "invalid_redirect_uri" }, 400);
 
@@ -848,7 +849,7 @@ app.post("/authorize", requireAuth, async (c) => {
     .first<OAuthAppRow>();
   if (!oauthApp) return c.json({ error: "invalid_client" }, 400);
 
-  const redirectUris = JSON.parse(oauthApp.redirect_uris) as string[];
+  const redirectUris = parseRedirectUris(oauthApp.redirect_uris);
   if (!redirectUriMatchesRegistered(body.redirect_uri, redirectUris))
     return c.json({ error: "invalid_redirect_uri" }, 400);
 
@@ -1100,6 +1101,26 @@ app.post("/authorize", requireAuth, async (c) => {
     )
     .run();
 
+  // Learn-first-used: an app registered with an empty redirect URI list gets
+  // the first safe redirect URI pinned as an `equals` entry, locking it to
+  // that value going forward. The guarded WHERE avoids clobbering a value a
+  // concurrent authorization may have already learned.
+  if (parseRedirectUris(oauthApp.redirect_uris).length === 0) {
+    c.executionCtx.waitUntil(
+      c.env.DB.prepare(
+        "UPDATE oauth_apps SET redirect_uris = ?, updated_at = ? WHERE id = ? AND (redirect_uris IS NULL OR redirect_uris = '[]' OR redirect_uris = '')",
+      )
+        .bind(
+          JSON.stringify([{ type: "equals", value: body.redirect_uri }]),
+          now,
+          oauthApp.id,
+        )
+        .run()
+        .then(() => {})
+        .catch(() => {}),
+    );
+  }
+
   // Now that the new auth code is safely committed, drop the prior tokens if
   // the user opted into "log back in" with matching scopes.
   if (shouldRevokeOldTokens) {
@@ -1208,7 +1229,7 @@ app.post("/2fa/challenges", async (c) => {
     return c.json({ error: "invalid_request" }, 400);
   }
 
-  const redirectUris = JSON.parse(oauthApp.redirect_uris) as string[];
+  const redirectUris = parseRedirectUris(oauthApp.redirect_uris);
   if (!redirectUriMatchesRegistered(redirect_uri, redirectUris)) {
     return c.json({ error: "invalid_redirect_uri" }, 400);
   }

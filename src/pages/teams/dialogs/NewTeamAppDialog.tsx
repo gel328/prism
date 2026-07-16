@@ -10,14 +10,14 @@ import {
   Field,
   Input,
   Spinner,
-  Textarea,
 } from "@fluentui/react-components";
 import { AddRegular } from "@fluentui/react-icons";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { api, ApiError } from "../../../lib/api";
+import { api, ApiError, type RedirectUri } from "../../../lib/api";
+import { RedirectUriEditor } from "../../../components/RedirectUriEditor";
 
 interface NewTeamAppDialogProps {
   teamId: string;
@@ -29,11 +29,16 @@ export function NewTeamAppDialog({ teamId, showMsg }: NewTeamAppDialogProps) {
   const qc = useQueryClient();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<{
+    name: string;
+    description: string;
+    website_url: string;
+    redirect_uris: RedirectUri[];
+  }>({
     name: "",
     description: "",
     website_url: "",
-    redirect_uris: "",
+    redirect_uris: [],
   });
   const [creating, setCreating] = useState(false);
 
@@ -44,14 +49,7 @@ export function NewTeamAppDialog({ teamId, showMsg }: NewTeamAppDialogProps) {
 
   const handleCreate = async () => {
     if (!form.name.trim()) return;
-    const uris = form.redirect_uris
-      .split("\n")
-      .map((s) => s.trim())
-      .filter(Boolean);
-    if (!uris.length) {
-      showMsg("error", t("teams.atLeastOneRedirectUri"));
-      return;
-    }
+    const uris = form.redirect_uris.filter((u) => u.value.trim());
     setCreating(true);
     try {
       const res = await api.createTeamApp(teamId, {
@@ -66,7 +64,7 @@ export function NewTeamAppDialog({ teamId, showMsg }: NewTeamAppDialogProps) {
         name: "",
         description: "",
         website_url: "",
-        redirect_uris: "",
+        redirect_uris: [],
       });
       navigate(`/apps/${res.app.id}`);
     } catch (err) {
@@ -117,18 +115,11 @@ export function NewTeamAppDialog({ teamId, showMsg }: NewTeamAppDialogProps) {
                   placeholder={t("teams.websiteUrlPlaceholder")}
                 />
               </Field>
-              <Field
+              <RedirectUriEditor
                 label={t("teams.redirectUrisField")}
-                hint={t("teams.redirectUrisHint")}
-                required
-              >
-                <Textarea
-                  value={form.redirect_uris}
-                  onChange={update("redirect_uris")}
-                  rows={3}
-                  placeholder={t("teams.redirectUrisPlaceholder")}
-                />
-              </Field>
+                value={form.redirect_uris}
+                onChange={(v) => setForm((f) => ({ ...f, redirect_uris: v }))}
+              />
             </div>
           </DialogContent>
           <DialogActions>

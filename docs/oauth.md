@@ -24,6 +24,29 @@ Most OAuth/OIDC libraries can auto-configure from this URL.
 If your app runs entirely in the browser (no server to keep the secret), enable
 **Public client**. Public clients must use PKCE and do not have a client secret.
 
+### Redirect URI matching
+
+Each registered redirect URI carries a **match type**:
+
+| Type       | Behaviour                                                                                     |
+| ---------- | --------------------------------------------------------------------------------------------- |
+| `Equals`   | Exact match after URL normalization (default; the safest option).                             |
+| `Wildcard` | A glob where `*` stands in for any run of characters, e.g. `https://example.com/*`.           |
+| `Regex`    | A regular expression matched against the whole candidate URI, e.g. `https://example\.com/.*`. |
+
+Every candidate is first passed through a safety gate regardless of type: the
+scheme must be `https:` (or `http:` for loopback hosts), and the URI must not
+carry userinfo (`user:pass@…`) or a fragment (`#…`).
+
+**Empty list (learn-first-used).** If you leave the redirect URI list empty, the
+app "learns" the first redirect URI it is successfully used with, pins it as an
+`Equals` entry, and locks the app to that value going forward.
+
+::: warning
+A `Regex` value of `.*` allows **any** redirect URI, including attacker-controlled
+ones. Only use it if you fully understand the security implications.
+:::
+
 ## Authorization code flow (with PKCE)
 
 ```mermaid

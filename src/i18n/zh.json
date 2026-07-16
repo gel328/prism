@@ -388,7 +388,16 @@
     "websiteUrl": "网站 URL",
     "websiteUrlPlaceholder": "https://example.com",
     "redirectUris": "重定向 URI",
-    "redirectUrisHint": "每行一个",
+    "redirectUrisHint": "添加一个或多个重定向 URI，也可留空。",
+    "redirectUrisEmpty": "暂无重定向 URI。如果留空，则将保存第一个成功使用的重定向 URI 并锁定。",
+    "redirectUrisAdd": "添加重定向 URI",
+    "redirectUrisRegexTip": "要允许任何重定向 URI，可将匹配方式设为正则表达式，值设为 .*（请谨慎使用——这存在安全风险）。",
+    "redirectUrisWideRegexWarning": "值为 .* 的正则表达式会允许任意重定向 URI，包括攻击者控制的地址。请仅在完全理解安全风险的情况下使用。",
+    "redirectMatch": {
+      "equals": "等于",
+      "regex": "正则表达式",
+      "wildcard": "通配符"
+    },
     "redirectUrisPlaceholder": "https://example.com/callback",
     "atLeastOneRedirectUri": "至少需要一个重定向 URI",
     "failedCreateApp": "创建应用失败",

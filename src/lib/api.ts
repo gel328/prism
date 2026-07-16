@@ -2090,6 +2090,13 @@ export interface AdminTeam {
   updated_at: number;
 }
 
+export type RedirectUriMatchType = "equals" | "regex" | "wildcard";
+
+export interface RedirectUri {
+  type: RedirectUriMatchType;
+  value: string;
+}
+
 export interface OAuthApp {
   id: string;
   name: string;
@@ -2099,7 +2106,7 @@ export interface OAuthApp {
   website_url: string | null;
   client_id: string;
   client_secret?: string;
-  redirect_uris: string[];
+  redirect_uris: RedirectUri[];
   allowed_scopes: string[];
   optional_scopes: string[];
   is_public: boolean;
@@ -2123,7 +2130,7 @@ export interface CreateAppBody {
   description?: string;
   icon_url?: string;
   website_url?: string;
-  redirect_uris: string[];
+  redirect_uris: RedirectUri[];
   allowed_scopes?: string[];
   optional_scopes?: string[];
   is_public?: boolean;

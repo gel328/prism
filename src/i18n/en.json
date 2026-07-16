@@ -388,8 +388,17 @@
     "websiteUrl": "Website URL",
     "websiteUrlPlaceholder": "https://example.com",
     "redirectUris": "Redirect URIs",
-    "redirectUrisHint": "One per line",
+    "redirectUrisHint": "Add one or more redirect URIs, or leave empty.",
     "redirectUrisPlaceholder": "https://example.com/callback",
+    "redirectUrisEmpty": "No redirect URIs. If left empty, the first redirect URI successfully used will be saved and locked in.",
+    "redirectUrisAdd": "Add redirect URI",
+    "redirectUrisRegexTip": "To allow any redirect URI, set the match type to Regex with a value of .* (use with caution \u2014 this is a security risk).",
+    "redirectUrisWideRegexWarning": "A regex of .* allows ANY redirect URI, including attacker-controlled ones. Only use this if you fully understand the security implications.",
+    "redirectMatch": {
+      "equals": "Equals",
+      "regex": "Regex",
+      "wildcard": "Wildcard"
+    },
     "atLeastOneRedirectUri": "At least one redirect URI required",
     "failedCreateApp": "Failed to create app",
     "verified": "Verified",

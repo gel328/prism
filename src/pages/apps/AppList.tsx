@@ -18,7 +18,6 @@ import {
   MessageBar,
   Spinner,
   Text,
-  Textarea,
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
@@ -27,9 +26,10 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { api, ApiError } from "../../lib/api";
+import { api, ApiError, type RedirectUri } from "../../lib/api";
 import { EmptyState } from "../../components/EmptyState";
 import { PageHeader } from "../../components/PageHeader";
+import { RedirectUriEditor } from "../../components/RedirectUriEditor";
 import { SkeletonAppCards } from "../../components/Skeletons";
 
 const useStyles = makeStyles({
@@ -62,12 +62,18 @@ export function AppList() {
   });
 
   const [creating, setCreating] = useState(false);
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<{
+    name: string;
+    description: string;
+    icon_url: string;
+    website_url: string;
+    redirect_uris: RedirectUri[];
+  }>({
     name: "",
     description: "",
     icon_url: "",
     website_url: "",
-    redirect_uris: "",
+    redirect_uris: [],
   });
   const [message, setMessage] = useState<{
     type: "success" | "error";
@@ -80,15 +86,8 @@ export function AppList() {
       setForm((f) => ({ ...f, [k]: e.target.value }));
 
   const handleCreate = async () => {
-    const uris = form.redirect_uris
-      .split("\n")
-      .map((s) => s.trim())
-      .filter(Boolean);
     if (!form.name) return;
-    if (!uris.length) {
-      setMessage({ type: "error", text: t("apps.atLeastOneRedirectUri") });
-      return;
-    }
+    const uris = form.redirect_uris.filter((u) => u.value.trim());
 
     setCreating(true);
     try {
@@ -157,18 +156,11 @@ export function AppList() {
                   placeholder={t("apps.websiteUrlPlaceholder")}
                 />
               </Field>
-              <Field
+              <RedirectUriEditor
                 label={t("apps.redirectUris")}
-                hint={t("apps.redirectUrisHint")}
-                required
-              >
-                <Textarea
-                  value={form.redirect_uris}
-                  onChange={update("redirect_uris")}
-                  placeholder={t("apps.redirectUrisPlaceholder")}
-                  rows={3}
-                />
-              </Field>
+                value={form.redirect_uris}
+                onChange={(v) => setForm((f) => ({ ...f, redirect_uris: v }))}
+              />
             </div>
           </DialogContent>
           <DialogActions>

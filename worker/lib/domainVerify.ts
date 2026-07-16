@@ -4,6 +4,8 @@
 // (exact match or subdomain: sub.example.com matches example.com).
 // Localhost / 127.0.0.1 / ::1 redirect URIs are excluded from this requirement.
 
+import { parseRedirectUris } from "./redirectUri";
+
 function hostnameMatchesDomain(hostname: string, domain: string): boolean {
   return hostname === domain || hostname.endsWith(`.${domain}`);
 }
@@ -44,12 +46,12 @@ export function computeVerified(
 ): boolean {
   if (!verifiedDomains.size) return false;
 
-  let uris: string[];
-  try {
-    uris = JSON.parse(redirectUrisJson) as string[];
-  } catch {
-    return false;
-  }
+  // Only `equals` entries carry a concrete hostname we can verify against a
+  // domain. Wildcard/regex entries are inherently unbounded, so an app that
+  // uses them cannot be auto-verified from redirect URIs alone.
+  const uris = parseRedirectUris(redirectUrisJson)
+    .filter((e) => e.type === "equals")
+    .map((e) => e.value);
 
   // Extract non-localhost redirect URI hostnames
   const verifiableHosts = uris.flatMap((url) => {
