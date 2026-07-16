@@ -849,13 +849,6 @@ export const api = {
       body,
       getToken(),
     ),
-  adminAuditLog: (page = 1) =>
-    request<{ logs: unknown[]; total: number }>(
-      "GET",
-      `/admin/audit-log?page=${page}`,
-      undefined,
-      getToken(),
-    ),
   adminLoginErrors: (
     page = 1,
     filters: { error_code?: string; identifier?: string; ip?: string } = {},
@@ -1085,114 +1078,58 @@ export const api = {
       getToken(),
     ),
 
-  // ─── Webhooks (admin) ─────────────────────────────────────────────────────
-  listWebhooks: () =>
-    request<{ webhooks: unknown[] }>(
+  // ─── Audit logs (Transparent Control) ─────────────────────────────────────
+  // `base` is one of: "me", "team/<id>", "platform".
+  auditEvents: (base: string, params: AuditQuery = {}) => {
+    const qs = new URLSearchParams();
+    if (params.from) qs.set("from", String(params.from));
+    if (params.to) qs.set("to", String(params.to));
+    if (params.action) qs.set("action", params.action);
+    if (params.actor_id) qs.set("actor_id", params.actor_id);
+    if (params.resource_type) qs.set("resource_type", params.resource_type);
+    if (params.resource_id) qs.set("resource_id", params.resource_id);
+    if (params.page) qs.set("page", String(params.page));
+    const q = qs.toString();
+    return request<AuditEventsResponse>(
       "GET",
-      "/admin/webhooks",
+      `/audit/${base}/events${q ? `?${q}` : ""}`,
+      undefined,
+      getToken(),
+    );
+  },
+  auditWebhooks: (base: string) =>
+    request<{ webhooks: AuditWebhook[] }>(
+      "GET",
+      `/audit/${base}/webhooks`,
       undefined,
       getToken(),
     ),
-  createWebhook: (body: {
-    name: string;
-    url: string;
-    secret?: string;
-    events: string[];
-  }) =>
-    request<{ webhook: unknown }>("POST", "/admin/webhooks", body, getToken()),
-  getWebhook: (id: string) =>
-    request<{ webhook: unknown }>(
-      "GET",
-      `/admin/webhooks/${id}`,
-      undefined,
-      getToken(),
-    ),
-  updateWebhook: (
-    id: string,
-    body: {
-      name?: string;
-      url?: string;
-      secret?: string;
-      events?: string[];
-      is_active?: boolean;
-    },
-  ) =>
-    request<{ message: string }>(
-      "PATCH",
-      `/admin/webhooks/${id}`,
+  createAuditWebhook: (base: string, body: AuditWebhookInput) =>
+    request<{ webhook: AuditWebhook }>(
+      "POST",
+      `/audit/${base}/webhooks`,
       body,
       getToken(),
     ),
-  deleteWebhook: (id: string) =>
-    request<{ message: string }>(
-      "DELETE",
-      `/admin/webhooks/${id}`,
-      undefined,
-      getToken(),
-    ),
-  testWebhook: (id: string) =>
-    request<{
-      success: boolean;
-      status: number | null;
-      response: string | null;
-    }>("POST", `/admin/webhooks/${id}/test`, {}, getToken()),
-  listWebhookDeliveries: (id: string) =>
-    request<{ deliveries: unknown[] }>(
-      "GET",
-      `/admin/webhooks/${id}/deliveries`,
-      undefined,
-      getToken(),
-    ),
-
-  // ─── Webhooks (user) ──────────────────────────────────────────────────────
-  listUserWebhooks: () =>
-    request<{ webhooks: unknown[] }>(
-      "GET",
-      "/user/webhooks",
-      undefined,
-      getToken(),
-    ),
-  createUserWebhook: (body: {
-    name: string;
-    url: string;
-    secret?: string;
-    events: string[];
-  }) =>
-    request<{ webhook: unknown }>("POST", "/user/webhooks", body, getToken()),
-  updateUserWebhook: (
-    id: string,
-    body: {
-      name?: string;
-      url?: string;
-      secret?: string;
-      events?: string[];
-      is_active?: boolean;
-    },
-  ) =>
-    request<{ message: string }>(
+  updateAuditWebhook: (base: string, id: string, body: AuditWebhookInput) =>
+    request<{ webhook: AuditWebhook }>(
       "PATCH",
-      `/user/webhooks/${id}`,
+      `/audit/${base}/webhooks/${id}`,
       body,
       getToken(),
     ),
-  deleteUserWebhook: (id: string) =>
+  deleteAuditWebhook: (base: string, id: string) =>
     request<{ message: string }>(
       "DELETE",
-      `/user/webhooks/${id}`,
+      `/audit/${base}/webhooks/${id}`,
       undefined,
       getToken(),
     ),
-  testUserWebhook: (id: string) =>
-    request<{
-      success: boolean;
-      status: number | null;
-      response: string | null;
-    }>("POST", `/user/webhooks/${id}/test`, {}, getToken()),
-  listUserWebhookDeliveries: (id: string) =>
-    request<{ deliveries: unknown[] }>(
-      "GET",
-      `/user/webhooks/${id}/deliveries`,
-      undefined,
+  migrateLegacyWebhooks: () =>
+    request<{ migrated: number; total: number }>(
+      "POST",
+      "/audit/platform/migrate-legacy-webhooks",
+      {},
       getToken(),
     ),
 
@@ -2137,6 +2074,62 @@ export interface CreateAppBody {
   use_jwt_tokens?: boolean;
   allow_self_manage_exported_permissions?: boolean;
   access_whitelist_enabled?: boolean;
+}
+
+// ─── Audit logs (Transparent Control) ────────────────────────────────────────
+
+export interface AuditEvent {
+  id: string;
+  scope: "user" | "team" | "platform";
+  scope_id: string | null;
+  action: string;
+  actor_id: string | null;
+  actor_name: string | null;
+  resource_type: string | null;
+  resource_id: string | null;
+  resource_name: string | null;
+  ip: string | null;
+  user_agent: string | null;
+  metadata: string;
+  created_at: number;
+}
+
+export interface AuditEventsResponse {
+  events: AuditEvent[];
+  total: number;
+  page: number;
+  actions: string[];
+}
+
+export interface AuditQuery {
+  from?: number;
+  to?: number;
+  action?: string;
+  actor_id?: string;
+  resource_type?: string;
+  resource_id?: string;
+  page?: number;
+}
+
+export type AuditWebhookKind = "discord" | "telegram" | "general";
+
+export interface AuditWebhook {
+  id: string;
+  name: string;
+  kind: AuditWebhookKind;
+  config: Record<string, unknown>;
+  events: string[];
+  is_active: boolean;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface AuditWebhookInput {
+  name?: string;
+  kind?: AuditWebhookKind;
+  config?: Record<string, unknown>;
+  events?: string[];
+  is_active?: boolean;
 }
 
 export type VerificationMethod = "dns-txt" | "http-file" | "html-meta";

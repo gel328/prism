@@ -716,7 +716,8 @@
     "requirement2FAUnmet": "需要启用二次验证。",
     "requirementVerifiedEmailUnmet": "需要已验证的主邮箱。",
     "goToSecurity": "设置二次验证",
-    "goToProfile": "验证邮箱"
+    "goToProfile": "验证邮箱",
+    "auditTab": "审核日志"
   },
   "connections": {
     "title": "关联账号",
@@ -1388,7 +1389,12 @@
     "defaultTeamProfileShowApps": "团队：默认显示团队应用",
     "defaultTeamProfileShowDomains": "团队：默认显示已验证域名",
     "defaultTeamProfileShowMembers": "团队：默认显示成员列表（每位成员自己的设置仍然适用）",
-    "defaultTeamProfileShowSubTeams": "团队：默认在公开资料展示子团队列表"
+    "defaultTeamProfileShowSubTeams": "团队：默认在公开资料展示子团队列表",
+    "webhooksMigrateTitle": "迁移旧版 Webhook",
+    "webhooksMigrateDesc": "将旧版 Webhook 系统中的 Webhook 导入到新的审核日志 Webhook 系统（作为通用 Webhook）。可安全地多次运行。",
+    "webhooksMigrateButton": "迁移 Webhook",
+    "webhooksMigrateSuccess": "已迁移 {{count}} 个（共 {{total}} 个）Webhook。",
+    "webhooksMigrateFailed": "迁移 Webhook 失败。"
   },
   "webhooks": {
     "title": "Webhooks",
@@ -1530,7 +1536,9 @@
     "rulesetsActionSend": "发送到",
     "rulesetsActionDrop": "丢弃（静音）",
     "rulesetsStop": "匹配后停止处理后续规则",
-    "rulesetActiveOverride": "已激活的规则集（\"{{name}}\"）正在覆盖下方的逐事件规则。"
+    "rulesetActiveOverride": "已激活的规则集（\"{{name}}\"）正在覆盖下方的逐事件规则。",
+    "rulesTab": "通知",
+    "auditTab": "审核日志"
   },
   "verifyChoose": {
     "title": "验证您的邮箱",
@@ -1616,5 +1624,55 @@
     "roleAdmin": "管理员",
     "roleMember": "成员",
     "teamNotFound": "您尚未加入任何符合条件的团队，请先创建或加入一个团队。"
+  },
+  "audit": {
+    "from": "起始",
+    "to": "结束",
+    "action": "操作",
+    "allActions": "所有操作",
+    "clearFilters": "清除筛选",
+    "editWebhooks": "编辑 Webhook",
+    "actor": "操作用户",
+    "resource": "资源",
+    "colTime": "时间",
+    "colActor": "操作用户",
+    "colAction": "操作",
+    "colResource": "资源",
+    "colIp": "IP",
+    "colClient": "客户端",
+    "noEvents": "没有符合当前筛选条件的事件。",
+    "inspect": "查看详情",
+    "inspectTitle": "事件详情",
+    "metadata": "元数据",
+    "backToLog": "返回日志",
+    "webhooksTitle": "Webhook",
+    "webhooksHint": "Webhook 会将审核事件实时推送到 Discord、Telegram 或任意 HTTP 端点。",
+    "newWebhook": "新建 Webhook",
+    "editWebhook": "编辑 Webhook",
+    "noWebhooks": "暂无 Webhook。",
+    "inactive": "已停用",
+    "webhookName": "名称",
+    "webhookPreset": "预设",
+    "webhookKind": {
+      "discord": "Discord",
+      "telegram": "Telegram",
+      "general": "通用 Webhook"
+    },
+    "discordUrl": "Webhook URL",
+    "tgBotToken": "Bot Token",
+    "tgChatId": "会话 ID（可选）",
+    "tgThreadId": "Thread ID（可选）",
+    "generalUrl": "URL",
+    "generalMethod": "方法",
+    "generalHeaders": "请求头（JSON）",
+    "generalHeadersHint": "一个从请求头名称到值的 JSON 对象。",
+    "generalBody": "请求体",
+    "placeholderTip": "在 URL、请求头或请求体中使用 {placeholder} 插入动态值——如 {action}、{actor_name}、{resource_name}、{ip}、{summary}、{timestamp}、{metadata}。",
+    "webhookEvents": "事件",
+    "webhookEventsHint": "以逗号分隔的操作名称，或用 * 表示所有事件。",
+    "invalidHeaders": "请求头必须是有效的 JSON 对象。",
+    "webhookSaved": "Webhook 已保存。",
+    "webhookSaveFailed": "保存 Webhook 失败。",
+    "webhookDeleteFailed": "删除 Webhook 失败。"
   }
 }

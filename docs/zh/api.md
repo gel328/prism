@@ -406,11 +406,9 @@ OAuth scope 版本：
 | `GET /me/domains` / `POST` / `POST :domain/verify` / `DELETE`                   | `domains:read` / `domains:write`                                                                                                                                                   |
 | `GET /me/gpg-keys` / `POST` / `DELETE`                                          | `gpg:read` / `gpg:write`                                                                                                                                                           |
 | `GET /me/social-connections` / `DELETE`                                         | `social:read` / `social:write`                                                                                                                                                     |
-| `GET /me/webhooks` / `POST` / `PATCH` / `DELETE` / `GET …/deliveries`           | `webhooks:read` / `webhooks:write`                                                                                                                                                 |
 | `GET /me/admin/users` / `PATCH` / `DELETE`                                      | `admin:users:read` / `:write` / `:delete`                                                                                                                                          |
 | `GET /me/admin/config` / `PATCH`                                                | `admin:config:read` / `:write`                                                                                                                                                     |
 | `POST /me/invites` / `GET` / `DELETE`                                           | `admin:invites:create` / `:read` / `:delete`                                                                                                                                       |
-| `GET /me/admin/webhooks` 等                                                     | `admin:webhooks:read` / `:write` / `:delete`                                                                                                                                       |
 | `GET /me/site/users[/:id]`                                                      | `admin:users:read`                                                                                                                                                                 |
 | `GET /me/team/:teamId/info` / `PATCH`                                           | `teams:read` / `teams:write`                                                                                                                                                       |
 | `GET /me/team/:teamId/members` / `POST` / `DELETE` / `PATCH …/role`             | `teams:read` / `teams:write`                                                                                                                                                       |
@@ -479,7 +477,6 @@ OAuth scope 版本：
 | `GET /api/admin/teams` / `DELETE /:id`                       | 列出 / 解散团队                                   |
 | `POST /api/admin/test-email`                                 | 发送测试发件邮件                                  |
 | `POST /api/admin/test-email-receiving`                       | 生成验证邮箱接收测试码                            |
-| `GET / POST / PATCH / DELETE /api/admin/webhooks[/:id]`      | 站点级审计 webhook                                |
 
 ### 审计 / 请求日志 / 登录错误
 

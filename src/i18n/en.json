@@ -392,7 +392,7 @@
     "redirectUrisPlaceholder": "https://example.com/callback",
     "redirectUrisEmpty": "No redirect URIs. If left empty, the first redirect URI successfully used will be saved and locked in.",
     "redirectUrisAdd": "Add redirect URI",
-    "redirectUrisRegexTip": "To allow any redirect URI, set the match type to Regex with a value of .* (use with caution \u2014 this is a security risk).",
+    "redirectUrisRegexTip": "To allow any redirect URI, set the match type to Regex with a value of .* (use with caution — this is a security risk).",
     "redirectUrisWideRegexWarning": "A regex of .* allows ANY redirect URI, including attacker-controlled ones. Only use this if you fully understand the security implications.",
     "redirectMatch": {
       "equals": "Equals",
@@ -716,7 +716,8 @@
     "requirement2FAUnmet": "Two-factor authentication is required.",
     "requirementVerifiedEmailUnmet": "A verified primary email is required.",
     "goToSecurity": "Set up 2FA",
-    "goToProfile": "Verify email"
+    "goToProfile": "Verify email",
+    "auditTab": "Audit log"
   },
   "connections": {
     "title": "Linked Accounts",
@@ -1388,7 +1389,12 @@
     "defaultTeamProfileShowApps": "Team: show team-owned apps by default",
     "defaultTeamProfileShowDomains": "Team: show verified domains by default",
     "defaultTeamProfileShowMembers": "Team: show member list by default (each member's own setting still applies)",
-    "defaultTeamProfileShowSubTeams": "Team: show sub-teams list on public profile by default"
+    "defaultTeamProfileShowSubTeams": "Team: show sub-teams list on public profile by default",
+    "webhooksMigrateTitle": "Migrate legacy webhooks",
+    "webhooksMigrateDesc": "Import webhooks from the old webhook system into the new audit-log webhook system (as General Webhooks). Safe to run more than once.",
+    "webhooksMigrateButton": "Migrate webhooks",
+    "webhooksMigrateSuccess": "Migrated {{count}} of {{total}} webhook(s).",
+    "webhooksMigrateFailed": "Failed to migrate webhooks."
   },
   "webhooks": {
     "title": "Webhooks",
@@ -1530,7 +1536,9 @@
     "rulesetsActionSend": "send to",
     "rulesetsActionDrop": "drop (mute)",
     "rulesetsStop": "Stop processing further rules after this match",
-    "rulesetActiveOverride": "An active ruleset (\"{{name}}\") is currently overriding the per-event rules below."
+    "rulesetActiveOverride": "An active ruleset (\"{{name}}\") is currently overriding the per-event rules below.",
+    "rulesTab": "Notifications",
+    "auditTab": "Audit log"
   },
   "verifyChoose": {
     "title": "Verify Your Email",
@@ -1616,5 +1624,55 @@
     "roleAdmin": "Admin",
     "roleMember": "Member",
     "teamNotFound": "You are not a member of any eligible team. Create or join a team first."
+  },
+  "audit": {
+    "from": "From",
+    "to": "To",
+    "action": "Action",
+    "allActions": "All actions",
+    "clearFilters": "Clear filters",
+    "editWebhooks": "Edit webhooks",
+    "actor": "Actor",
+    "resource": "Resource",
+    "colTime": "Time",
+    "colActor": "Actor",
+    "colAction": "Action",
+    "colResource": "Resource",
+    "colIp": "IP",
+    "colClient": "Client",
+    "noEvents": "No events match the current filters.",
+    "inspect": "Inspect",
+    "inspectTitle": "Event details",
+    "metadata": "Metadata",
+    "backToLog": "Back to log",
+    "webhooksTitle": "Webhooks",
+    "webhooksHint": "Webhooks push audit events to Discord, Telegram, or any HTTP endpoint in real time.",
+    "newWebhook": "New webhook",
+    "editWebhook": "Edit webhook",
+    "noWebhooks": "No webhooks yet.",
+    "inactive": "Inactive",
+    "webhookName": "Name",
+    "webhookPreset": "Preset",
+    "webhookKind": {
+      "discord": "Discord",
+      "telegram": "Telegram",
+      "general": "General Webhook"
+    },
+    "discordUrl": "Webhook URL",
+    "tgBotToken": "Bot Token",
+    "tgChatId": "Chat ID (optional)",
+    "tgThreadId": "Thread ID (optional)",
+    "generalUrl": "URL",
+    "generalMethod": "Method",
+    "generalHeaders": "Headers (JSON)",
+    "generalHeadersHint": "A JSON object of header name to value.",
+    "generalBody": "Body",
+    "placeholderTip": "Use {placeholder} to insert dynamic values in the URL, headers, or body — e.g. {action}, {actor_name}, {resource_name}, {ip}, {summary}, {timestamp}, {metadata}.",
+    "webhookEvents": "Events",
+    "webhookEventsHint": "Comma-separated action names to deliver, or * for all events.",
+    "invalidHeaders": "Headers must be a valid JSON object.",
+    "webhookSaved": "Webhook saved.",
+    "webhookSaveFailed": "Failed to save webhook.",
+    "webhookDeleteFailed": "Failed to delete webhook."
   }
 }

@@ -30,6 +30,7 @@ import usersRoutes from "./routes/users";
 import publicTeamsRoutes from "./routes/public-teams";
 import gpgRoutes from "./routes/gpg";
 import adminRoutes from "./routes/admin";
+import auditRoutes from "./routes/audit";
 import proxyRoutes from "./routes/proxy";
 import { ssrHandler } from "./ssr";
 
@@ -75,6 +76,7 @@ app.route("/api/user/gpg", gpgRoutes);
 app.route("/api/users", usersRoutes);
 app.route("/api/public/teams", publicTeamsRoutes);
 app.route("/api/admin", adminRoutes);
+app.route("/api/audit", auditRoutes);
 app.route("/api/proxy/image", proxyRoutes);
 app.route("/.well-known", wellknownRoutes);
 app.route("/", publicRoutes);

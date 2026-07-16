@@ -445,11 +445,9 @@ PAT. The required scopes are listed in [OAuth → Scopes](oauth.md#scopes) and
 | `GET /me/domains` / `POST` / `POST :domain/verify` / `DELETE`                   | `domains:read` / `domains:write`                                                                                                                                                             |
 | `GET /me/gpg-keys` / `POST` / `DELETE`                                          | `gpg:read` / `gpg:write`                                                                                                                                                                     |
 | `GET /me/social-connections` / `DELETE`                                         | `social:read` / `social:write`                                                                                                                                                               |
-| `GET /me/webhooks` / `POST` / `PATCH` / `DELETE` / `GET …/deliveries`           | `webhooks:read` / `webhooks:write`                                                                                                                                                           |
 | `GET /me/admin/users` / `PATCH` / `DELETE`                                      | `admin:users:read` / `admin:users:write` / `admin:users:delete`                                                                                                                              |
 | `GET /me/admin/config` / `PATCH`                                                | `admin:config:read` / `admin:config:write`                                                                                                                                                   |
 | `POST /me/invites` / `GET` / `DELETE`                                           | `admin:invites:create` / `admin:invites:read` / `admin:invites:delete`                                                                                                                       |
-| `GET /me/admin/webhooks` and friends                                            | `admin:webhooks:read` / `admin:webhooks:write` / `admin:webhooks:delete`                                                                                                                     |
 | `GET /me/site/users[/:id]`                                                      | `admin:users:read`                                                                                                                                                                           |
 | `GET /me/team/:teamId/info` / `PATCH`                                           | `teams:read` / `teams:write`                                                                                                                                                                 |
 | `GET /me/team/:teamId/members` / `POST` / `DELETE` / `PATCH …/role`             | `teams:read` / `teams:write`                                                                                                                                                                 |
@@ -537,7 +535,6 @@ All admin endpoints require auth with `role = admin`.
 | `GET /api/admin/teams` / `DELETE /:id`                       | List / disband teams                                |
 | `POST /api/admin/test-email`                                 | Send a test outbound email                          |
 | `POST /api/admin/test-email-receiving`                       | Generate a test verify-by-email code                |
-| `GET / POST / PATCH / DELETE /api/admin/webhooks[/:id]`      | Site-wide audit-event webhooks                      |
 
 ### Audit / request logs / login errors
 

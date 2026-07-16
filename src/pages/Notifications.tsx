@@ -20,6 +20,8 @@ import {
   Radio,
   RadioGroup,
   Spinner,
+  Tab,
+  TabList,
   Text,
   Textarea,
   Tooltip,
@@ -31,6 +33,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api, ApiError } from "../lib/api";
 import { PageHeader } from "../components/PageHeader";
+import { AuditLog } from "../components/AuditLog";
 import type {
   NotificationRules,
   NotificationEmailRule,
@@ -1411,6 +1414,7 @@ export function Notifications() {
   const { t } = useTranslation();
   const styles = useStyles();
   const qc = useQueryClient();
+  const [notifView, setNotifView] = useState<"rules" | "audit">("rules");
 
   const { data, isLoading } = useQuery({
     queryKey: ["notification-prefs"],
@@ -1840,169 +1844,153 @@ export function Notifications() {
         style={{ marginBottom: 0 }}
       />
 
-      {emails.length > 0 && (
-        <div
-          style={{
-            display: "flex",
-            gap: 8,
-            alignItems: "center",
-            flexWrap: "wrap",
-          }}
-        >
-          <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-            {t("notifications.levelLegend")}
-          </Text>
-          <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-            {(["off", "brief", "full"] as const).map((l) => (
-              <div
-                key={l}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 4,
-                  padding: "2px 8px",
-                  borderRadius: 4,
-                  border: `1px solid ${tokens.colorNeutralStroke2}`,
-                  background: tokens.colorNeutralBackground2,
-                }}
+      <TabList
+        selectedValue={notifView}
+        onTabSelect={(_, d) => setNotifView(d.value as "rules" | "audit")}
+      >
+        <Tab value="rules">{t("notifications.rulesTab")}</Tab>
+        <Tab value="audit">{t("notifications.auditTab")}</Tab>
+      </TabList>
+
+      {notifView === "audit" ? (
+        <AuditLog base="me" />
+      ) : (
+        <>
+          {emails.length > 0 && (
+            <div
+              style={{
+                display: "flex",
+                gap: 8,
+                alignItems: "center",
+                flexWrap: "wrap",
+              }}
+            >
+              <Text
+                size={200}
+                style={{ color: tokens.colorNeutralForeground3 }}
               >
-                <Text size={200} weight="semibold">
-                  {t(
-                    `notifications.level${l.charAt(0).toUpperCase() + l.slice(1)}`,
-                  )}
-                </Text>
-                <Text
-                  size={100}
-                  style={{ color: tokens.colorNeutralForeground3 }}
-                >
-                  —{" "}
-                  {t(
-                    `notifications.level${l.charAt(0).toUpperCase() + l.slice(1)}Hint`,
-                  )}
-                </Text>
+                {t("notifications.levelLegend")}
+              </Text>
+              <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                {(["off", "brief", "full"] as const).map((l) => (
+                  <div
+                    key={l}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 4,
+                      padding: "2px 8px",
+                      borderRadius: 4,
+                      border: `1px solid ${tokens.colorNeutralStroke2}`,
+                      background: tokens.colorNeutralBackground2,
+                    }}
+                  >
+                    <Text size={200} weight="semibold">
+                      {t(
+                        `notifications.level${l.charAt(0).toUpperCase() + l.slice(1)}`,
+                      )}
+                    </Text>
+                    <Text
+                      size={100}
+                      style={{ color: tokens.colorNeutralForeground3 }}
+                    >
+                      —{" "}
+                      {t(
+                        `notifications.level${l.charAt(0).toUpperCase() + l.slice(1)}Hint`,
+                      )}
+                    </Text>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-        </div>
-      )}
+            </div>
+          )}
 
-      {emails.length === 0 && (
-        <MessageBar intent="warning">
-          <MessageBarBody>{t("notifications.noEmail")}</MessageBarBody>
-        </MessageBar>
-      )}
+          {emails.length === 0 && (
+            <MessageBar intent="warning">
+              <MessageBarBody>{t("notifications.noEmail")}</MessageBarBody>
+            </MessageBar>
+          )}
 
-      {hasTgBot && !showTg && (
-        <MessageBar intent="info">
-          <MessageBarBody>{t("notifications.tgNoAccount")}</MessageBarBody>
-        </MessageBar>
-      )}
+          {hasTgBot && !showTg && (
+            <MessageBar intent="info">
+              <MessageBarBody>{t("notifications.tgNoAccount")}</MessageBarBody>
+            </MessageBar>
+          )}
 
-      {hasDiscordBot && discordConnections.length === 0 && (
-        <MessageBar intent="info">
-          <MessageBarBody>{t("notifications.discordNoAccount")}</MessageBarBody>
-        </MessageBar>
-      )}
+          {hasDiscordBot && discordConnections.length === 0 && (
+            <MessageBar intent="info">
+              <MessageBarBody>
+                {t("notifications.discordNoAccount")}
+              </MessageBarBody>
+            </MessageBar>
+          )}
 
-      {saved && (
-        <MessageBar intent="success">
-          <MessageBarBody>{t("notifications.saved")}</MessageBarBody>
-        </MessageBar>
-      )}
+          {saved && (
+            <MessageBar intent="success">
+              <MessageBarBody>{t("notifications.saved")}</MessageBarBody>
+            </MessageBar>
+          )}
 
-      {mutation.isError && (
-        <MessageBar intent="error">
-          <MessageBarBody>{t("common.saveFailed")}</MessageBarBody>
-        </MessageBar>
-      )}
+          {mutation.isError && (
+            <MessageBar intent="error">
+              <MessageBarBody>{t("common.saveFailed")}</MessageBarBody>
+            </MessageBar>
+          )}
 
-      <RulesetSection
-        rulesets={rulesets}
-        editingRuleset={editingRuleset}
-        editingRulesetId={editingRulesetId}
-        setEditingRulesetId={setEditingRulesetId}
-        activeRuleset={activeRuleset}
-        draftRules={draftRules}
-        draftDirty={draftDirty}
-        emails={emails}
-        tgConnections={tgConnections}
-        discordConnections={showDiscord ? discordConnections : []}
-        rulesetMessage={rulesetMessage}
-        creating={createRulesetMut.isPending}
-        updating={updateRulesetMut.isPending}
-        deleting={deleteRulesetMut.isPending}
-        knownEvents={ALL_EVENT_KEYS}
-        onNew={handleNewRuleset}
-        onRename={handleRenameRuleset}
-        onDelete={handleDeleteRuleset}
-        onToggleActive={handleToggleActive}
-        onSaveDraft={handleSaveDraft}
-        onDiscardDraft={handleDiscardDraft}
-        onPatchRule={patchDraftRule}
-        onMoveRule={moveDraftRule}
-        onDeleteRule={deleteDraftRule}
-        onAddRule={addDraftRule}
-      />
-
-      {activeRuleset && (
-        <MessageBar intent="info">
-          <MessageBarBody>
-            {t("notifications.rulesetActiveOverride", {
-              name: activeRuleset.name,
-            })}
-          </MessageBarBody>
-        </MessageBar>
-      )}
-
-      {(emails.length > 0 || showTg || showDiscord) && (
-        <div className={styles.selectAllRow}>
-          <Text className={styles.selectAllLabel}>
-            {t("notifications.selectAll")}
-          </Text>
-          <BulkLevelControls
-            eventKeys={ALL_EVENT_KEYS}
-            rules={rules}
-            emailLevel={getUniformEmailLevel(ALL_EVENT_KEYS, rules, emails)}
-            tgLevel={getUniformTgLevel(ALL_EVENT_KEYS, rules, tgConnections)}
-            discordLevel={getUniformDiscordLevel(
-              ALL_EVENT_KEYS,
-              rules,
-              discordConnections,
-            )}
+          <RulesetSection
+            rulesets={rulesets}
+            editingRuleset={editingRuleset}
+            editingRulesetId={editingRulesetId}
+            setEditingRulesetId={setEditingRulesetId}
+            activeRuleset={activeRuleset}
+            draftRules={draftRules}
+            draftDirty={draftDirty}
             emails={emails}
-            connections={tgConnections}
-            discordConnections={discordConnections}
-            showTg={showTg}
-            showDiscord={showDiscord}
-            onEmail={(l) => applyBulkEmail(ALL_EVENT_KEYS, l)}
-            onTg={(l) => applyBulkTg(ALL_EVENT_KEYS, l)}
-            onDiscord={(l) => applyBulkDiscord(ALL_EVENT_KEYS, l)}
-            onEmailAccount={(emailId, l) =>
-              applyBulkEmailAccount(ALL_EVENT_KEYS, emailId, l)
-            }
-            onTgAccount={(connectionId, l) =>
-              applyBulkTgAccount(ALL_EVENT_KEYS, connectionId, l)
-            }
-            onDiscordAccount={(connectionId, l) =>
-              applyBulkDiscordAccount(ALL_EVENT_KEYS, connectionId, l)
-            }
+            tgConnections={tgConnections}
+            discordConnections={showDiscord ? discordConnections : []}
+            rulesetMessage={rulesetMessage}
+            creating={createRulesetMut.isPending}
+            updating={updateRulesetMut.isPending}
+            deleting={deleteRulesetMut.isPending}
+            knownEvents={ALL_EVENT_KEYS}
+            onNew={handleNewRuleset}
+            onRename={handleRenameRuleset}
+            onDelete={handleDeleteRuleset}
+            onToggleActive={handleToggleActive}
+            onSaveDraft={handleSaveDraft}
+            onDiscardDraft={handleDiscardDraft}
+            onPatchRule={patchDraftRule}
+            onMoveRule={moveDraftRule}
+            onDeleteRule={deleteDraftRule}
+            onAddRule={addDraftRule}
           />
-        </div>
-      )}
 
-      {EVENT_GROUPS.map((group) => {
-        const groupKeys = group.events.map((e) => e.value);
-        return (
-          <div key={group.groupKey} className={styles.group}>
-            <div className={styles.groupHeader}>
-              <Text className={styles.groupLabel}>{t(group.groupKey)}</Text>
+          {activeRuleset && (
+            <MessageBar intent="info">
+              <MessageBarBody>
+                {t("notifications.rulesetActiveOverride", {
+                  name: activeRuleset.name,
+                })}
+              </MessageBarBody>
+            </MessageBar>
+          )}
+
+          {(emails.length > 0 || showTg || showDiscord) && (
+            <div className={styles.selectAllRow}>
+              <Text className={styles.selectAllLabel}>
+                {t("notifications.selectAll")}
+              </Text>
               <BulkLevelControls
-                eventKeys={groupKeys}
+                eventKeys={ALL_EVENT_KEYS}
                 rules={rules}
-                emailLevel={getUniformEmailLevel(groupKeys, rules, emails)}
-                tgLevel={getUniformTgLevel(groupKeys, rules, tgConnections)}
+                emailLevel={getUniformEmailLevel(ALL_EVENT_KEYS, rules, emails)}
+                tgLevel={getUniformTgLevel(
+                  ALL_EVENT_KEYS,
+                  rules,
+                  tgConnections,
+                )}
                 discordLevel={getUniformDiscordLevel(
-                  groupKeys,
+                  ALL_EVENT_KEYS,
                   rules,
                   discordConnections,
                 )}
@@ -2011,219 +1999,259 @@ export function Notifications() {
                 discordConnections={discordConnections}
                 showTg={showTg}
                 showDiscord={showDiscord}
-                onEmail={(l) => applyBulkEmail(groupKeys, l)}
-                onTg={(l) => applyBulkTg(groupKeys, l)}
-                onDiscord={(l) => applyBulkDiscord(groupKeys, l)}
+                onEmail={(l) => applyBulkEmail(ALL_EVENT_KEYS, l)}
+                onTg={(l) => applyBulkTg(ALL_EVENT_KEYS, l)}
+                onDiscord={(l) => applyBulkDiscord(ALL_EVENT_KEYS, l)}
                 onEmailAccount={(emailId, l) =>
-                  applyBulkEmailAccount(groupKeys, emailId, l)
+                  applyBulkEmailAccount(ALL_EVENT_KEYS, emailId, l)
                 }
                 onTgAccount={(connectionId, l) =>
-                  applyBulkTgAccount(groupKeys, connectionId, l)
+                  applyBulkTgAccount(ALL_EVENT_KEYS, connectionId, l)
                 }
                 onDiscordAccount={(connectionId, l) =>
-                  applyBulkDiscordAccount(groupKeys, connectionId, l)
+                  applyBulkDiscordAccount(ALL_EVENT_KEYS, connectionId, l)
                 }
               />
             </div>
-            {group.events.map((entry) => {
-              const rule = rules[entry.value] ?? {};
-              return (
-                <div key={entry.value} className={styles.eventRow}>
-                  <div className={styles.eventText}>
-                    <Text weight="semibold" size={300}>
-                      {t(entry.labelKey)}
-                    </Text>
-                    <Text
-                      size={200}
-                      style={{ color: tokens.colorNeutralForeground3 }}
-                    >
-                      {t(entry.descKey)}
-                    </Text>
-                  </div>
-                  <div className={styles.channelStack}>
-                    <EmailChannelPicker
-                      value={rule.email ?? []}
-                      emails={emails}
-                      onChange={(v) => setEmailChannel(entry.value, v)}
-                    />
-                    {showTg && (
-                      <TgChannelPicker
-                        value={rule.tg ?? []}
-                        connections={tgConnections}
-                        onChange={(v) => setTgChannel(entry.value, v)}
-                      />
-                    )}
-                    {showDiscord && (
-                      <DiscordChannelPicker
-                        value={rule.discord ?? []}
-                        connections={discordConnections}
-                        onChange={(v) => setDiscordChannel(entry.value, v)}
-                      />
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        );
-      })}
-
-      {jsonOpen && (
-        <div className={styles.jsonPanel}>
-          <Textarea
-            value={jsonText}
-            onChange={(e) => {
-              setJsonText(e.target.value);
-              setJsonError(null);
-            }}
-            rows={20}
-            resize="vertical"
-            style={{ fontFamily: "monospace", fontSize: "12px" }}
-          />
-          {jsonError && (
-            <Text
-              size={200}
-              style={{ color: tokens.colorStatusDangerForeground1 }}
-            >
-              {t("notifications.jsonError", { error: jsonError })}
-            </Text>
           )}
-          <div style={{ display: "flex", gap: 8 }}>
-            <Button appearance="primary" size="small" onClick={applyJson}>
-              {t("notifications.jsonApply")}
-            </Button>
-            <Button
-              size="small"
-              onClick={() => {
-                setJsonOpen(false);
-                setJsonError(null);
-              }}
-            >
-              {t("common.close")}
-            </Button>
-          </div>
-        </div>
-      )}
 
-      <div className={styles.actions}>
-        <Button
-          appearance="primary"
-          disabled={!dirty || mutation.isPending}
-          onClick={() => mutation.mutate(rules)}
-        >
-          {mutation.isPending ? (
-            <Spinner size="tiny" />
-          ) : (
-            t("common.saveChanges")
-          )}
-        </Button>
-        <Button
-          appearance="subtle"
-          onClick={
-            jsonOpen
-              ? () => {
-                  setJsonOpen(false);
-                  setJsonError(null);
-                }
-              : openJson
-          }
-        >
-          {t("notifications.jsonEdit")}
-        </Button>
-      </div>
-
-      <Dialog
-        open={nameDialog !== null}
-        onOpenChange={(_, d) => {
-          if (!d.open) setNameDialog(null);
-        }}
-      >
-        <DialogSurface>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              submitNameDialog();
-            }}
-          >
-            <DialogBody>
-              <DialogTitle>
-                {nameDialog?.mode === "rename"
-                  ? t("notifications.rulesetsRename")
-                  : t("notifications.rulesetsNew")}
-              </DialogTitle>
-              <DialogContent>
-                <Field
-                  label={
-                    nameDialog?.mode === "rename"
-                      ? t("notifications.rulesetsRenamePrompt", {
-                          name: nameDialog.ruleset.name,
-                        })
-                      : t("notifications.rulesetsNamePrompt")
-                  }
-                >
-                  <Input
-                    autoFocus
-                    value={nameDialog?.value ?? ""}
-                    onChange={(_, d) =>
-                      setNameDialog((prev) =>
-                        prev ? { ...prev, value: d.value } : prev,
-                      )
+          {EVENT_GROUPS.map((group) => {
+            const groupKeys = group.events.map((e) => e.value);
+            return (
+              <div key={group.groupKey} className={styles.group}>
+                <div className={styles.groupHeader}>
+                  <Text className={styles.groupLabel}>{t(group.groupKey)}</Text>
+                  <BulkLevelControls
+                    eventKeys={groupKeys}
+                    rules={rules}
+                    emailLevel={getUniformEmailLevel(groupKeys, rules, emails)}
+                    tgLevel={getUniformTgLevel(groupKeys, rules, tgConnections)}
+                    discordLevel={getUniformDiscordLevel(
+                      groupKeys,
+                      rules,
+                      discordConnections,
+                    )}
+                    emails={emails}
+                    connections={tgConnections}
+                    discordConnections={discordConnections}
+                    showTg={showTg}
+                    showDiscord={showDiscord}
+                    onEmail={(l) => applyBulkEmail(groupKeys, l)}
+                    onTg={(l) => applyBulkTg(groupKeys, l)}
+                    onDiscord={(l) => applyBulkDiscord(groupKeys, l)}
+                    onEmailAccount={(emailId, l) =>
+                      applyBulkEmailAccount(groupKeys, emailId, l)
+                    }
+                    onTgAccount={(connectionId, l) =>
+                      applyBulkTgAccount(groupKeys, connectionId, l)
+                    }
+                    onDiscordAccount={(connectionId, l) =>
+                      applyBulkDiscordAccount(groupKeys, connectionId, l)
                     }
                   />
-                </Field>
-              </DialogContent>
-              <DialogActions>
-                <DialogTrigger disableButtonEnhancement>
-                  <Button type="button">{t("common.cancel")}</Button>
-                </DialogTrigger>
-                <Button
-                  type="submit"
-                  appearance="primary"
-                  disabled={!nameDialog?.value.trim()}
-                >
-                  {nameDialog?.mode === "rename"
-                    ? t("common.save")
-                    : t("common.create")}
-                </Button>
-              </DialogActions>
-            </DialogBody>
-          </form>
-        </DialogSurface>
-      </Dialog>
-
-      <Dialog
-        open={deleteDialog !== null}
-        onOpenChange={(_, d) => {
-          if (!d.open) setDeleteDialog(null);
-        }}
-      >
-        <DialogSurface>
-          <DialogBody>
-            <DialogTitle>{t("notifications.rulesetsDelete")}</DialogTitle>
-            <DialogContent>
-              {deleteDialog &&
-                t("notifications.rulesetsDeleteConfirm", {
-                  name: deleteDialog.name,
+                </div>
+                {group.events.map((entry) => {
+                  const rule = rules[entry.value] ?? {};
+                  return (
+                    <div key={entry.value} className={styles.eventRow}>
+                      <div className={styles.eventText}>
+                        <Text weight="semibold" size={300}>
+                          {t(entry.labelKey)}
+                        </Text>
+                        <Text
+                          size={200}
+                          style={{ color: tokens.colorNeutralForeground3 }}
+                        >
+                          {t(entry.descKey)}
+                        </Text>
+                      </div>
+                      <div className={styles.channelStack}>
+                        <EmailChannelPicker
+                          value={rule.email ?? []}
+                          emails={emails}
+                          onChange={(v) => setEmailChannel(entry.value, v)}
+                        />
+                        {showTg && (
+                          <TgChannelPicker
+                            value={rule.tg ?? []}
+                            connections={tgConnections}
+                            onChange={(v) => setTgChannel(entry.value, v)}
+                          />
+                        )}
+                        {showDiscord && (
+                          <DiscordChannelPicker
+                            value={rule.discord ?? []}
+                            connections={discordConnections}
+                            onChange={(v) => setDiscordChannel(entry.value, v)}
+                          />
+                        )}
+                      </div>
+                    </div>
+                  );
                 })}
-            </DialogContent>
-            <DialogActions>
-              <DialogTrigger disableButtonEnhancement>
-                <Button>{t("common.cancel")}</Button>
-              </DialogTrigger>
-              <Button
-                appearance="primary"
-                style={{ background: tokens.colorPaletteRedBackground3 }}
-                onClick={() => {
-                  if (deleteDialog) deleteRulesetMut.mutate(deleteDialog.id);
-                  setDeleteDialog(null);
+              </div>
+            );
+          })}
+
+          {jsonOpen && (
+            <div className={styles.jsonPanel}>
+              <Textarea
+                value={jsonText}
+                onChange={(e) => {
+                  setJsonText(e.target.value);
+                  setJsonError(null);
+                }}
+                rows={20}
+                resize="vertical"
+                style={{ fontFamily: "monospace", fontSize: "12px" }}
+              />
+              {jsonError && (
+                <Text
+                  size={200}
+                  style={{ color: tokens.colorStatusDangerForeground1 }}
+                >
+                  {t("notifications.jsonError", { error: jsonError })}
+                </Text>
+              )}
+              <div style={{ display: "flex", gap: 8 }}>
+                <Button appearance="primary" size="small" onClick={applyJson}>
+                  {t("notifications.jsonApply")}
+                </Button>
+                <Button
+                  size="small"
+                  onClick={() => {
+                    setJsonOpen(false);
+                    setJsonError(null);
+                  }}
+                >
+                  {t("common.close")}
+                </Button>
+              </div>
+            </div>
+          )}
+
+          <div className={styles.actions}>
+            <Button
+              appearance="primary"
+              disabled={!dirty || mutation.isPending}
+              onClick={() => mutation.mutate(rules)}
+            >
+              {mutation.isPending ? (
+                <Spinner size="tiny" />
+              ) : (
+                t("common.saveChanges")
+              )}
+            </Button>
+            <Button
+              appearance="subtle"
+              onClick={
+                jsonOpen
+                  ? () => {
+                      setJsonOpen(false);
+                      setJsonError(null);
+                    }
+                  : openJson
+              }
+            >
+              {t("notifications.jsonEdit")}
+            </Button>
+          </div>
+
+          <Dialog
+            open={nameDialog !== null}
+            onOpenChange={(_, d) => {
+              if (!d.open) setNameDialog(null);
+            }}
+          >
+            <DialogSurface>
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  submitNameDialog();
                 }}
               >
-                {t("common.delete")}
-              </Button>
-            </DialogActions>
-          </DialogBody>
-        </DialogSurface>
-      </Dialog>
+                <DialogBody>
+                  <DialogTitle>
+                    {nameDialog?.mode === "rename"
+                      ? t("notifications.rulesetsRename")
+                      : t("notifications.rulesetsNew")}
+                  </DialogTitle>
+                  <DialogContent>
+                    <Field
+                      label={
+                        nameDialog?.mode === "rename"
+                          ? t("notifications.rulesetsRenamePrompt", {
+                              name: nameDialog.ruleset.name,
+                            })
+                          : t("notifications.rulesetsNamePrompt")
+                      }
+                    >
+                      <Input
+                        autoFocus
+                        value={nameDialog?.value ?? ""}
+                        onChange={(_, d) =>
+                          setNameDialog((prev) =>
+                            prev ? { ...prev, value: d.value } : prev,
+                          )
+                        }
+                      />
+                    </Field>
+                  </DialogContent>
+                  <DialogActions>
+                    <DialogTrigger disableButtonEnhancement>
+                      <Button type="button">{t("common.cancel")}</Button>
+                    </DialogTrigger>
+                    <Button
+                      type="submit"
+                      appearance="primary"
+                      disabled={!nameDialog?.value.trim()}
+                    >
+                      {nameDialog?.mode === "rename"
+                        ? t("common.save")
+                        : t("common.create")}
+                    </Button>
+                  </DialogActions>
+                </DialogBody>
+              </form>
+            </DialogSurface>
+          </Dialog>
+
+          <Dialog
+            open={deleteDialog !== null}
+            onOpenChange={(_, d) => {
+              if (!d.open) setDeleteDialog(null);
+            }}
+          >
+            <DialogSurface>
+              <DialogBody>
+                <DialogTitle>{t("notifications.rulesetsDelete")}</DialogTitle>
+                <DialogContent>
+                  {deleteDialog &&
+                    t("notifications.rulesetsDeleteConfirm", {
+                      name: deleteDialog.name,
+                    })}
+                </DialogContent>
+                <DialogActions>
+                  <DialogTrigger disableButtonEnhancement>
+                    <Button>{t("common.cancel")}</Button>
+                  </DialogTrigger>
+                  <Button
+                    appearance="primary"
+                    style={{ background: tokens.colorPaletteRedBackground3 }}
+                    onClick={() => {
+                      if (deleteDialog)
+                        deleteRulesetMut.mutate(deleteDialog.id);
+                      setDeleteDialog(null);
+                    }}
+                  >
+                    {t("common.delete")}
+                  </Button>
+                </DialogActions>
+              </DialogBody>
+            </DialogSurface>
+          </Dialog>
+        </>
+      )}
     </div>
   );
 }

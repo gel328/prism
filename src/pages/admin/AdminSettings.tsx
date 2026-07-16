@@ -121,6 +121,7 @@ export function AdminSettings() {
   const [nowSec, setNowSec] = useState(() => Math.floor(Date.now() / 1000));
   const [migratingCodes, setMigratingCodes] = useState(false);
   const [migratingSecrets, setMigratingSecrets] = useState(false);
+  const [migratingWebhooks, setMigratingWebhooks] = useState(false);
   const [migratingD1Secrets, setMigratingD1Secrets] = useState(false);
   const [migratingTeamsAsUsers, setMigratingTeamsAsUsers] = useState(false);
   const [migratingImageProxy, setMigratingImageProxy] = useState(false);
@@ -213,6 +214,29 @@ export function AdminSettings() {
       );
     } finally {
       setMigratingSecrets(false);
+    }
+  };
+
+  const handleMigrateWebhooks = async () => {
+    setMigratingWebhooks(true);
+    try {
+      const res = await api.migrateLegacyWebhooks();
+      showMsg(
+        "success",
+        t("admin.webhooksMigrateSuccess", {
+          count: res.migrated,
+          total: res.total,
+        }),
+      );
+    } catch (err) {
+      showMsg(
+        "error",
+        err instanceof ApiError
+          ? err.message
+          : t("admin.webhooksMigrateFailed"),
+      );
+    } finally {
+      setMigratingWebhooks(false);
     }
   };
 
@@ -1472,6 +1496,27 @@ export function AdminSettings() {
               icon={migratingSecrets ? <Spinner size="tiny" /> : undefined}
             >
               {t("admin.secretsMigrateButton")}
+            </Button>
+          </div>
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 8,
+              alignItems: "flex-start",
+            }}
+          >
+            <Text weight="semibold">{t("admin.webhooksMigrateTitle")}</Text>
+            <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
+              {t("admin.webhooksMigrateDesc")}
+            </Text>
+            <Button
+              appearance="outline"
+              onClick={handleMigrateWebhooks}
+              disabled={migratingWebhooks}
+              icon={migratingWebhooks ? <Spinner size="tiny" /> : undefined}
+            >
+              {t("admin.webhooksMigrateButton")}
             </Button>
           </div>
           <div

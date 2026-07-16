@@ -45,8 +45,8 @@ features:
     details: 用户自助注册 OAuth 应用。应用还可以发布命名权限 scope，其它应用通过标准同意页申请。
 
   - icon: 🔔
-    title: Webhook 与通知
-    details: 用户与管理员级 webhook、应用事件流（Webhook / SSE / WebSocket），以及邮件 + Telegram 通知，支持规则引擎做精细路由。
+    title: 审核日志与通知
+    details: 用户 / 团队 / 平台级审核日志（Transparent Control），带作用域化的 Discord / Telegram / 通用 Webhook、应用事件流（SSE / WebSocket），以及邮件 + Telegram 通知，支持规则引擎做精细路由。
 
   - icon: 🪪
     title: 公开资料

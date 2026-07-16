@@ -5,11 +5,12 @@ description: Email, Telegram, and Discord notifications fired on user-account ev
 
 # Notifications
 
-Prism delivers notifications to users on the same events that drive [user
-webhooks](webhooks.md) — app changes, domain lifecycle, security factor
-changes, OAuth consent grants/revokes, team membership, and more — but to
-end-user channels (email, Telegram, Discord) instead of arbitrary URLs. Every
-user picks which events fire and where.
+Prism delivers notifications to users on security-relevant events — app
+changes, domain lifecycle, security factor changes, OAuth consent
+grants/revokes, team membership, and more — to end-user channels (email,
+Telegram, Discord). Every user picks which events fire and where. For the
+full record of these events (with scoped webhooks to arbitrary destinations),
+see [Audit Logs](audit-logs.md).
 
 Two ways to configure exist side-by-side:
 

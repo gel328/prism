@@ -337,17 +337,6 @@ export function createRoutes(ctx: RouteContext): RouteObject[] {
             import("./pages/Tokens").then((m) => ({ Component: m.Tokens })),
         },
         {
-          path: "webhooks",
-          loader: ({ request }) => {
-            requireAuthLoader(request);
-            return null;
-          },
-          lazy: () =>
-            import("./pages/UserWebhooks").then((m) => ({
-              Component: m.UserWebhooks,
-            })),
-        },
-        {
           path: "notifications",
           loader: ({ request }) => {
             requireAuthLoader(request);
@@ -425,13 +414,6 @@ export function createRoutes(ctx: RouteContext): RouteObject[] {
               lazy: () =>
                 import("./pages/admin/AdminAudit").then((m) => ({
                   Component: m.AdminAudit,
-                })),
-            },
-            {
-              path: "webhooks",
-              lazy: () =>
-                import("./pages/admin/AdminWebhooks").then((m) => ({
-                  Component: m.AdminWebhooks,
                 })),
             },
             {

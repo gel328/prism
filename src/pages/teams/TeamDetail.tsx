@@ -42,7 +42,9 @@ import {
   MailRegular,
   PeopleRegular,
   SettingsRegular,
+  ShieldTaskRegular,
 } from "@fluentui/react-icons";
+import { AuditLog } from "../../components/AuditLog";
 import { Fragment, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -158,6 +160,7 @@ type TabType =
   | "domains"
   | "sub-teams"
   | "invites"
+  | "audit"
   | "settings";
 
 export function TeamDetail() {
@@ -523,6 +526,11 @@ export function TeamDetail() {
             {t("teams.invitesTab")}
           </Tab>
         )}
+        {(isCoOwnerOrAbove || myRole === "admin") && (
+          <Tab value="audit" icon={<ShieldTaskRegular />}>
+            {t("teams.auditTab")}
+          </Tab>
+        )}
         {canManage && (
           <Tab value="settings" icon={<SettingsRegular />}>
             {t("teams.settingsTab")}
@@ -873,6 +881,11 @@ export function TeamDetail() {
             </div>
           )}
         </div>
+      )}
+
+      {/* Audit tab — Transparent Team Control */}
+      {tab === "audit" && (isCoOwnerOrAbove || myRole === "admin") && (
+        <AuditLog base={`team/${id}`} />
       )}
 
       {/* Settings tab */}

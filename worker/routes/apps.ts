@@ -24,7 +24,7 @@ import {
 } from "../lib/redirectUri";
 import { parseAppScope } from "../lib/scopes";
 import { APP_EVENT_TYPES } from "../lib/app-events";
-import { deliverUserWebhooks } from "../lib/webhooks";
+import { recordAudit, auditRequestMeta, type AuditInput } from "../lib/audit";
 import {
   deliverUserEmailNotifications,
   notificationActorMetaFromHeaders,
@@ -63,11 +63,6 @@ const VALID_PLATFORM_SCOPES = new Set([
   "admin:invites:read",
   "admin:invites:create",
   "admin:invites:delete",
-  "admin:webhooks:read",
-  "admin:webhooks:write",
-  "admin:webhooks:delete",
-  "webhooks:read",
-  "webhooks:write",
   "site:user:read",
   "site:user:write",
   "site:user:delete",
@@ -382,12 +377,12 @@ app.post("/", async (c) => {
     body.website_url ?? null,
     JSON.stringify(redirectUris),
   );
-  c.executionCtx.waitUntil(
-    deliverUserWebhooks(c.env, user.id, "app.created", {
-      app_id: id,
-      name: body.name,
-    }).catch(() => {}),
-  );
+  auditAppLifecycle(c, "app.create", {
+    id,
+    name: body.name,
+    owner_id: user.id,
+    team_id: null,
+  });
   c.executionCtx.waitUntil(
     deliverUserEmailNotifications(
       c.env,
@@ -553,11 +548,12 @@ app.patch("/:id", async (c) => {
     updatedRow!.redirect_uris,
     row.team_id,
   );
-  c.executionCtx.waitUntil(
-    deliverUserWebhooks(c.env, user.id, "app.updated", { app_id: id }).catch(
-      () => {},
-    ),
-  );
+  auditAppLifecycle(c, "app.update", {
+    id,
+    name: updated.name,
+    owner_id: row.owner_id,
+    team_id: row.team_id,
+  });
   c.executionCtx.waitUntil(
     deliverUserEmailNotifications(
       c.env,
@@ -641,11 +637,12 @@ app.delete("/:id", async (c) => {
     );
   }
 
-  c.executionCtx.waitUntil(
-    deliverUserWebhooks(c.env, user.id, "app.deleted", { app_id: id }).catch(
-      () => {},
-    ),
-  );
+  auditAppLifecycle(c, "app.delete", {
+    id,
+    name: row.name,
+    owner_id: row.owner_id,
+    team_id: row.team_id,
+  });
   c.executionCtx.waitUntil(
     deliverUserEmailNotifications(
       c.env,
@@ -1499,6 +1496,39 @@ app.delete("/:id/access-rules/:ruleId", async (c) => {
 });
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
+
+// Record an app lifecycle event to the owning user's log and, for team apps,
+// the team's log too.
+function auditAppLifecycle(
+  c: {
+    env: Env;
+    executionCtx: ExecutionContext;
+    req: { header: (h: string) => string | undefined };
+    get: (k: "user") => { id: string; username: string };
+  },
+  action: string,
+  app: { id: string; name: string; owner_id: string; team_id: string | null },
+): void {
+  const actor = c.get("user");
+  const meta = auditRequestMeta(c);
+  const base = {
+    action,
+    actorId: actor.id,
+    actorName: actor.username,
+    resourceType: "app",
+    resourceId: app.id,
+    resourceName: app.name,
+    ip: meta.ip,
+    userAgent: meta.userAgent,
+    metadata: { name: app.name },
+  };
+  const events: AuditInput[] = [
+    { ...base, scope: "user", scopeId: app.owner_id },
+  ];
+  if (app.team_id)
+    events.push({ ...base, scope: "team", scopeId: app.team_id });
+  void recordAudit(c.env, c.executionCtx, events);
+}
 
 // Coerce a client-supplied redirect URI list into typed entries. Bare strings
 // (legacy clients) are treated as `equals`; blank values are dropped.

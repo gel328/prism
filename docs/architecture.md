@@ -79,7 +79,8 @@ worker/
 │   ├── email.ts / imap.ts  # Send (Resend / Mailchannels / SMTP) + receive (Email Workers / IMAP poll)
 │   ├── notifications.ts    # User-facing email & Telegram notifications
 │   ├── notificationRules.ts# Ruleset engine — globs, accounts, send/drop, stop
-│   ├── webhooks.ts         # Outgoing webhook delivery + signature
+│   ├── audit.ts            # Transparent Control audit log + scoped webhooks
+│   ├── webhooks.ts         # Low-level app-webhook delivery + signature
 │   ├── proxyImage.ts       # Closed image-proxy mappings (registerImageProxyMapping)
 │   ├── safeFetch.ts        # SSRF guard (blocks RFC1918 / link-local / etc.)
 │   ├── imageValidation.ts  # Reject suspicious image URLs / SVG payloads
@@ -301,11 +302,14 @@ Secondary emails per user. Each row carries `verified`, `verify_token`, and
 `verify_code` (the latter for the user-sends-an-email verification path). The
 primary email lives on `users.email` for back-compat.
 
-### `webhooks` / `webhook_deliveries`
+### `audit_events` / `audit_webhooks`
 
-User and admin webhooks share the same table (distinguished by `user_id IS
-NULL`). Deliveries are best-effort, signed with HMAC-SHA256, and retained for
-audit.
+The Transparent Control audit log. `audit_events` is a single append-only table
+partitioned by `(scope, scope_id)` into user / team / platform scopes.
+`audit_webhooks` holds scoped Discord / Telegram / General webhooks (config
+encrypted at rest) that fan each event out in real time. The legacy `webhooks`
+/ `webhook_deliveries` tables are retained only so the admin danger-zone
+migration can import them.
 
 ### `app_event_queue` / `app_webhooks`
 
