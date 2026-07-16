@@ -14,6 +14,7 @@ import {
   Dropdown,
   Field,
   Input,
+  Link,
   MessageBar,
   Option,
   Spinner,
@@ -35,6 +36,7 @@ import {
   CopyRegular,
   DeleteRegular,
   DismissRegular,
+  EyeOffRegular,
   PeopleRegular,
   ShieldRegular,
 } from "@fluentui/react-icons";
@@ -1107,7 +1109,7 @@ export function AppDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
 
   const { data, isLoading } = useQuery({
     queryKey: ["app", id],
@@ -1173,6 +1175,7 @@ export function AppDetail() {
   const [saving, setSaving] = useState(false);
   const [secretRotating, setSecretRotating] = useState(false);
   const [newSecret, setNewSecret] = useState("");
+  const [rotateConfirmOpen, setRotateConfirmOpen] = useState(false);
   const { message, showMsg } = useToastMessage();
   const [copied, setCopied] = useState<string>("");
 
@@ -1225,8 +1228,20 @@ export function AppDetail() {
     }
   };
 
-  const handleRotateSecret = async () => {
+  // First-time generation (no secret yet) is non-destructive, so rotate
+  // straight away. Once a secret already exists, rotating invalidates it and
+  // breaks existing integrations — confirm first.
+  const requestRotateSecret = () => {
+    if (app?.client_secret) {
+      setRotateConfirmOpen(true);
+    } else {
+      void doRotateSecret();
+    }
+  };
+
+  const doRotateSecret = async () => {
     if (!id) return;
+    setRotateConfirmOpen(false);
     setSecretRotating(true);
     try {
       const res = await api.rotateSecret(id);
@@ -1539,6 +1554,15 @@ export function AppDetail() {
                   <MessageBar intent="warning" style={{ marginTop: 8 }}>
                     {t("apps.saveSecretWarning")}
                   </MessageBar>
+                  <Button
+                    icon={<EyeOffRegular />}
+                    size="small"
+                    appearance="subtle"
+                    onClick={() => setNewSecret("")}
+                    style={{ marginTop: 8, width: "fit-content" }}
+                  >
+                    {t("apps.hideSecret")}
+                  </Button>
                 </div>
               ) : (
                 <Text style={{ color: tokens.colorNeutralForeground3 }}>
@@ -1547,14 +1571,16 @@ export function AppDetail() {
               )}
               <Button
                 appearance="outline"
-                onClick={handleRotateSecret}
+                onClick={requestRotateSecret}
                 disabled={secretRotating}
                 style={{ marginTop: 8, width: "fit-content" }}
               >
                 {secretRotating ? (
                   <Spinner size="tiny" />
-                ) : (
+                ) : app.client_secret ? (
                   t("apps.rotateSecret")
+                ) : (
+                  t("apps.generateSecret")
                 )}
               </Button>
             </Field>
@@ -1565,6 +1591,7 @@ export function AppDetail() {
               {t("apps.oauthEndpoints")}
             </Text>
             {[
+              ["Well-known", `/.well-known/openid-configuration`],
               ["Authorization", `/api/oauth/authorize`],
               ["Token", `/api/oauth/token`],
               ["UserInfo", `/api/oauth/userinfo`],
@@ -1590,7 +1617,56 @@ export function AppDetail() {
                 </Text>
               </div>
             ))}
+            <div
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                gap: 16,
+                marginTop: 12,
+              }}
+            >
+              <Link
+                href={`${window.location.origin}/.well-known/openid-configuration`}
+                target="_blank"
+                rel="noreferrer"
+              >
+                {t("apps.supportedClaims")}
+              </Link>
+              <Link
+                href={
+                  i18n.language.startsWith("zh")
+                    ? "https://prism.wss.moe/zh/oauth"
+                    : "https://prism.wss.moe/oauth"
+                }
+                target="_blank"
+                rel="noreferrer"
+              >
+                {t("apps.oauthOidcGuide")}
+              </Link>
+            </div>
           </div>
+
+          <Dialog
+            open={rotateConfirmOpen}
+            onOpenChange={(_, d) => setRotateConfirmOpen(d.open)}
+          >
+            <DialogSurface>
+              <DialogBody>
+                <DialogTitle>{t("apps.rotateSecretConfirmTitle")}</DialogTitle>
+                <DialogContent>
+                  {t("apps.rotateSecretConfirmBody")}
+                </DialogContent>
+                <DialogActions>
+                  <Button onClick={() => setRotateConfirmOpen(false)}>
+                    {t("common.cancel")}
+                  </Button>
+                  <Button appearance="primary" onClick={() => doRotateSecret()}>
+                    {t("apps.rotateSecret")}
+                  </Button>
+                </DialogActions>
+              </DialogBody>
+            </DialogSurface>
+          </Dialog>
         </div>
       )}
 
