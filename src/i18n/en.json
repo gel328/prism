@@ -49,7 +49,8 @@
     "adminPanel": "Admin Panel",
     "closeMenu": "Close menu",
     "openMenu": "Open menu",
-    "signOut": "Sign out"
+    "signOut": "Sign out",
+    "auditLog": "Audit Log"
   },
   "auth": {
     "signIn": "Sign in",
@@ -1673,6 +1674,8 @@
     "invalidHeaders": "Headers must be a valid JSON object.",
     "webhookSaved": "Webhook saved.",
     "webhookSaveFailed": "Failed to save webhook.",
-    "webhookDeleteFailed": "Failed to delete webhook."
+    "webhookDeleteFailed": "Failed to delete webhook.",
+    "pageTitle": "Audit Log",
+    "pageSubtitle": "Your login, authorization, and account activity (Transparent User Control)."
   }
 }

@@ -347,6 +347,17 @@ export function createRoutes(ctx: RouteContext): RouteObject[] {
               Component: m.Notifications,
             })),
         },
+        {
+          path: "audit-log",
+          loader: ({ request }) => {
+            requireAuthLoader(request);
+            return null;
+          },
+          lazy: () =>
+            import("./pages/AuditLogPage").then((m) => ({
+              Component: m.AuditLogPage,
+            })),
+        },
 
         // ── Admin ─────────────────────────────────────────────────────────
         {

@@ -17,12 +17,7 @@ import {
   Dropdown,
   Input,
   Option,
-  Table,
-  TableBody,
-  TableCell,
-  TableHeader,
-  TableHeaderCell,
-  TableRow,
+  Spinner,
   Text,
   Tooltip,
   makeStyles,
@@ -34,12 +29,11 @@ import {
   SearchRegular,
   PlugConnectedRegular,
 } from "@fluentui/react-icons";
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api, type AuditEvent } from "../lib/api";
 import { maskIp, parseClient } from "../lib/auditFormat";
-import { SkeletonTableRows } from "./Skeletons";
 import { AuditWebhooks } from "./AuditWebhooks";
 
 const useStyles = makeStyles({
@@ -50,7 +44,32 @@ const useStyles = makeStyles({
     alignItems: "flex-end",
     flexWrap: "wrap",
   },
-  tableScroll: { overflowX: "auto" },
+  tableScroll: { overflowX: "auto", width: "100%" },
+  table: {
+    width: "100%",
+    borderCollapse: "collapse",
+    tableLayout: "auto",
+    fontSize: tokens.fontSizeBase200,
+  },
+  th: {
+    textAlign: "left",
+    padding: "8px 10px",
+    borderBottom: `1px solid ${tokens.colorNeutralStroke2}`,
+    color: tokens.colorNeutralForeground3,
+    fontWeight: tokens.fontWeightSemibold,
+    whiteSpace: "nowrap",
+  },
+  td: {
+    padding: "8px 10px",
+    borderBottom: `1px solid ${tokens.colorNeutralStroke3}`,
+    verticalAlign: "top",
+    overflowWrap: "anywhere",
+  },
+  tdTime: {
+    padding: "8px 10px",
+    borderBottom: `1px solid ${tokens.colorNeutralStroke3}`,
+    verticalAlign: "top",
+  },
   clickable: { cursor: "pointer" },
   mono: { fontFamily: "monospace", fontSize: tokens.fontSizeBase200 },
   filterField: {
@@ -211,36 +230,40 @@ export function AuditLog({ base }: { base: string }) {
       )}
 
       <div className={styles.tableScroll}>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHeaderCell>{t("audit.colTime")}</TableHeaderCell>
-              <TableHeaderCell>{t("audit.colActor")}</TableHeaderCell>
-              <TableHeaderCell>{t("audit.colAction")}</TableHeaderCell>
-              <TableHeaderCell>{t("audit.colResource")}</TableHeaderCell>
-              <TableHeaderCell>{t("audit.colIp")}</TableHeaderCell>
-              <TableHeaderCell>{t("audit.colClient")}</TableHeaderCell>
-              <TableHeaderCell></TableHeaderCell>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
+        <table className={styles.table}>
+          <thead>
+            <tr>
+              <th className={styles.th}>{t("audit.colTime")}</th>
+              <th className={styles.th}>{t("audit.colActor")}</th>
+              <th className={styles.th}>{t("audit.colAction")}</th>
+              <th className={styles.th}>{t("audit.colResource")}</th>
+              <th className={styles.th}>{t("audit.colIp")}</th>
+              <th className={styles.th}>{t("audit.colClient")}</th>
+              <th className={styles.th}></th>
+            </tr>
+          </thead>
+          <tbody>
             {isLoading ? (
-              <SkeletonTableRows rows={8} cols={7} />
+              <tr>
+                <td className={styles.td} colSpan={7}>
+                  <Spinner size="tiny" />
+                </td>
+              </tr>
             ) : events.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={7}>
+              <tr>
+                <td className={styles.td} colSpan={7}>
                   <Text style={{ color: tokens.colorNeutralForeground3 }}>
                     {t("audit.noEvents")}
                   </Text>
-                </TableCell>
-              </TableRow>
+                </td>
+              </tr>
             ) : (
               events.map((ev) => (
-                <TableRow key={ev.id}>
-                  <TableCell style={{ whiteSpace: "nowrap", fontSize: 12 }}>
+                <tr key={ev.id}>
+                  <td className={styles.tdTime}>
                     {new Date(ev.created_at * 1000).toLocaleString()}
-                  </TableCell>
-                  <TableCell>
+                  </td>
+                  <td className={styles.td}>
                     {ev.actor_id ? (
                       <Tooltip content={ev.actor_id} relationship="label">
                         <Text
@@ -255,8 +278,8 @@ export function AuditLog({ base }: { base: string }) {
                     ) : (
                       "—"
                     )}
-                  </TableCell>
-                  <TableCell>
+                  </td>
+                  <td className={styles.td}>
                     <Text
                       className={`${styles.mono} ${styles.clickable}`}
                       style={{ color: tokens.colorBrandForeground1 }}
@@ -264,8 +287,8 @@ export function AuditLog({ base }: { base: string }) {
                     >
                       {ev.action}
                     </Text>
-                  </TableCell>
-                  <TableCell>
+                  </td>
+                  <td className={styles.td}>
                     {ev.resource_type || ev.resource_id ? (
                       <Tooltip
                         content={`${ev.resource_type ?? "?"} / ${
@@ -275,7 +298,6 @@ export function AuditLog({ base }: { base: string }) {
                       >
                         <Text
                           className={styles.clickable}
-                          style={{ fontSize: 12 }}
                           onClick={() =>
                             setFilter({
                               resourceType: ev.resource_type ?? undefined,
@@ -294,23 +316,21 @@ export function AuditLog({ base }: { base: string }) {
                     ) : (
                       "—"
                     )}
-                  </TableCell>
-                  <TableCell>
+                  </td>
+                  <td className={styles.td}>
                     <Tooltip content={ev.ip ?? "—"} relationship="label">
                       <Text className={styles.mono}>{maskIp(ev.ip)}</Text>
                     </Tooltip>
-                  </TableCell>
-                  <TableCell>
+                  </td>
+                  <td className={styles.td}>
                     <Tooltip
                       content={ev.user_agent ?? "—"}
                       relationship="label"
                     >
-                      <Text style={{ fontSize: 12 }}>
-                        {parseClient(ev.user_agent)}
-                      </Text>
+                      <Text>{parseClient(ev.user_agent)}</Text>
                     </Tooltip>
-                  </TableCell>
-                  <TableCell>
+                  </td>
+                  <td className={styles.tdTime}>
                     <Button
                       size="small"
                       appearance="subtle"
@@ -318,12 +338,12 @@ export function AuditLog({ base }: { base: string }) {
                       aria-label={t("audit.inspect")}
                       onClick={() => setInspect(ev)}
                     />
-                  </TableCell>
-                </TableRow>
+                  </td>
+                </tr>
               ))
             )}
-          </TableBody>
-        </Table>
+          </tbody>
+        </table>
       </div>
 
       {totalPages > 1 && (
@@ -359,7 +379,7 @@ export function AuditLog({ base }: { base: string }) {
         open={!!inspect}
         onOpenChange={(_, d) => !d.open && setInspect(null)}
       >
-        <DialogSurface>
+        <DialogSurface style={{ maxWidth: 640, width: "92vw" }}>
           <DialogBody>
             <DialogTitle>{t("audit.inspectTitle")}</DialogTitle>
             <DialogContent>
@@ -406,26 +426,36 @@ function InspectBody({ event }: { event: AuditEvent }) {
     /* leave as-is */
   }
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-      {rows.map(([k, v]) => (
-        <div key={k} style={{ display: "flex", gap: 8 }}>
-          <Text
-            weight="semibold"
-            style={{ width: 90, color: tokens.colorNeutralForeground3 }}
-          >
-            {k}
-          </Text>
-          <Text
-            style={{
-              fontFamily: "monospace",
-              fontSize: 12,
-              wordBreak: "break-all",
-            }}
-          >
-            {v}
-          </Text>
-        </div>
-      ))}
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "max-content 1fr",
+          columnGap: 12,
+          rowGap: 8,
+          alignItems: "start",
+        }}
+      >
+        {rows.map(([k, v]) => (
+          <Fragment key={k}>
+            <Text
+              weight="semibold"
+              style={{ color: tokens.colorNeutralForeground3 }}
+            >
+              {k}
+            </Text>
+            <Text
+              style={{
+                fontFamily: "monospace",
+                fontSize: 12,
+                overflowWrap: "anywhere",
+              }}
+            >
+              {v}
+            </Text>
+          </Fragment>
+        ))}
+      </div>
       <Text weight="semibold" style={{ color: tokens.colorNeutralForeground3 }}>
         {t("audit.metadata")}
       </Text>

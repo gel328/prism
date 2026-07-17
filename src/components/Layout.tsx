@@ -33,6 +33,7 @@ import {
   PersonRegular,
   SettingsRegular,
   ShieldPersonRegular,
+  ShieldTaskRegular,
   SignOutRegular,
   LocalLanguageRegular,
   WeatherMoonRegular,
@@ -317,6 +318,12 @@ export function Layout() {
           to="/notifications"
           icon={<AlertRegular />}
           label={t("nav.notifications")}
+          onNavigate={closeSidebar}
+        />
+        <NavItem
+          to="/audit-log"
+          icon={<ShieldTaskRegular />}
+          label={t("nav.auditLog")}
           onNavigate={closeSidebar}
         />
 

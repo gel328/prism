@@ -49,7 +49,8 @@
     "adminPanel": "管理面板",
     "closeMenu": "关闭菜单",
     "openMenu": "打开菜单",
-    "signOut": "退出登录"
+    "signOut": "退出登录",
+    "auditLog": "审核日志"
   },
   "auth": {
     "signIn": "登录",
@@ -1673,6 +1674,8 @@
     "invalidHeaders": "请求头必须是有效的 JSON 对象。",
     "webhookSaved": "Webhook 已保存。",
     "webhookSaveFailed": "保存 Webhook 失败。",
-    "webhookDeleteFailed": "删除 Webhook 失败。"
+    "webhookDeleteFailed": "删除 Webhook 失败。",
+    "pageTitle": "审核日志",
+    "pageSubtitle": "你的登录、授权与账户活动记录（Transparent User Control）。"
   }
 }
