@@ -17,10 +17,14 @@ import {
   proxyImageUrl,
   sweepOrphanedImageProxyMappings,
 } from "../lib/proxyImage";
-import { validateRedirectUriForRegistration } from "../lib/redirectUri";
+import {
+  parseRedirectUris,
+  validateRedirectUriEntry,
+  type RedirectUriEntry,
+} from "../lib/redirectUri";
 import { parseAppScope } from "../lib/scopes";
 import { APP_EVENT_TYPES } from "../lib/app-events";
-import { deliverUserWebhooks } from "../lib/webhooks";
+import { recordAudit, auditRequestMeta, type AuditInput } from "../lib/audit";
 import {
   deliverUserEmailNotifications,
   notificationActorMetaFromHeaders,
@@ -59,11 +63,6 @@ const VALID_PLATFORM_SCOPES = new Set([
   "admin:invites:read",
   "admin:invites:create",
   "admin:invites:delete",
-  "admin:webhooks:read",
-  "admin:webhooks:write",
-  "admin:webhooks:delete",
-  "webhooks:read",
-  "webhooks:write",
   "site:user:read",
   "site:user:write",
   "site:user:delete",
@@ -309,7 +308,7 @@ app.post("/", async (c) => {
     name: string;
     description?: string;
     website_url?: string;
-    redirect_uris: string[];
+    redirect_uris: RedirectUriEntry[];
     allowed_scopes?: string[];
     optional_scopes?: string[];
     oidc_fields?: string[];
@@ -317,13 +316,16 @@ app.post("/", async (c) => {
   }>();
 
   if (!body.name) return c.json({ error: "name is required" }, 400);
-  if (!body.redirect_uris?.length)
-    return c.json({ error: "At least one redirect_uri required" }, 400);
 
-  for (const uri of body.redirect_uris) {
-    const reason = validateRedirectUriForRegistration(uri);
+  // Redirect URIs may be empty (the app then learns the first one used).
+  const redirectUris = normalizeRedirectUriEntries(body.redirect_uris);
+  for (const entry of redirectUris) {
+    const reason = validateRedirectUriEntry(entry);
     if (reason)
-      return c.json({ error: `Invalid redirect_uri (${reason}): ${uri}` }, 400);
+      return c.json(
+        { error: `Invalid redirect_uri (${reason}): ${entry.value}` },
+        400,
+      );
   }
 
   const allowedScopes = (
@@ -355,7 +357,7 @@ app.post("/", async (c) => {
       // body of this endpoint so the user can save it; we never need to
       // hand it back from D1 except through timingSafeSecretEqual.
       await encryptSecret(c.env, clientSecret),
-      JSON.stringify(body.redirect_uris),
+      JSON.stringify(redirectUris),
       JSON.stringify(allowedScopes),
       JSON.stringify(optionalScopes),
       JSON.stringify(body.oidc_fields ?? []),
@@ -373,14 +375,14 @@ app.post("/", async (c) => {
     c.env.DB,
     user.id,
     body.website_url ?? null,
-    JSON.stringify(body.redirect_uris),
+    JSON.stringify(redirectUris),
   );
-  c.executionCtx.waitUntil(
-    deliverUserWebhooks(c.env, user.id, "app.created", {
-      app_id: id,
-      name: body.name,
-    }).catch(() => {}),
-  );
+  auditAppLifecycle(c, "app.create", {
+    id,
+    name: body.name,
+    owner_id: user.id,
+    team_id: null,
+  });
   c.executionCtx.waitUntil(
     deliverUserEmailNotifications(
       c.env,
@@ -417,7 +419,7 @@ app.patch("/:id", async (c) => {
     description?: string;
     icon_url?: string;
     website_url?: string;
-    redirect_uris?: string[];
+    redirect_uris?: RedirectUriEntry[];
     allowed_scopes?: string[];
     optional_scopes?: string[];
     oidc_fields?: string[];
@@ -432,12 +434,16 @@ app.patch("/:id", async (c) => {
     if (imgErr) return c.json({ error: `icon_url: ${imgErr}` }, 400);
   }
 
-  if (body.redirect_uris) {
-    for (const uri of body.redirect_uris) {
-      const reason = validateRedirectUriForRegistration(uri);
+  // Redirect URIs may be an empty list (learn-first-used mode).
+  const redirectUris = body.redirect_uris
+    ? normalizeRedirectUriEntries(body.redirect_uris)
+    : null;
+  if (redirectUris) {
+    for (const entry of redirectUris) {
+      const reason = validateRedirectUriEntry(entry);
       if (reason)
         return c.json(
-          { error: `Invalid redirect_uri (${reason}): ${uri}` },
+          { error: `Invalid redirect_uri (${reason}): ${entry.value}` },
           400,
         );
     }
@@ -473,8 +479,8 @@ app.patch("/:id", async (c) => {
     icon_url: body.icon_url !== undefined ? body.icon_url : row.icon_url,
     website_url:
       body.website_url !== undefined ? body.website_url : row.website_url,
-    redirect_uris: body.redirect_uris
-      ? JSON.stringify(body.redirect_uris)
+    redirect_uris: redirectUris
+      ? JSON.stringify(redirectUris)
       : row.redirect_uris,
     allowed_scopes: JSON.stringify(newAllowedScopes),
     optional_scopes:
@@ -542,11 +548,12 @@ app.patch("/:id", async (c) => {
     updatedRow!.redirect_uris,
     row.team_id,
   );
-  c.executionCtx.waitUntil(
-    deliverUserWebhooks(c.env, user.id, "app.updated", { app_id: id }).catch(
-      () => {},
-    ),
-  );
+  auditAppLifecycle(c, "app.update", {
+    id,
+    name: updated.name,
+    owner_id: row.owner_id,
+    team_id: row.team_id,
+  });
   c.executionCtx.waitUntil(
     deliverUserEmailNotifications(
       c.env,
@@ -630,11 +637,12 @@ app.delete("/:id", async (c) => {
     );
   }
 
-  c.executionCtx.waitUntil(
-    deliverUserWebhooks(c.env, user.id, "app.deleted", { app_id: id }).catch(
-      () => {},
-    ),
-  );
+  auditAppLifecycle(c, "app.delete", {
+    id,
+    name: row.name,
+    owner_id: row.owner_id,
+    team_id: row.team_id,
+  });
   c.executionCtx.waitUntil(
     deliverUserEmailNotifications(
       c.env,
@@ -1489,6 +1497,65 @@ app.delete("/:id/access-rules/:ruleId", async (c) => {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
+// Record an app lifecycle event to the owning user's log and, for team apps,
+// the team's log too.
+function auditAppLifecycle(
+  c: {
+    env: Env;
+    executionCtx: ExecutionContext;
+    req: { header: (h: string) => string | undefined };
+    get: (k: "user") => { id: string; username: string };
+  },
+  action: string,
+  app: { id: string; name: string; owner_id: string; team_id: string | null },
+): void {
+  const actor = c.get("user");
+  const meta = auditRequestMeta(c);
+  const base = {
+    action,
+    actorId: actor.id,
+    actorName: actor.username,
+    resourceType: "app",
+    resourceId: app.id,
+    resourceName: app.name,
+    ip: meta.ip,
+    userAgent: meta.userAgent,
+    metadata: { name: app.name },
+  };
+  const events: AuditInput[] = [
+    { ...base, scope: "user", scopeId: app.owner_id },
+  ];
+  if (app.team_id)
+    events.push({ ...base, scope: "team", scopeId: app.team_id });
+  void recordAudit(c.env, c.executionCtx, events);
+}
+
+// Coerce a client-supplied redirect URI list into typed entries. Bare strings
+// (legacy clients) are treated as `equals`; blank values are dropped.
+function normalizeRedirectUriEntries(
+  input: Array<RedirectUriEntry | string> | undefined,
+): RedirectUriEntry[] {
+  if (!Array.isArray(input)) return [];
+  const out: RedirectUriEntry[] = [];
+  for (const item of input) {
+    if (typeof item === "string") {
+      const value = item.trim();
+      if (value) out.push({ type: "equals", value });
+    } else if (item && typeof item.value === "string") {
+      const value = item.value.trim();
+      if (!value) continue;
+      const type =
+        item.type === "regex" ||
+        item.type === "wildcard" ||
+        item.type === "equals"
+          ? item.type
+          : "equals";
+      out.push({ type, value });
+    }
+  }
+  return out;
+}
+
 async function safeApp(
   baseUrl: string,
   db: D1Database,
@@ -1503,7 +1570,7 @@ async function safeApp(
     unproxied_icon_url: row.icon_url,
     website_url: row.website_url,
     client_id: row.client_id,
-    redirect_uris: JSON.parse(row.redirect_uris) as string[],
+    redirect_uris: parseRedirectUris(row.redirect_uris),
     allowed_scopes: JSON.parse(row.allowed_scopes) as string[],
     optional_scopes: JSON.parse(row.optional_scopes ?? "[]") as string[],
     oidc_fields: JSON.parse(row.oidc_fields ?? "[]") as string[],

@@ -324,7 +324,10 @@ kept before the cron sweeps them.
 
 ## Audit Log
 
-The audit log is a paginated, append-only list of significant events:
+The **Audit log** tab shows the platform-scope log (Transparent Platform
+Control) — every admin operation. Users and teams have their own scoped logs;
+see [Audit Logs](audit-logs.md) for the full model, filtering, and scoped
+webhooks. It is a paginated, append-only list of significant events:
 
 | Event                                       | Triggered by                               |
 | ------------------------------------------- | ------------------------------------------ |
@@ -352,7 +355,6 @@ The audit log is a paginated, append-only list of significant events:
 | `team.transferred`                          | Team ownership transferred                 |
 | `domain.added` / `verified` / `deleted`     | Domain lifecycle                           |
 | `connection.added` / `removed`              | Social connection lifecycle                |
-| `webhook.create` / `update` / `delete`      | Webhook lifecycle                          |
 | `oauth_source.create` / `update` / `delete` | OAuth source lifecycle                     |
 | `invite.create` / `revoke`                  | Site invite lifecycle                      |
 | `admin.config.update`                       | Site config changed                        |

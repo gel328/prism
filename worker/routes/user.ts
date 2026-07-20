@@ -15,9 +15,7 @@ import {
   sweepOrphanedImageProxyMappings,
 } from "../lib/proxyImage";
 import { validateImageUrl } from "../lib/imageValidation";
-import { validateOutboundUrl } from "../lib/safeFetch";
-import { loggedFetch } from "../lib/logger";
-import { hmacSign, deliverUserWebhooks } from "../lib/webhooks";
+import { recordAudit, auditRequestMeta } from "../lib/audit";
 import {
   deliverUserEmailNotifications,
   notificationActorMetaFromHeaders,
@@ -27,14 +25,12 @@ import {
 import type { NotificationRules } from "../types";
 import { getConfig, getConfigValue } from "../lib/config";
 import { getGithubReadmeFromCache } from "../lib/githubReadme";
-import { encryptSecret, decryptSecret, hashSecret } from "../lib/secretCrypto";
+import { encryptSecret, hashSecret } from "../lib/secretCrypto";
 import { sendEmail, verifyEmailTemplate } from "../lib/email";
 import type {
   UserRow,
   UserEmailRow,
   UserNotificationPrefsRow,
-  WebhookRow,
-  WebhookDeliveryRow,
   Variables,
 } from "../types";
 
@@ -347,9 +343,20 @@ app.patch("/me", async (c) => {
   if (body.avatar_url !== undefined)
     changedFields.avatar_url = body.avatar_url ?? "";
 
-  c.executionCtx.waitUntil(
-    deliverUserWebhooks(c.env, user.id, "profile.updated", {}).catch(() => {}),
-  );
+  const auditMeta = auditRequestMeta(c);
+  await recordAudit(c.env, c.executionCtx, {
+    scope: "user",
+    scopeId: user.id,
+    action: "user.profile.update",
+    actorId: user.id,
+    actorName: user.username,
+    resourceType: "user",
+    resourceId: user.id,
+    resourceName: `@${user.username}`,
+    ip: auditMeta.ip,
+    userAgent: auditMeta.userAgent,
+    metadata: { changed_fields: Object.keys(changedFields) },
+  });
   c.executionCtx.waitUntil(
     deliverUserEmailNotifications(
       c.env,
@@ -1051,273 +1058,6 @@ app.delete("/tokens/:id", async (c) => {
   );
 
   return c.json({ message: "Token revoked" });
-});
-
-// ─── User Webhooks ────────────────────────────────────────────────────────────
-
-const USER_WEBHOOK_EVENTS = [
-  "*",
-  "app.created",
-  "app.updated",
-  "app.deleted",
-  "domain.added",
-  "domain.verified",
-  "domain.deleted",
-  "profile.updated",
-] as const;
-
-// GET /api/user/webhooks
-app.get("/webhooks", async (c) => {
-  const user = c.get("user");
-  const { results } = await c.env.DB.prepare(
-    "SELECT id, name, url, events, is_active, created_at, updated_at FROM webhooks WHERE user_id = ? ORDER BY created_at DESC",
-  )
-    .bind(user.id)
-    .all<Omit<WebhookRow, "secret" | "created_by">>();
-  return c.json({ webhooks: results });
-});
-
-// POST /api/user/webhooks
-app.post("/webhooks", async (c) => {
-  const user = c.get("user");
-  const body = await c.req.json<{
-    name: string;
-    url: string;
-    secret?: string;
-    events: string[];
-  }>();
-
-  if (!body.name?.trim() || !body.url?.trim())
-    return c.json({ error: "name and url are required" }, 400);
-
-  const urlErr = validateOutboundUrl(body.url.trim());
-  if (urlErr) return c.json({ error: urlErr }, 400);
-
-  const events = Array.isArray(body.events)
-    ? body.events.filter((e) =>
-        (USER_WEBHOOK_EVENTS as readonly string[]).includes(e),
-      )
-    : [];
-  const secret = body.secret?.trim() || randomBase64url(32);
-  // Encrypt the signing secret at rest. The plaintext is returned in
-  // the create response so the caller can copy it into their receiver,
-  // but later GETs never expose it (admin/user list endpoints already
-  // omit the column).
-  const storedSecret = await encryptSecret(c.env, secret);
-  const now = Math.floor(Date.now() / 1000);
-  const id = randomId();
-
-  await c.env.DB.prepare(
-    "INSERT INTO webhooks (id, name, url, secret, events, is_active, user_id, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?)",
-  )
-    .bind(
-      id,
-      body.name.trim(),
-      body.url.trim(),
-      storedSecret,
-      JSON.stringify(events),
-      user.id,
-      user.id,
-      now,
-      now,
-    )
-    .run();
-
-  return c.json(
-    {
-      webhook: {
-        id,
-        name: body.name,
-        url: body.url,
-        secret,
-        events,
-        is_active: 1,
-        created_at: now,
-      },
-    },
-    201,
-  );
-});
-
-// GET /api/user/webhooks/:id
-app.get("/webhooks/:id", async (c) => {
-  const user = c.get("user");
-  const wh = await c.env.DB.prepare(
-    "SELECT id, name, url, events, is_active, created_at, updated_at FROM webhooks WHERE id = ? AND user_id = ?",
-  )
-    .bind(c.req.param("id"), user.id)
-    .first<Omit<WebhookRow, "secret" | "created_by">>();
-  if (!wh) return c.json({ error: "Not found" }, 404);
-  return c.json({ webhook: wh });
-});
-
-// PATCH /api/user/webhooks/:id
-app.patch("/webhooks/:id", async (c) => {
-  const user = c.get("user");
-  const existing = await c.env.DB.prepare(
-    "SELECT id FROM webhooks WHERE id = ? AND user_id = ?",
-  )
-    .bind(c.req.param("id"), user.id)
-    .first();
-  if (!existing) return c.json({ error: "Not found" }, 404);
-
-  const body = await c.req.json<{
-    name?: string;
-    url?: string;
-    secret?: string;
-    events?: string[];
-    is_active?: boolean;
-  }>();
-
-  const sets: string[] = [];
-  const values: unknown[] = [];
-
-  if (body.name !== undefined) {
-    sets.push("name = ?");
-    values.push(body.name.trim());
-  }
-  if (body.url !== undefined) {
-    const urlErr = validateOutboundUrl(body.url.trim());
-    if (urlErr) return c.json({ error: urlErr }, 400);
-    sets.push("url = ?");
-    values.push(body.url.trim());
-  }
-  if (body.secret !== undefined) {
-    sets.push("secret = ?");
-    values.push(await encryptSecret(c.env, body.secret));
-  }
-  if (body.events !== undefined) {
-    const filtered = body.events.filter((e) =>
-      (USER_WEBHOOK_EVENTS as readonly string[]).includes(e),
-    );
-    sets.push("events = ?");
-    values.push(JSON.stringify(filtered));
-  }
-  if (body.is_active !== undefined) {
-    sets.push("is_active = ?");
-    values.push(body.is_active ? 1 : 0);
-  }
-
-  if (!sets.length) return c.json({ error: "Nothing to update" }, 400);
-
-  sets.push("updated_at = ?");
-  values.push(Math.floor(Date.now() / 1000));
-  values.push(c.req.param("id"));
-  values.push(user.id);
-
-  await c.env.DB.prepare(
-    `UPDATE webhooks SET ${sets.join(", ")} WHERE id = ? AND user_id = ?`,
-  )
-    .bind(...values)
-    .run();
-
-  return c.json({ message: "Updated" });
-});
-
-// DELETE /api/user/webhooks/:id
-app.delete("/webhooks/:id", async (c) => {
-  const user = c.get("user");
-  const wh = await c.env.DB.prepare(
-    "SELECT id FROM webhooks WHERE id = ? AND user_id = ?",
-  )
-    .bind(c.req.param("id"), user.id)
-    .first();
-  if (!wh) return c.json({ error: "Not found" }, 404);
-
-  await c.env.DB.prepare("DELETE FROM webhooks WHERE id = ?")
-    .bind(c.req.param("id"))
-    .run();
-  return c.json({ message: "Deleted" });
-});
-
-// POST /api/user/webhooks/:id/test
-app.post("/webhooks/:id/test", async (c) => {
-  const user = c.get("user");
-  const wh = await c.env.DB.prepare(
-    "SELECT id, url, secret FROM webhooks WHERE id = ? AND user_id = ?",
-  )
-    .bind(c.req.param("id"), user.id)
-    .first<Pick<WebhookRow, "id" | "url" | "secret">>();
-  if (!wh) return c.json({ error: "Not found" }, 404);
-
-  const now = Math.floor(Date.now() / 1000);
-  const deliveryId = randomId();
-  const payload = JSON.stringify({
-    event: "webhook.test",
-    timestamp: now,
-    data: { message: "Test delivery from Prism" },
-  });
-
-  const signingSecret = (await decryptSecret(c.env, wh.secret)) ?? wh.secret;
-  const sig = await hmacSign(signingSecret, payload);
-  let status: number | null = null;
-  let success = false;
-
-  try {
-    const res = await loggedFetch(c.env, wh.url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Prism-Event": "webhook.test",
-        "X-Prism-Signature": `sha256=${sig}`,
-        "X-Prism-Delivery": deliveryId,
-      },
-      body: payload,
-      signal: AbortSignal.timeout(10_000),
-    });
-    status = res.status;
-    success = status >= 200 && status < 300;
-  } catch {
-    // see the response_body=null INSERT below — bodies are intentionally
-    // dropped on this path so the test endpoint can never become an
-    // arbitrary-URL response oracle for an authenticated user.
-  }
-
-  await c.env.DB.prepare(
-    "INSERT INTO webhook_deliveries (id, webhook_id, event_type, payload, response_status, response_body, success, delivered_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-  )
-    .bind(
-      deliveryId,
-      wh.id,
-      "webhook.test",
-      payload,
-      status,
-      // Don't persist the upstream body — the response field would
-      // otherwise leak to the user-facing deliveries endpoint and let
-      // an authenticated user use the webhook test as an arbitrary-URL
-      // GET reflection oracle. Per-attempt success / status is enough
-      // for diagnostics; bodies are intentionally dropped.
-      null,
-      success ? 1 : 0,
-      now,
-    )
-    .run();
-
-  return c.json({ success, status });
-});
-
-// GET /api/user/webhooks/:id/deliveries
-app.get("/webhooks/:id/deliveries", async (c) => {
-  const user = c.get("user");
-  const wh = await c.env.DB.prepare(
-    "SELECT id FROM webhooks WHERE id = ? AND user_id = ?",
-  )
-    .bind(c.req.param("id"), user.id)
-    .first();
-  if (!wh) return c.json({ error: "Not found" }, 404);
-
-  const { results } = await c.env.DB.prepare(
-    "SELECT id, event_type, response_status, success, delivered_at FROM webhook_deliveries WHERE webhook_id = ? ORDER BY delivered_at DESC LIMIT 50",
-  )
-    .bind(c.req.param("id"))
-    .all<
-      Pick<
-        WebhookDeliveryRow,
-        "id" | "event_type" | "response_status" | "success" | "delivered_at"
-      >
-    >();
-
-  return c.json({ deliveries: results });
 });
 
 // ─── Notification Preferences ─────────────────────────────────────────────────

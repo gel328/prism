@@ -248,7 +248,7 @@ https://<your-prism-domain>/api/connections/<slug>/callback
 
 ## 审计日志
 
-审计日志是一个分页的追加型重要事件列表：
+**审核日志**标签页展示平台作用域日志（Transparent Platform Control）——即所有管理员操作。用户与团队各自拥有独立的作用域日志；完整模型、筛选与作用域化 Webhook 详见 [审核日志](audit-logs.md)。它是一个分页的追加型重要事件列表：
 
 | 事件                                        | 触发条件                                |
 | ------------------------------------------- | --------------------------------------- |
@@ -276,7 +276,6 @@ https://<your-prism-domain>/api/connections/<slug>/callback
 | `team.transferred`                          | 团队所有权转移                          |
 | `domain.added` / `verified` / `deleted`     | 域名生命周期                            |
 | `connection.added` / `removed`              | 社交账号绑定生命周期                    |
-| `webhook.create` / `update` / `delete`      | Webhook 生命周期                        |
 | `oauth_source.create` / `update` / `delete` | OAuth 源生命周期                        |
 | `invite.create` / `revoke`                  | 站点邀请生命周期                        |
 | `admin.config.update`                       | 站点配置已更改                          |

@@ -889,7 +889,11 @@ app.get("/:provider/callback", async (c) => {
     // consumes the invite. Unlike Telegram, providerEmail may be present here,
     // so email-bound invites are matched against it.
     if (config.invite_only) {
-      const result = await validateSiteInvite(c.env, inviteToken, providerEmail);
+      const result = await validateSiteInvite(
+        c.env,
+        inviteToken,
+        providerEmail,
+      );
       if (!result.ok)
         return c.redirect(`${c.env.APP_URL}/login?error=invite_required`);
     }

@@ -24,6 +24,29 @@ Most OAuth/OIDC libraries can auto-configure from this URL.
 If your app runs entirely in the browser (no server to keep the secret), enable
 **Public client**. Public clients must use PKCE and do not have a client secret.
 
+### Redirect URI matching
+
+Each registered redirect URI carries a **match type**:
+
+| Type       | Behaviour                                                                                     |
+| ---------- | --------------------------------------------------------------------------------------------- |
+| `Equals`   | Exact match after URL normalization (default; the safest option).                             |
+| `Wildcard` | A glob where `*` stands in for any run of characters, e.g. `https://example.com/*`.           |
+| `Regex`    | A regular expression matched against the whole candidate URI, e.g. `https://example\.com/.*`. |
+
+Every candidate is first passed through a safety gate regardless of type: the
+scheme must be `https:` (or `http:` for loopback hosts), and the URI must not
+carry userinfo (`user:pass@…`) or a fragment (`#…`).
+
+**Empty list (learn-first-used).** If you leave the redirect URI list empty, the
+app "learns" the first redirect URI it is successfully used with, pins it as an
+`Equals` entry, and locks the app to that value going forward.
+
+::: warning
+A `Regex` value of `.*` allows **any** redirect URI, including attacker-controlled
+ones. Only use it if you fully understand the security implications.
+:::
+
 ## Authorization code flow (with PKCE)
 
 ```mermaid
@@ -65,38 +88,33 @@ code_challenge = BASE64URL(SHA-256(ASCII(code_verifier)))
 
 #### Scopes
 
-| Scope                   | Claims / access granted                                |
-| ----------------------- | ------------------------------------------------------ |
-| `openid`                | `sub`, `iss`, `aud`, `iat`, `exp` (required for OIDC)  |
-| `profile`               | `name`, `preferred_username`, `picture`                |
-| `profile:write`         | Update the user's profile (name, picture)              |
-| `email`                 | `email`, `email_verified`                              |
-| `apps:read`             | List of apps the user owns                             |
-| `apps:write`            | Create, update, and delete the user's apps             |
-| `teams:read`            | List the user's teams                                  |
-| `teams:write`           | Update team settings and manage members                |
-| `teams:create`          | Create new teams                                       |
-| `teams:delete`          | Delete teams                                           |
-| `domains:read`          | List the user's custom domains                         |
-| `domains:write`         | Add and remove custom domains                          |
-| `gpg:read`              | List the user's registered GPG public keys             |
-| `gpg:write`             | Add and remove GPG public keys                         |
-| `social:read`           | List the user's linked social provider accounts        |
-| `social:write`          | Disconnect social provider accounts                    |
-| `webhooks:read`         | List the user's webhooks                               |
-| `webhooks:write`        | Create, update, and delete webhooks                    |
-| `admin:users:read`      | Read all user accounts (admin only)                    |
-| `admin:users:write`     | Modify user accounts (admin only)                      |
-| `admin:users:delete`    | Delete user accounts (admin only)                      |
-| `admin:config:read`     | Read instance configuration (admin only)               |
-| `admin:config:write`    | Update instance configuration (admin only)             |
-| `admin:invites:read`    | List invitations (admin only)                          |
-| `admin:invites:create`  | Create invitations (admin only)                        |
-| `admin:invites:delete`  | Delete invitations (admin only)                        |
-| `admin:webhooks:read`   | List instance-level webhooks (admin only)              |
-| `admin:webhooks:write`  | Create and update instance-level webhooks (admin only) |
-| `admin:webhooks:delete` | Delete instance-level webhooks (admin only)            |
-| `offline_access`        | Enables refresh token issuance                         |
+| Scope                  | Claims / access granted                               |
+| ---------------------- | ----------------------------------------------------- |
+| `openid`               | `sub`, `iss`, `aud`, `iat`, `exp` (required for OIDC) |
+| `profile`              | `name`, `preferred_username`, `picture`               |
+| `profile:write`        | Update the user's profile (name, picture)             |
+| `email`                | `email`, `email_verified`                             |
+| `apps:read`            | List of apps the user owns                            |
+| `apps:write`           | Create, update, and delete the user's apps            |
+| `teams:read`           | List the user's teams                                 |
+| `teams:write`          | Update team settings and manage members               |
+| `teams:create`         | Create new teams                                      |
+| `teams:delete`         | Delete teams                                          |
+| `domains:read`         | List the user's custom domains                        |
+| `domains:write`        | Add and remove custom domains                         |
+| `gpg:read`             | List the user's registered GPG public keys            |
+| `gpg:write`            | Add and remove GPG public keys                        |
+| `social:read`          | List the user's linked social provider accounts       |
+| `social:write`         | Disconnect social provider accounts                   |
+| `admin:users:read`     | Read all user accounts (admin only)                   |
+| `admin:users:write`    | Modify user accounts (admin only)                     |
+| `admin:users:delete`   | Delete user accounts (admin only)                     |
+| `admin:config:read`    | Read instance configuration (admin only)              |
+| `admin:config:write`   | Update instance configuration (admin only)            |
+| `admin:invites:read`   | List invitations (admin only)                         |
+| `admin:invites:create` | Create invitations (admin only)                       |
+| `admin:invites:delete` | Delete invitations (admin only)                       |
+| `offline_access`       | Enables refresh token issuance                        |
 
 #### Team scopes — three tiers
 

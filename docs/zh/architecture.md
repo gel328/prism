@@ -68,7 +68,8 @@ worker/
 │   ├── email.ts / imap.ts  # 发送（Resend/Mailchannels/SMTP）+ 接收（Email Workers / IMAP 轮询）
 │   ├── notifications.ts    # 用户邮件 + Telegram 通知
 │   ├── notificationRules.ts# 规则集引擎 — 通配符、账号、send/drop、stop
-│   ├── webhooks.ts         # 出站 webhook 投递与签名
+│   ├── audit.ts            # Transparent Control 审核日志与作用域化 webhook
+│   ├── webhooks.ts         # 底层 app-webhook 投递与签名
 │   ├── proxyImage.ts       # 关闭式图片代理映射
 │   ├── safeFetch.ts        # SSRF 防护（屏蔽 RFC1918 / link-local 等）
 │   ├── imageValidation.ts  # 拒绝可疑图片 URL / SVG 负载
@@ -206,9 +207,9 @@ WebAuthn 凭据。`credential_id` 用 base64url。每次成功认证后更新 `c
 
 按用户的次要邮箱，每行带 `verified`、`verify_token`、`verify_code`（后者用于「用户主动发邮件」验证路径）。主邮箱仍保留在 `users.email` 上以兼容历史。
 
-### `webhooks` / `webhook_deliveries`
+### `audit_events` / `audit_webhooks`
 
-用户与管理员 webhook 共享同一表（通过 `user_id IS NULL` 区分）。投递为 best-effort，HMAC-SHA256 签名，留存供审计。
+Transparent Control 审核日志。`audit_events` 是单一的追加型表，按 `(scope, scope_id)` 划分为用户 / 团队 / 平台三个作用域。`audit_webhooks` 保存作用域化的 Discord / Telegram / 通用 Webhook（配置加密存储），实时扇出每条事件。旧的 `webhooks` / `webhook_deliveries` 表仅为方便管理员危险区域迁移导入而保留。
 
 ### `app_event_queue` / `app_webhooks`
 

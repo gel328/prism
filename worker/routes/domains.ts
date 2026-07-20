@@ -4,7 +4,7 @@ import { Hono } from "hono";
 import { randomBase64url, randomId } from "../lib/crypto";
 import { getConfigValue } from "../lib/config";
 import { requireAuth } from "../middleware/auth";
-import { deliverUserWebhooks } from "../lib/webhooks";
+import { recordAudit, auditRequestMeta } from "../lib/audit";
 import {
   deliverUserEmailNotifications,
   notificationActorMetaFromHeaders,
@@ -90,12 +90,22 @@ app.post("/", async (c) => {
     );
   }
 
-  c.executionCtx.waitUntil(
-    deliverUserWebhooks(c.env, user.id, "domain.added", {
-      domain_id: id,
-      domain,
-    }).catch(() => {}),
-  );
+  {
+    const meta = auditRequestMeta(c);
+    await recordAudit(c.env, c.executionCtx, {
+      scope: "user",
+      scopeId: user.id,
+      action: "domain.add",
+      actorId: user.id,
+      actorName: user.username,
+      resourceType: "domain",
+      resourceId: id,
+      resourceName: domain,
+      ip: meta.ip,
+      userAgent: meta.userAgent,
+      metadata: { domain },
+    });
+  }
   c.executionCtx.waitUntil(
     deliverUserEmailNotifications(
       c.env,
@@ -181,13 +191,22 @@ app.post("/:id/verify", async (c) => {
     )
       .bind(now, nextReverify, succeededMethod, id)
       .run();
-    c.executionCtx.waitUntil(
-      deliverUserWebhooks(c.env, user.id, "domain.verified", {
-        domain_id: id,
-        domain: row.domain,
-        verification_method: succeededMethod,
-      }).catch(() => {}),
-    );
+    {
+      const meta = auditRequestMeta(c);
+      await recordAudit(c.env, c.executionCtx, {
+        scope: "user",
+        scopeId: user.id,
+        action: "domain.verify",
+        actorId: user.id,
+        actorName: user.username,
+        resourceType: "domain",
+        resourceId: id,
+        resourceName: row.domain,
+        ip: meta.ip,
+        userAgent: meta.userAgent,
+        metadata: { domain: row.domain, verification_method: succeededMethod },
+      });
+    }
     c.executionCtx.waitUntil(
       deliverUserEmailNotifications(
         c.env,
@@ -340,12 +359,22 @@ app.delete("/:id", async (c) => {
   if (!row) return c.json({ error: "Domain not found" }, 404);
 
   await c.env.DB.prepare("DELETE FROM domains WHERE id = ?").bind(id).run();
-  c.executionCtx.waitUntil(
-    deliverUserWebhooks(c.env, user.id, "domain.deleted", {
-      domain_id: id,
-      domain: row.domain,
-    }).catch(() => {}),
-  );
+  {
+    const meta = auditRequestMeta(c);
+    await recordAudit(c.env, c.executionCtx, {
+      scope: "user",
+      scopeId: user.id,
+      action: "domain.delete",
+      actorId: user.id,
+      actorName: user.username,
+      resourceType: "domain",
+      resourceId: id,
+      resourceName: row.domain,
+      ip: meta.ip,
+      userAgent: meta.userAgent,
+      metadata: { domain: row.domain },
+    });
+  }
   c.executionCtx.waitUntil(
     deliverUserEmailNotifications(
       c.env,

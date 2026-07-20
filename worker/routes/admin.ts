@@ -11,7 +11,6 @@ import { getIp } from "../lib/clientIp";
 import {
   SENSITIVE_CONFIG_KEYS,
   encryptSecret,
-  decryptSecret,
   hashSecret,
   isEncryptedSecret,
   isHashedSecret,
@@ -23,7 +22,6 @@ import { verifyAnyTotp } from "../lib/totp";
 import { PRISM_INTERNAL_CLIENT_ID, grantSudo, isSudoActive } from "../lib/sudo";
 import { requireAdmin } from "../middleware/auth";
 import { validateImageUrl } from "../lib/imageValidation";
-import { validateOutboundUrl } from "../lib/safeFetch";
 import {
   collectReferencedImageUrls,
   proxyImageUrl,
@@ -38,22 +36,19 @@ import {
 import { inviteEmailTemplate } from "../lib/email";
 import { randomBase64url, randomId } from "../lib/crypto";
 import { hashBackupCodes } from "../lib/totp";
-import { deliverAdminWebhooks, hmacSign } from "../lib/webhooks";
+import { recordAudit } from "../lib/audit";
 import {
   dissolveTeam,
   teamUserSyntheticEmail,
   teamUserSyntheticUsername,
 } from "./teams";
 import type {
-  AuditLogRow,
   LoginErrorRow,
   OAuthAppRow,
   OAuthSourceRow,
   SiteInviteRow,
   TeamRow,
   UserRow,
-  WebhookDeliveryRow,
-  WebhookRow,
   Variables,
 } from "../types";
 
@@ -1484,6 +1479,8 @@ app.post("/reset/confirm", async (c) => {
     c.env.DB.prepare("DELETE FROM login_errors"),
     c.env.DB.prepare("DELETE FROM domains"),
     c.env.DB.prepare("DELETE FROM audit_log"),
+    c.env.DB.prepare("DELETE FROM audit_events"),
+    c.env.DB.prepare("DELETE FROM audit_webhooks"),
     c.env.DB.prepare("DELETE FROM team_invites"),
     c.env.DB.prepare("DELETE FROM team_members"),
     c.env.DB.prepare("DELETE FROM oauth_apps"),
@@ -1901,26 +1898,8 @@ app.get("/stats", async (c) => {
   });
 });
 
-// ─── Audit log ────────────────────────────────────────────────────────────────
-
-app.get("/audit-log", async (c) => {
-  const page = parseInt(c.req.query("page") ?? "1");
-  const limit = Math.min(parseInt(c.req.query("limit") ?? "50"), 200);
-  const offset = (page - 1) * limit;
-
-  const rows = await c.env.DB.prepare(
-    `SELECT al.*, u.username FROM audit_log al
-     LEFT JOIN users u ON u.id = al.user_id
-     ORDER BY al.created_at DESC LIMIT ? OFFSET ?`,
-  )
-    .bind(limit, offset)
-    .all<AuditLogRow & { username: string | null }>();
-
-  const count = await c.env.DB.prepare(
-    "SELECT COUNT(*) as n FROM audit_log",
-  ).first<{ n: number }>();
-  return c.json({ logs: rows.results, total: count?.n ?? 0, page, limit });
-});
+// The platform audit log is now served by /api/audit/platform/* (see
+// worker/routes/audit.ts — Transparent Platform Control).
 
 // ─── Login error log ──────────────────────────────────────────────────────────
 
@@ -2275,6 +2254,8 @@ app.post("/debug", async (c) => {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
+// Platform-scope audit. Every admin action funnels through here, so it lands
+// in the Transparent Platform Control log and fans out to platform webhooks.
 async function logAudit(
   env: Env,
   userId: string,
@@ -2284,33 +2265,32 @@ async function logAudit(
   metadata: unknown,
   ip: string,
   ctx: ExecutionContext,
+  extra?: {
+    actorName?: string | null;
+    resourceName?: string | null;
+    userAgent?: string | null;
+  },
 ) {
-  const now = Math.floor(Date.now() / 1000);
-  await env.DB.prepare(
-    "INSERT INTO audit_log (id, user_id, action, resource_type, resource_id, metadata, ip_address, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-  )
-    .bind(
-      randomId(),
-      userId,
-      action,
-      resourceType,
-      resourceId,
-      JSON.stringify(metadata),
-      ip,
-      now,
-    )
-    .run();
-  // Fire webhooks subscribed to this event — best-effort, non-blocking
-  ctx.waitUntil(
-    deliverAdminWebhooks(env, action, {
-      user_id: userId,
-      resource_type: resourceType,
-      resource_id: resourceId,
-      metadata,
-      ip,
-      timestamp: now,
-    }).catch(() => {}),
-  );
+  let actorName = extra?.actorName ?? null;
+  if (!actorName) {
+    const u = await env.DB.prepare("SELECT username FROM users WHERE id = ?")
+      .bind(userId)
+      .first<{ username: string }>();
+    actorName = u?.username ?? null;
+  }
+  await recordAudit(env, ctx, {
+    scope: "platform",
+    scopeId: null,
+    action,
+    actorId: userId,
+    actorName,
+    resourceType,
+    resourceId,
+    resourceName: extra?.resourceName ?? null,
+    ip,
+    userAgent: extra?.userAgent ?? null,
+    metadata,
+  });
 }
 
 // ─── Site Invites ─────────────────────────────────────────────────────────────
@@ -2828,300 +2808,6 @@ app.delete("/oauth-sources/:id", async (c) => {
     c.executionCtx,
   );
   return c.json({ message: "Deleted" });
-});
-
-// ─── Webhooks ────────────────────────────────────────────────────────────────
-
-// Events that can be subscribed to (mirrors audit log actions + wildcard)
-const ALL_WEBHOOK_EVENTS = [
-  "*",
-  "admin.config.update",
-  "admin.user.update",
-  "admin.user.delete",
-  "admin.app.update",
-  "admin.team.delete",
-  "invite.create",
-  "invite.revoke",
-  "oauth_source.create",
-  "oauth_source.update",
-  "oauth_source.delete",
-  "webhook.create",
-  "webhook.update",
-  "webhook.delete",
-] as const;
-
-// List all webhooks (secret omitted)
-app.get("/webhooks", async (c) => {
-  const { results } = await c.env.DB.prepare(
-    "SELECT id, name, url, events, is_active, created_at, updated_at FROM webhooks WHERE user_id IS NULL ORDER BY created_at DESC",
-  ).all<Omit<WebhookRow, "secret" | "created_by">>();
-  return c.json({ webhooks: results });
-});
-
-// Create a webhook
-app.post("/webhooks", async (c) => {
-  const body = await c.req.json<{
-    name: string;
-    url: string;
-    secret?: string;
-    events: string[];
-  }>();
-
-  if (!body.name?.trim() || !body.url?.trim())
-    return c.json({ error: "name and url are required" }, 400);
-
-  const urlErr = validateOutboundUrl(body.url.trim());
-  if (urlErr) return c.json({ error: urlErr }, 400);
-
-  const events = Array.isArray(body.events)
-    ? body.events.filter((e) =>
-        (ALL_WEBHOOK_EVENTS as readonly string[]).includes(e),
-      )
-    : [];
-  const secret = body.secret?.trim() || randomBase64url(32);
-  const storedSecret = await encryptSecret(c.env, secret);
-  const now = Math.floor(Date.now() / 1000);
-  const id = randomId();
-
-  await c.env.DB.prepare(
-    "INSERT INTO webhooks (id, name, url, secret, events, is_active, user_id, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 1, NULL, ?, ?, ?)",
-  )
-    .bind(
-      id,
-      body.name.trim(),
-      body.url.trim(),
-      storedSecret,
-      JSON.stringify(events),
-      c.get("user").id,
-      now,
-      now,
-    )
-    .run();
-
-  await logAudit(
-    c.env,
-    c.get("user").id,
-    "webhook.create",
-    "webhook",
-    id,
-    { name: body.name, url: body.url },
-    getIp(c),
-    c.executionCtx,
-  );
-
-  return c.json(
-    {
-      webhook: {
-        id,
-        name: body.name,
-        url: body.url,
-        secret,
-        events,
-        is_active: 1,
-        created_at: now,
-      },
-    },
-    201,
-  );
-});
-
-// Get one webhook (secret omitted)
-app.get("/webhooks/:id", async (c) => {
-  const wh = await c.env.DB.prepare(
-    "SELECT id, name, url, events, is_active, created_at, updated_at FROM webhooks WHERE id = ? AND user_id IS NULL",
-  )
-    .bind(c.req.param("id"))
-    .first<Omit<WebhookRow, "secret" | "created_by">>();
-  if (!wh) return c.json({ error: "Not found" }, 404);
-  return c.json({ webhook: wh });
-});
-
-// Update a webhook
-app.patch("/webhooks/:id", async (c) => {
-  const existing = await c.env.DB.prepare(
-    "SELECT id FROM webhooks WHERE id = ? AND user_id IS NULL",
-  )
-    .bind(c.req.param("id"))
-    .first();
-  if (!existing) return c.json({ error: "Not found" }, 404);
-
-  const body = await c.req.json<{
-    name?: string;
-    url?: string;
-    secret?: string;
-    events?: string[];
-    is_active?: boolean;
-  }>();
-
-  const sets: string[] = [];
-  const values: unknown[] = [];
-
-  if (body.name !== undefined) {
-    sets.push("name = ?");
-    values.push(body.name.trim());
-  }
-  if (body.url !== undefined) {
-    const urlErr = validateOutboundUrl(body.url.trim());
-    if (urlErr) return c.json({ error: urlErr }, 400);
-    sets.push("url = ?");
-    values.push(body.url.trim());
-  }
-  if (body.secret !== undefined) {
-    sets.push("secret = ?");
-    values.push(await encryptSecret(c.env, body.secret));
-  }
-  if (body.events !== undefined) {
-    const filtered = body.events.filter((e) =>
-      (ALL_WEBHOOK_EVENTS as readonly string[]).includes(e),
-    );
-    sets.push("events = ?");
-    values.push(JSON.stringify(filtered));
-  }
-  if (body.is_active !== undefined) {
-    sets.push("is_active = ?");
-    values.push(body.is_active ? 1 : 0);
-  }
-
-  if (!sets.length) return c.json({ error: "Nothing to update" }, 400);
-
-  sets.push("updated_at = ?");
-  values.push(Math.floor(Date.now() / 1000));
-  values.push(c.req.param("id"));
-
-  await c.env.DB.prepare(`UPDATE webhooks SET ${sets.join(", ")} WHERE id = ?`)
-    .bind(...values)
-    .run();
-
-  await logAudit(
-    c.env,
-    c.get("user").id,
-    "webhook.update",
-    "webhook",
-    c.req.param("id"),
-    body,
-    getIp(c),
-    c.executionCtx,
-  );
-
-  return c.json({ message: "Updated" });
-});
-
-// Delete a webhook
-app.delete("/webhooks/:id", async (c) => {
-  const wh = await c.env.DB.prepare(
-    "SELECT id FROM webhooks WHERE id = ? AND user_id IS NULL",
-  )
-    .bind(c.req.param("id"))
-    .first();
-  if (!wh) return c.json({ error: "Not found" }, 404);
-
-  await c.env.DB.prepare("DELETE FROM webhooks WHERE id = ?")
-    .bind(c.req.param("id"))
-    .run();
-
-  await logAudit(
-    c.env,
-    c.get("user").id,
-    "webhook.delete",
-    "webhook",
-    c.req.param("id"),
-    {},
-    getIp(c),
-    c.executionCtx,
-  );
-  return c.json({ message: "Deleted" });
-});
-
-// Send a test ping to a webhook, record the delivery
-app.post("/webhooks/:id/test", async (c) => {
-  const wh = await c.env.DB.prepare(
-    "SELECT id, url, secret FROM webhooks WHERE id = ? AND user_id IS NULL",
-  )
-    .bind(c.req.param("id"))
-    .first<Pick<WebhookRow, "id" | "url" | "secret">>();
-  if (!wh) return c.json({ error: "Not found" }, 404);
-
-  const now = Math.floor(Date.now() / 1000);
-  const deliveryId = randomId();
-  const payload = JSON.stringify({
-    event: "webhook.test",
-    timestamp: now,
-    data: { message: "Test delivery from Prism" },
-  });
-
-  const signingSecret = (await decryptSecret(c.env, wh.secret)) ?? wh.secret;
-  const sig = await hmacSign(signingSecret, payload);
-  let status: number | null = null;
-  let success = false;
-
-  try {
-    const res = await loggedFetch(c.env, wh.url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Prism-Event": "webhook.test",
-        "X-Prism-Signature": `sha256=${sig}`,
-        "X-Prism-Delivery": deliveryId,
-      },
-      body: payload,
-      signal: AbortSignal.timeout(10_000),
-    });
-    status = res.status;
-    success = status >= 200 && status < 300;
-  } catch {
-    // see /api/user/webhooks/:id/test for why we drop the body
-  }
-
-  await c.env.DB.prepare(
-    "INSERT INTO webhook_deliveries (id, webhook_id, event_type, payload, response_status, response_body, success, delivered_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-  )
-    .bind(
-      deliveryId,
-      wh.id,
-      "webhook.test",
-      payload,
-      status,
-      null,
-      success ? 1 : 0,
-      now,
-    )
-    .run();
-
-  return c.json({ success, status });
-});
-
-// List recent deliveries for a webhook
-app.get("/webhooks/:id/deliveries", async (c) => {
-  const wh = await c.env.DB.prepare(
-    "SELECT id FROM webhooks WHERE id = ? AND user_id IS NULL",
-  )
-    .bind(c.req.param("id"))
-    .first();
-  if (!wh) return c.json({ error: "Not found" }, 404);
-
-  const { results } = await c.env.DB.prepare(
-    "SELECT id, event_type, response_status, success, delivered_at FROM webhook_deliveries WHERE webhook_id = ? ORDER BY delivered_at DESC LIMIT 50",
-  )
-    .bind(c.req.param("id"))
-    .all<
-      Pick<
-        WebhookDeliveryRow,
-        "id" | "event_type" | "response_status" | "success" | "delivered_at"
-      >
-    >();
-
-  return c.json({ deliveries: results });
-});
-
-// Get full payload for a specific delivery
-app.get("/webhooks/:id/deliveries/:deliveryId", async (c) => {
-  const row = await c.env.DB.prepare(
-    "SELECT id, event_type, payload, response_status, response_body, success, delivered_at FROM webhook_deliveries WHERE id = ? AND webhook_id = ?",
-  )
-    .bind(c.req.param("deliveryId"), c.req.param("id"))
-    .first<Omit<WebhookDeliveryRow, "webhook_id">>();
-  if (!row) return c.json({ error: "Not found" }, 404);
-  return c.json({ delivery: row });
 });
 
 export default app;

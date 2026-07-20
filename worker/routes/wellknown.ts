@@ -30,11 +30,6 @@ const SCOPES_SUPPORTED = [
   "admin:invites:read",
   "admin:invites:create",
   "admin:invites:delete",
-  "admin:webhooks:read",
-  "admin:webhooks:write",
-  "admin:webhooks:delete",
-  "webhooks:read",
-  "webhooks:write",
   "offline_access",
 ];
 

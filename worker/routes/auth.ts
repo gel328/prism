@@ -4,6 +4,7 @@ import { Hono } from "hono";
 import type { Context } from "hono";
 import { getConfig, getConfigValue, getJwtSecret } from "../lib/config";
 import { getIp } from "../lib/clientIp";
+import { recordAudit, auditRequestMeta } from "../lib/audit";
 import { clearSessionCookie, setSessionCookie } from "../lib/cookies";
 import {
   hashPassword,
@@ -129,6 +130,25 @@ async function issueSession(
   // without any client JS. Bearer-header callers get the token in the JSON
   // body as before.
   setSessionCookie(c, token, ttlSeconds);
+
+  // Transparent User Control: record every session issuance (login, social
+  // login, 2FA completion, GPG login, registration) in the user's own log.
+  const meta = auditRequestMeta(c);
+  c.executionCtx.waitUntil(
+    recordAudit(c.env, c.executionCtx, {
+      scope: "user",
+      scopeId: user.id,
+      action: "user.login",
+      actorId: user.id,
+      actorName: user.username,
+      resourceType: "session",
+      resourceId: sessionId,
+      resourceName: `@${user.username}`,
+      ip: meta.ip,
+      userAgent: meta.userAgent,
+      metadata: {},
+    }),
+  );
   return token;
 }
 

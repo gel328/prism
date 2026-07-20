@@ -14,6 +14,7 @@ import {
   Dropdown,
   Field,
   Input,
+  Link,
   MessageBar,
   Option,
   Spinner,
@@ -35,6 +36,7 @@ import {
   CopyRegular,
   DeleteRegular,
   DismissRegular,
+  EyeOffRegular,
   PeopleRegular,
   ShieldRegular,
 } from "@fluentui/react-icons";
@@ -47,9 +49,11 @@ import {
   ApiError,
   type AppScopeDefinition,
   type AppScopeAccessRule,
+  type RedirectUri,
 } from "../../lib/api";
 import { useToastMessage } from "../../lib/useToastMessage";
 import { ImageUrlInput } from "../../components/ImageUrlInput";
+import { RedirectUriEditor } from "../../components/RedirectUriEditor";
 import {
   SkeletonFormCard,
   SkeletonTableRows,
@@ -102,8 +106,6 @@ const PLATFORM_SCOPES = [
   "gpg:write",
   "social:read",
   "social:write",
-  "webhooks:read",
-  "webhooks:write",
   "admin:users:read",
   "admin:users:write",
   "admin:users:delete",
@@ -112,9 +114,6 @@ const PLATFORM_SCOPES = [
   "admin:invites:read",
   "admin:invites:create",
   "admin:invites:delete",
-  "admin:webhooks:read",
-  "admin:webhooks:write",
-  "admin:webhooks:delete",
   "site:user:read",
   "site:user:write",
   "site:user:delete",
@@ -1105,7 +1104,7 @@ export function AppDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
 
   const { data, isLoading } = useQuery({
     queryKey: ["app", id],
@@ -1161,7 +1160,7 @@ export function AppDetail() {
     description: string;
     icon_url: string;
     website_url: string;
-    redirect_uris: string;
+    redirect_uris: RedirectUri[];
     allowed_scopes: string[];
     optional_scopes: string[];
     is_public: boolean;
@@ -1171,6 +1170,7 @@ export function AppDetail() {
   const [saving, setSaving] = useState(false);
   const [secretRotating, setSecretRotating] = useState(false);
   const [newSecret, setNewSecret] = useState("");
+  const [rotateConfirmOpen, setRotateConfirmOpen] = useState(false);
   const { message, showMsg } = useToastMessage();
   const [copied, setCopied] = useState<string>("");
 
@@ -1187,7 +1187,7 @@ export function AppDetail() {
       description: app.description,
       icon_url: app.unproxied_icon_url ?? "",
       website_url: app.website_url ?? "",
-      redirect_uris: app.redirect_uris.join("\n"),
+      redirect_uris: app.redirect_uris,
       allowed_scopes: app.allowed_scopes,
       optional_scopes: app.optional_scopes ?? [],
       is_public: app.is_public,
@@ -1206,10 +1206,7 @@ export function AppDetail() {
         description: form.description,
         icon_url: form.icon_url || undefined,
         website_url: form.website_url || undefined,
-        redirect_uris: form.redirect_uris
-          .split("\n")
-          .map((s) => s.trim())
-          .filter(Boolean),
+        redirect_uris: form.redirect_uris,
         allowed_scopes: form.allowed_scopes,
         optional_scopes: form.optional_scopes,
         is_public: form.is_public,
@@ -1226,8 +1223,20 @@ export function AppDetail() {
     }
   };
 
-  const handleRotateSecret = async () => {
+  // First-time generation (no secret yet) is non-destructive, so rotate
+  // straight away. Once a secret already exists, rotating invalidates it and
+  // breaks existing integrations — confirm first.
+  const requestRotateSecret = () => {
+    if (app?.client_secret) {
+      setRotateConfirmOpen(true);
+    } else {
+      void doRotateSecret();
+    }
+  };
+
+  const doRotateSecret = async () => {
     if (!id) return;
+    setRotateConfirmOpen(false);
     setSecretRotating(true);
     try {
       const res = await api.rotateSecret(id);
@@ -1380,18 +1389,11 @@ export function AppDetail() {
                 }
               />
             </Field>
-            <Field
+            <RedirectUriEditor
               label={t("apps.redirectUris")}
-              hint={t("apps.redirectUrisHint")}
-            >
-              <Textarea
-                value={form.redirect_uris}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f!, redirect_uris: e.target.value }))
-                }
-                rows={4}
-              />
-            </Field>
+              value={form.redirect_uris}
+              onChange={(v) => setForm((f) => ({ ...f!, redirect_uris: v }))}
+            />
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               <ScopePickerField
                 label={t("apps.allowedScopes")}
@@ -1547,6 +1549,15 @@ export function AppDetail() {
                   <MessageBar intent="warning" style={{ marginTop: 8 }}>
                     {t("apps.saveSecretWarning")}
                   </MessageBar>
+                  <Button
+                    icon={<EyeOffRegular />}
+                    size="small"
+                    appearance="subtle"
+                    onClick={() => setNewSecret("")}
+                    style={{ marginTop: 8, width: "fit-content" }}
+                  >
+                    {t("apps.hideSecret")}
+                  </Button>
                 </div>
               ) : (
                 <Text style={{ color: tokens.colorNeutralForeground3 }}>
@@ -1555,14 +1566,16 @@ export function AppDetail() {
               )}
               <Button
                 appearance="outline"
-                onClick={handleRotateSecret}
+                onClick={requestRotateSecret}
                 disabled={secretRotating}
                 style={{ marginTop: 8, width: "fit-content" }}
               >
                 {secretRotating ? (
                   <Spinner size="tiny" />
-                ) : (
+                ) : app.client_secret ? (
                   t("apps.rotateSecret")
+                ) : (
+                  t("apps.generateSecret")
                 )}
               </Button>
             </Field>
@@ -1573,6 +1586,7 @@ export function AppDetail() {
               {t("apps.oauthEndpoints")}
             </Text>
             {[
+              ["Well-known", `/.well-known/openid-configuration`],
               ["Authorization", `/api/oauth/authorize`],
               ["Token", `/api/oauth/token`],
               ["UserInfo", `/api/oauth/userinfo`],
@@ -1598,7 +1612,56 @@ export function AppDetail() {
                 </Text>
               </div>
             ))}
+            <div
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                gap: 16,
+                marginTop: 12,
+              }}
+            >
+              <Link
+                href={`${window.location.origin}/.well-known/openid-configuration`}
+                target="_blank"
+                rel="noreferrer"
+              >
+                {t("apps.supportedClaims")}
+              </Link>
+              <Link
+                href={
+                  i18n.language.startsWith("zh")
+                    ? "https://prism.wss.moe/zh/oauth"
+                    : "https://prism.wss.moe/oauth"
+                }
+                target="_blank"
+                rel="noreferrer"
+              >
+                {t("apps.oauthOidcGuide")}
+              </Link>
+            </div>
           </div>
+
+          <Dialog
+            open={rotateConfirmOpen}
+            onOpenChange={(_, d) => setRotateConfirmOpen(d.open)}
+          >
+            <DialogSurface>
+              <DialogBody>
+                <DialogTitle>{t("apps.rotateSecretConfirmTitle")}</DialogTitle>
+                <DialogContent>
+                  {t("apps.rotateSecretConfirmBody")}
+                </DialogContent>
+                <DialogActions>
+                  <Button onClick={() => setRotateConfirmOpen(false)}>
+                    {t("common.cancel")}
+                  </Button>
+                  <Button appearance="primary" onClick={() => doRotateSecret()}>
+                    {t("apps.rotateSecret")}
+                  </Button>
+                </DialogActions>
+              </DialogBody>
+            </DialogSurface>
+          </Dialog>
         </div>
       )}
 

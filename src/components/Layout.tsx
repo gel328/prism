@@ -27,13 +27,13 @@ import {
   HomeRegular,
   KeyRegular,
   LinkRegular,
-  LinkMultipleRegular,
   LockClosedRegular,
   NavigationRegular,
   PeopleRegular,
   PersonRegular,
   SettingsRegular,
   ShieldPersonRegular,
+  ShieldTaskRegular,
   SignOutRegular,
   LocalLanguageRegular,
   WeatherMoonRegular,
@@ -320,6 +320,12 @@ export function Layout() {
           label={t("nav.notifications")}
           onNavigate={closeSidebar}
         />
+        <NavItem
+          to="/audit-log"
+          icon={<ShieldTaskRegular />}
+          label={t("nav.auditLog")}
+          onNavigate={closeSidebar}
+        />
 
         <div className={styles.navSection}>{t("nav.developer")}</div>
         <NavItem
@@ -344,12 +350,6 @@ export function Layout() {
           to="/tokens"
           icon={<KeyRegular />}
           label={t("nav.tokens")}
-          onNavigate={closeSidebar}
-        />
-        <NavItem
-          to="/webhooks"
-          icon={<LinkMultipleRegular />}
-          label={t("nav.webhooks")}
           onNavigate={closeSidebar}
         />
 

@@ -41,7 +41,8 @@ export async function validateSiteInvite(
 
   const now = Math.floor(Date.now() / 1000);
   const inviteLookup = await hashLookupCandidate(env, token);
-  if (!inviteLookup) return { ok: false, error: "Invalid invite token", status: 403 };
+  if (!inviteLookup)
+    return { ok: false, error: "Invalid invite token", status: 403 };
 
   const invite = await env.DB.prepare(
     "SELECT * FROM site_invites WHERE token = ? OR token = ?",

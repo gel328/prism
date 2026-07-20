@@ -45,8 +45,8 @@ features:
     details: Users register and manage their own OAuth apps. Apps can publish named permission scopes that other apps request via the standard consent screen.
 
   - icon: 🔔
-    title: Webhooks & Notifications
-    details: User and admin webhooks, app event streams (Webhook / SSE / WebSocket), plus per-event email and Telegram notifications with a rule-engine for fine-grained routing.
+    title: Audit Logs & Notifications
+    details: Per-user, per-team, and platform audit logs (Transparent Control) with scoped Discord / Telegram / General webhooks, app event streams (SSE / WebSocket), plus per-event email and Telegram notifications with a rule-engine for fine-grained routing.
 
   - icon: 🪪
     title: Public Profiles

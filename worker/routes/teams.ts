@@ -34,9 +34,39 @@ import {
   mergeWithSiteFloor,
   unmetRequirements,
 } from "../lib/teamRequirements";
+import { recordAudit, auditRequestMeta } from "../lib/audit";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
 const app = new Hono<AppEnv>();
+
+// Record a team-scope audit event (Transparent Team Control).
+function auditTeam(
+  c: import("hono").Context<AppEnv>,
+  teamId: string,
+  action: string,
+  opts: {
+    resourceType?: string;
+    resourceId?: string | null;
+    resourceName?: string | null;
+    metadata?: unknown;
+  } = {},
+): void {
+  const actor = c.get("user");
+  const meta = auditRequestMeta(c);
+  void recordAudit(c.env, c.executionCtx, {
+    scope: "team",
+    scopeId: teamId,
+    action,
+    actorId: actor.id,
+    actorName: actor.username,
+    resourceType: opts.resourceType ?? "team",
+    resourceId: opts.resourceId ?? teamId,
+    resourceName: opts.resourceName ?? null,
+    ip: meta.ip,
+    userAgent: meta.userAgent,
+    metadata: opts.metadata ?? {},
+  });
+}
 
 // ─── Serialization ────────────────────────────────────────────────────────────
 
@@ -738,6 +768,11 @@ app.post("/", async (c) => {
     .bind(id)
     .first<TeamRow>();
 
+  auditTeam(c, id, "team.create", {
+    resourceName: body.name.trim(),
+    metadata: { parent_team_id: parentId },
+  });
+
   return c.json({ team: { ...serializeTeamRow(team!), role: "owner" } }, 201);
 });
 
@@ -1091,6 +1126,12 @@ app.patch("/:id", async (c) => {
   const updated = await c.env.DB.prepare("SELECT * FROM teams WHERE id = ?")
     .bind(id)
     .first<TeamRow>();
+
+  auditTeam(c, id, "team.update", {
+    resourceName: updated?.name ?? team.name,
+    metadata: { fields: updates.map((u) => u.split(" = ")[0]) },
+  });
+
   return c.json({
     team: { ...serializeTeamRow(updated!), my_role: member.role },
   });
@@ -1107,6 +1148,8 @@ app.delete("/:id", async (c) => {
   if (!eff) return c.json({ error: "Not found" }, 404);
   if (!hasRole(eff.role, "owner"))
     return c.json({ error: "Only the team owner can delete the team" }, 403);
+
+  auditTeam(c, id, "team.delete");
 
   await dissolveTeam(c.env.DB, id, user.id);
 
@@ -1166,6 +1209,13 @@ app.post("/:id/members", async (c) => {
     .bind(id, target.id, role, Math.floor(Date.now() / 1000))
     .run();
 
+  auditTeam(c, id, "team.member.add", {
+    resourceType: "user",
+    resourceId: target.id,
+    resourceName: `@${body.username}`,
+    metadata: { role },
+  });
+
   // Notify the added user
   const teamRow = await c.env.DB.prepare("SELECT name FROM teams WHERE id = ?")
     .bind(id)
@@ -1221,6 +1271,12 @@ app.patch("/:id/members/:userId", async (c) => {
   )
     .bind(body.role, id, targetUserId)
     .run();
+
+  auditTeam(c, id, "team.member.role_change", {
+    resourceType: "user",
+    resourceId: targetUserId,
+    metadata: { from: target.role, to: body.role },
+  });
 
   return c.json({ message: "Role updated" });
 });
@@ -1278,6 +1334,12 @@ app.delete("/:id/members/:userId", async (c) => {
     .bind(id, targetUserId)
     .run();
 
+  auditTeam(c, id, isSelf ? "team.member.leave" : "team.member.remove", {
+    resourceType: "user",
+    resourceId: targetUserId,
+    metadata: { role: target.role },
+  });
+
   // Notify the removed user (only if it wasn't a self-leave)
   if (!isSelf) {
     const teamRow = await c.env.DB.prepare(
@@ -1334,6 +1396,12 @@ app.post("/:id/transfer-ownership", async (c) => {
       id,
     ),
   ]);
+
+  auditTeam(c, id, "team.ownership.transfer", {
+    resourceType: "user",
+    resourceId: body.user_id,
+    metadata: { from: user.id, to: body.user_id },
+  });
 
   return c.json({ message: "Ownership transferred" });
 });

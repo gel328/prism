@@ -23,6 +23,24 @@ https://your-prism-domain/.well-known/openid-configuration
 
 如果你的应用完全运行在浏览器端（没有服务端来保密密钥），请启用**公共客户端**。公共客户端必须使用 PKCE，没有客户端密钥。
 
+### 重定向 URI 匹配
+
+每个注册的重定向 URI 都带有一个**匹配方式**：
+
+| 类型     | 行为                                                                  |
+| -------- | --------------------------------------------------------------------- |
+| `等于`   | URL 规范化后精确匹配（默认，最安全）。                                |
+| `通配符` | 使用 `*` 代表任意长度字符的 glob，例如 `https://example.com/*`。      |
+| `正则`   | 对整个候选 URI 进行匹配的正则表达式，例如 `https://example\.com/.*`。 |
+
+无论使用哪种匹配方式，每个候选 URI 都会先经过安全校验：scheme 必须为 `https:`（loopback 主机可用 `http:`），且不得包含 userinfo（`user:pass@…`）或 fragment（`#…`）。
+
+**空列表（学习首次使用）。** 如果重定向 URI 列表留空，应用会「学习」第一个成功使用的重定向 URI，将其固定为 `等于` 条目，此后锁定为该值。
+
+::: warning
+值为 `.*` 的 `正则` 会允许**任意**重定向 URI，包括攻击者控制的地址。请仅在完全理解安全风险的情况下使用。
+:::
+
 ## 授权码流程（含 PKCE）
 
 ```mermaid
@@ -64,38 +82,33 @@ code_challenge = BASE64URL(SHA-256(ASCII(code_verifier)))
 
 #### 权限范围
 
-| 范围                    | 包含的声明 / 授权的访问                        |
-| ----------------------- | ---------------------------------------------- |
-| `openid`                | `sub`、`iss`、`aud`、`iat`、`exp`（OIDC 必须） |
-| `profile`               | `name`、`preferred_username`、`picture`        |
-| `profile:write`         | 更新用户的个人资料（名称、头像）               |
-| `email`                 | `email`、`email_verified`                      |
-| `apps:read`             | 用户拥有的应用列表                             |
-| `apps:write`            | 创建、更新和删除用户的应用                     |
-| `teams:read`            | 列出用户的团队                                 |
-| `teams:write`           | 更新团队设置和管理成员                         |
-| `teams:create`          | 创建新团队                                     |
-| `teams:delete`          | 删除团队                                       |
-| `domains:read`          | 列出用户的自定义域名                           |
-| `domains:write`         | 添加和删除自定义域名                           |
-| `gpg:read`              | 列出用户已注册的 GPG 公钥                      |
-| `gpg:write`             | 添加或删除用户的 GPG 公钥                      |
-| `social:read`           | 列出用户已关联的社交提供商账号                 |
-| `social:write`          | 断开社交提供商账号关联                         |
-| `webhooks:read`         | 列出用户的 Webhook                             |
-| `webhooks:write`        | 创建、更新和删除 Webhook                       |
-| `admin:users:read`      | 读取所有用户账号（仅限管理员）                 |
-| `admin:users:write`     | 修改用户账号（仅限管理员）                     |
-| `admin:users:delete`    | 删除用户账号（仅限管理员）                     |
-| `admin:config:read`     | 读取实例配置（仅限管理员）                     |
-| `admin:config:write`    | 更新实例配置（仅限管理员）                     |
-| `admin:invites:read`    | 列出邀请（仅限管理员）                         |
-| `admin:invites:create`  | 创建邀请（仅限管理员）                         |
-| `admin:invites:delete`  | 删除邀请（仅限管理员）                         |
-| `admin:webhooks:read`   | 列出实例级别的 Webhook（仅限管理员）           |
-| `admin:webhooks:write`  | 创建和更新实例级别的 Webhook（仅限管理员）     |
-| `admin:webhooks:delete` | 删除实例级别的 Webhook（仅限管理员）           |
-| `offline_access`        | 启用刷新令牌颁发                               |
+| 范围                   | 包含的声明 / 授权的访问                        |
+| ---------------------- | ---------------------------------------------- |
+| `openid`               | `sub`、`iss`、`aud`、`iat`、`exp`（OIDC 必须） |
+| `profile`              | `name`、`preferred_username`、`picture`        |
+| `profile:write`        | 更新用户的个人资料（名称、头像）               |
+| `email`                | `email`、`email_verified`                      |
+| `apps:read`            | 用户拥有的应用列表                             |
+| `apps:write`           | 创建、更新和删除用户的应用                     |
+| `teams:read`           | 列出用户的团队                                 |
+| `teams:write`          | 更新团队设置和管理成员                         |
+| `teams:create`         | 创建新团队                                     |
+| `teams:delete`         | 删除团队                                       |
+| `domains:read`         | 列出用户的自定义域名                           |
+| `domains:write`        | 添加和删除自定义域名                           |
+| `gpg:read`             | 列出用户已注册的 GPG 公钥                      |
+| `gpg:write`            | 添加或删除用户的 GPG 公钥                      |
+| `social:read`          | 列出用户已关联的社交提供商账号                 |
+| `social:write`         | 断开社交提供商账号关联                         |
+| `admin:users:read`     | 读取所有用户账号（仅限管理员）                 |
+| `admin:users:write`    | 修改用户账号（仅限管理员）                     |
+| `admin:users:delete`   | 删除用户账号（仅限管理员）                     |
+| `admin:config:read`    | 读取实例配置（仅限管理员）                     |
+| `admin:config:write`   | 更新实例配置（仅限管理员）                     |
+| `admin:invites:read`   | 列出邀请（仅限管理员）                         |
+| `admin:invites:create` | 创建邀请（仅限管理员）                         |
+| `admin:invites:delete` | 删除邀请（仅限管理员）                         |
+| `offline_access`       | 启用刷新令牌颁发                               |
 
 #### 团队相关 scope —— 三个层级
 
