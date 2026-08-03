@@ -1319,7 +1319,6 @@ app.delete("/:id", async (c) => {
   return c.json({ message: "Team deleted" });
 });
 
-
 // ─── Member listing ───────────────────────────────────────────────────────────
 
 /** Rows returned per member page. The team detail response embeds the first
@@ -1467,14 +1466,14 @@ app.get("/:id/members", async (c) => {
   const result = await listTeamMembers(c.env.DB, c.env.APP_URL, id, {
     page,
     limit,
-    query: c.req.query("q")?.trim() || undefined,
+    // Capped: the term feeds two LIKEs over the member join, and an
+    // unbounded string is a cheap way to make that expensive.
+    query: c.req.query("q")?.trim().slice(0, 64) || undefined,
     group: c.req.query("group")?.trim() || undefined,
   });
 
   return c.json(result);
 });
-
-
 
 // Add member by username
 app.post("/:id/members", async (c) => {

@@ -784,7 +784,8 @@
     "allGroups": "全部身份组",
     "noMembersMatch": "没有匹配的成员。",
     "memberMatchCount": "匹配 {{count}} 人",
-    "memberPageOf": "第 {{page}} / {{pages}} 页"
+    "memberPageOf": "第 {{page}} / {{pages}} 页",
+    "groupSlugNeeded": "请自行填写标识 —— 无法从该名称自动生成。"
   },
   "connections": {
     "title": "关联账号",

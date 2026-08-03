@@ -784,7 +784,8 @@
     "allGroups": "All groups",
     "noMembersMatch": "No members match your search.",
     "memberMatchCount": "{{count}} matching",
-    "memberPageOf": "Page {{page}} of {{pages}}"
+    "memberPageOf": "Page {{page}} of {{pages}}",
+    "groupSlugNeeded": "Type an identifier — it can't be derived from this name."
   },
   "connections": {
     "title": "Linked Accounts",

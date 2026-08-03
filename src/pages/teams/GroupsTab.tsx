@@ -48,7 +48,12 @@ const useStyles = makeStyles({
 });
 
 /** Derive a slug suggestion from the display name so the common case needs
- *  no thought — the field stays editable because the slug is permanent. */
+ *  no thought — the field stays editable because the slug is permanent.
+ *
+ *  Returns "" for a name with no ASCII alphanumerics at all (a wholly
+ *  Chinese or Japanese name, say). The caller surfaces that as "type one
+ *  yourself" rather than letting the form submit an empty required field and
+ *  come back with a server-side "slug is required" the user cannot act on. */
 function slugify(name: string): string {
   return name
     .toLowerCase()
@@ -432,6 +437,11 @@ function GroupFormDialog({
   const assignablePayload =
     form.assignable === "" ? null : form.assignable === "yes";
 
+  // A name with no ASCII alphanumerics derives nothing usable, so the user
+  // has to supply the identifier themselves.
+  const effectiveSlug = slugTouched ? form.slug.trim() : slugify(form.name);
+  const needsManualSlug = !isEdit && form.name.trim() !== "" && !effectiveSlug;
+
   const handleSave = async () => {
     setSaving(true);
     try {
@@ -444,7 +454,7 @@ function GroupFormDialog({
         });
       } else {
         await api.createTeamGroup(teamId, {
-          slug: (slugTouched ? form.slug : slugify(form.name)).trim(),
+          slug: effectiveSlug,
           name: form.name.trim(),
           description: form.description.trim(),
           color: form.color || null,
@@ -488,6 +498,10 @@ function GroupFormDialog({
               </Field>
               <Field
                 label={t("teams.groupSlugField")}
+                validationState={needsManualSlug ? "warning" : undefined}
+                validationMessage={
+                  needsManualSlug ? t("teams.groupSlugNeeded") : undefined
+                }
                 hint={
                   isEdit
                     ? t("teams.groupSlugImmutableHint")
@@ -557,7 +571,7 @@ function GroupFormDialog({
             <Button
               appearance="primary"
               onClick={handleSave}
-              disabled={saving || !form.name.trim()}
+              disabled={saving || !form.name.trim() || needsManualSlug}
             >
               {saving ? <Spinner size="tiny" /> : t("common.save")}
             </Button>

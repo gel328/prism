@@ -25,21 +25,51 @@ interface DoomedAccount {
   username: string;
 }
 
-/** Delete one batch, announcing each account first so downstream apps can
- *  drop the subject id instead of leaving it dangling. */
+/**
+ * Delete one batch, announcing each account so downstream apps can drop the
+ * subject id instead of leaving it dangling.
+ *
+ * The DELETE re-asserts the condition that made the row a candidate. Between
+ * the SELECT that picked it and this statement — a window of up to a batch's
+ * worth of audit writes — the holder may have finished joining, or converted
+ * to an unrestricted account. Deleting on id alone would destroy both, and
+ * the second case would quietly undo the one guarantee conversion makes.
+ *
+ * Memberships are therefore read *before* the delete but the audit event is
+ * emitted *after*, and only if a row actually went: announcing a deletion
+ * that then did not happen would have downstream apps drop a live user.
+ */
 async function deleteAccounts(
   env: Env,
   ctx: { waitUntil: (p: Promise<unknown>) => void },
   accounts: DoomedAccount[],
   cause: "self" | "admin" | "team_dissolved",
-): Promise<void> {
+  /** Extra predicate the row must still satisfy, ANDed onto the delete. */
+  stillEligible: string,
+): Promise<number> {
+  let deleted = 0;
   for (const account of accounts) {
-    // Before the delete — the membership rows drive the team fan-out.
-    await recordAccountDeletion(env, ctx, account, { cause });
-    await env.DB.prepare("DELETE FROM users WHERE id = ?")
+    const { results } = await env.DB.prepare(
+      "SELECT team_id FROM team_members WHERE user_id = ?",
+    )
+      .bind(account.id)
+      .all<{ team_id: string }>()
+      .catch(() => ({ results: [] as { team_id: string }[] }));
+
+    const res = await env.DB.prepare(
+      `DELETE FROM users WHERE id = ? AND ${stillEligible}`,
+    )
       .bind(account.id)
       .run();
+    if (!res.meta.changes) continue;
+
+    deleted++;
+    await recordAccountDeletion(env, ctx, account, {
+      cause,
+      teamIds: results.map((r) => r.team_id),
+    });
   }
+  return deleted;
 }
 
 /**
@@ -68,8 +98,15 @@ export async function reapPendingRegistrations(
     .bind(cutoff, BATCH_SIZE)
     .all<DoomedAccount>();
 
-  await deleteAccounts(env, ctx, results, "admin");
-  return results.length;
+  return deleteAccounts(
+    env,
+    ctx,
+    results,
+    "admin",
+    // Still restricted, still unfinished — someone who completed the join
+    // while this batch was in flight is no longer a candidate.
+    "origin_team_id IS NOT NULL AND converted_at IS NULL AND origin_join_completed = 0",
+  );
 }
 
 /**
@@ -115,8 +152,15 @@ export async function reapDissolvedTeams(
       .all<DoomedAccount>();
 
     if (accounts.length > 0) {
-      await deleteAccounts(env, ctx, accounts, "team_dissolved");
-      deleted += accounts.length;
+      // Converting mid-batch takes the account out of the doomed set — that
+      // is the whole promise conversion makes.
+      deleted += await deleteAccounts(
+        env,
+        ctx,
+        accounts,
+        "team_dissolved",
+        "converted_at IS NULL",
+      );
       // Leave the team row alone — more accounts remain for the next tick.
       continue;
     }

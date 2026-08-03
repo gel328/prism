@@ -140,18 +140,24 @@ export async function recordAccountDeletion(
     cause: "self" | "admin" | "team_dissolved";
     ip?: string | null;
     userAgent?: string | null;
+    /** Memberships read before the row was deleted. Callers that must delete
+     *  first — because the delete is conditional and may not happen — read
+     *  them up front and pass them here. */
+    teamIds?: string[];
   },
 ): Promise<void> {
-  let teamIds: string[] = [];
-  try {
-    const { results } = await env.DB.prepare(
-      "SELECT team_id FROM team_members WHERE user_id = ?",
-    )
-      .bind(user.id)
-      .all<{ team_id: string }>();
-    teamIds = results.map((r) => r.team_id);
-  } catch {
-    // A failed lookup must not block the deletion it is describing.
+  let teamIds: string[] = opts.teamIds ?? [];
+  if (!opts.teamIds) {
+    try {
+      const { results } = await env.DB.prepare(
+        "SELECT team_id FROM team_members WHERE user_id = ?",
+      )
+        .bind(user.id)
+        .all<{ team_id: string }>();
+      teamIds = results.map((r) => r.team_id);
+    } catch {
+      // A failed lookup must not block the deletion it is describing.
+    }
   }
 
   const base = {
