@@ -82,7 +82,11 @@ const VALID_PLATFORM_SCOPES = new Set([
   "offline_access",
 ]);
 
-function isAllowedScope(s: string): boolean {
+/** Exported so the team-app endpoint validates scopes with exactly this
+ *  function rather than its own list — the two drifted once already, and a
+ *  five-entry hard-coded copy silently dropped every team and delegation
+ *  scope from apps created under a team. */
+export function isAllowedScope(s: string): boolean {
   if (VALID_PLATFORM_SCOPES.has(s)) return true;
   const parsed = parseAppScope(s);
   // inner scope: either a platform scope or any non-empty identifier (app-defined)

@@ -18,7 +18,12 @@ import {
   proxyImageUrl,
   sweepOrphanedImageProxyMappings,
 } from "../lib/proxyImage";
-import { validateRedirectUriForRegistration } from "../lib/redirectUri";
+import { isAllowedScope } from "./apps";
+import {
+  parseRedirectUris,
+  validateRedirectUriEntry,
+  type RedirectUriEntry,
+} from "../lib/redirectUri";
 import type { DomainRow } from "../types";
 import { getConfig } from "../lib/config";
 import { sendEmail } from "../lib/email";
@@ -2829,7 +2834,12 @@ app.post("/:id/apps", async (c) => {
     name: string;
     description?: string;
     website_url?: string;
-    redirect_uris: string[];
+    // Entry objects since migration 0051. This endpoint kept accepting bare
+    // strings long after apps.ts moved on, so the dashboard — which sends
+    // entries — could not create a team app at all: every value failed the
+    // string-only validator with "missing", and the error interpolated the
+    // object as [object Object].
+    redirect_uris: RedirectUriEntry[];
     allowed_scopes?: string[];
     is_public?: boolean;
   }>();
@@ -2838,17 +2848,28 @@ app.post("/:id/apps", async (c) => {
   if (!body.redirect_uris?.length)
     return c.json({ error: "At least one redirect_uri required" }, 400);
 
-  for (const uri of body.redirect_uris) {
-    const reason = validateRedirectUriForRegistration(uri);
+  // parseRedirectUris tolerates the legacy string form too, so API clients
+  // written against the old shape keep working.
+  const redirectUris = parseRedirectUris(JSON.stringify(body.redirect_uris));
+  if (!redirectUris.length)
+    return c.json({ error: "At least one redirect_uri required" }, 400);
+  for (const entry of redirectUris) {
+    const reason = validateRedirectUriEntry(entry);
     if (reason)
-      return c.json({ error: `Invalid redirect_uri (${reason}): ${uri}` }, 400);
+      return c.json(
+        { error: `Invalid redirect_uri (${reason}): ${entry.value}` },
+        400,
+      );
   }
 
+  // Was a five-entry hard-coded allow-list, which silently dropped every
+  // other scope — `teams:read`, the whole `team:*` family, `app:*` delegation,
+  // domains, gpg, social. Silently: the request still returned 201 and the
+  // app simply came out without them. Share the validator apps.ts uses so the
+  // two paths cannot drift again.
   const allowedScopes = (
     body.allowed_scopes ?? ["openid", "profile", "email"]
-  ).filter((s) =>
-    ["openid", "profile", "email", "apps:read", "offline_access"].includes(s),
-  );
+  ).filter(isAllowedScope);
 
   // owner_id points at the team-user row (id == teams.id) when teams have
   // been migrated to the unified user model. Falls back to the creator if
@@ -2880,7 +2901,7 @@ app.post("/:id/apps", async (c) => {
       body.website_url ?? null,
       clientId,
       clientSecret,
-      JSON.stringify(body.redirect_uris),
+      JSON.stringify(redirectUris),
       JSON.stringify(allowedScopes),
       body.is_public ? 1 : 0,
       now,
@@ -2895,7 +2916,7 @@ app.post("/:id/apps", async (c) => {
     c.env.DB,
     user.id,
     body.website_url ?? null,
-    JSON.stringify(body.redirect_uris),
+    JSON.stringify(redirectUris),
   );
   return c.json(
     { app: await fullApp(c.env.APP_URL, c.env.DB, row!, isVerified) },
@@ -2996,7 +3017,10 @@ async function safeApp(
     unproxied_icon_url: row.icon_url,
     website_url: row.website_url,
     client_id: row.client_id,
-    redirect_uris: JSON.parse(row.redirect_uris) as string[],
+    // parseRedirectUris, not a bare JSON.parse cast: the column holds entry
+    // objects since 0051, and typing it as string[] here made the team app
+    // list disagree with the personal one for the same row.
+    redirect_uris: parseRedirectUris(row.redirect_uris),
     allowed_scopes: JSON.parse(row.allowed_scopes) as string[],
     is_public: row.is_public === 1,
     is_active: row.is_active === 1,
