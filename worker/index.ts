@@ -9,6 +9,7 @@ import type { Variables } from "./types";
 import { requestLogger } from "./lib/logger";
 import { runReverification } from "./cron/reverify";
 import { runImapPoll } from "./cron/imap-poll";
+import { sweepExpiredSessions } from "./cron/sessions";
 import { sweepExpiredPowUsed } from "./lib/pow";
 import { purgeAppEventQueue } from "./lib/app-events";
 import { sweepOrphanedImageProxyMappings } from "./lib/proxyImage";
@@ -116,6 +117,7 @@ export default {
     ctx.waitUntil(runImapPoll(env, env.KV_CACHE));
     ctx.waitUntil(purgeAppEventQueue(env.DB).catch(() => {}));
     ctx.waitUntil(sweepExpiredPowUsed(env.DB).catch(() => {}));
+    ctx.waitUntil(sweepExpiredSessions(env.DB).catch(() => {}));
     ctx.waitUntil(sweepOrphanedImageProxyMappings(env.DB).catch(() => {}));
     // Both of these do a bounded slice per tick and pick up where they left
     // off — a team with thousands of invite-registered accounts is cleared

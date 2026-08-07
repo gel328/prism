@@ -7,6 +7,7 @@
 
 import type { MiddlewareHandler } from "hono";
 import type { Variables } from "../types";
+import { geoJson } from "./geo";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
 
@@ -335,10 +336,13 @@ export const requestLogger: MiddlewareHandler<AppEnv> = async (c, next) => {
 
   const id = crypto.randomUUID();
   const createdAt = Math.floor(Date.now() / 1000);
+  // Same Cloudflare edge geolocation used for sessions/audit, so the admin log
+  // viewer can show where each request came from, not just the raw IP.
+  const geo = geoJson(c);
 
   c.executionCtx.waitUntil(
     c.env.DB.prepare(
-      "INSERT INTO request_logs (id, method, path, status, duration_ms, ip_address, user_agent, user_id, details, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO request_logs (id, method, path, status, duration_ms, ip_address, user_agent, user_id, ip_geo, details, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
       .bind(
         id,
@@ -349,6 +353,7 @@ export const requestLogger: MiddlewareHandler<AppEnv> = async (c, next) => {
         ip,
         userAgent,
         userId,
+        geo,
         details,
         createdAt,
       )

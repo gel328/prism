@@ -242,9 +242,23 @@ description: Prism REST API — 认证、OAuth、应用、团队、域名、GPG�
 
 ## 会话
 
-### `GET /api/auth/sessions` / `DELETE /api/auth/sessions/:id`
+### `GET /api/auth/sessions`
 
-列出和撤销当前用户的活跃会话。
+列出当前用户的活跃（未过期）会话。已过期的行会被排除，并由定时任务清理，因此只会返回仍然有效的会话。
+
+每个会话包含其创建来源 IP，以及 `ip_geo`：一个 JSON 字符串，保存该 IP 的完整 Cloudflare 属地信息（continent、country、region、city、postalCode、经纬度、timezone、colo、asn、org 等）；不可用时为 `null`（例如本地开发环境）。
+
+### `GET /api/auth/sessions/:id/ips`
+
+该会话认证过的所有不同 IP，按最近出现排序。每条包含 IP、`geo`（同样是完整 Cloudflare 属地 JSON 字符串）以及 `first_seen` / `last_seen` 时间戳。若会话不属于调用者则返回 404。
+
+### `DELETE /api/auth/sessions/:id`
+
+按 id 撤销单个会话。
+
+### `DELETE /api/auth/sessions`
+
+撤销除当前会话外的所有会话（“登出其他所有设备”）。返回 `{ "revoked": <数量> }`。
 
 ## 用户
 

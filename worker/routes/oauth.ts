@@ -588,6 +588,7 @@ app.delete("/consents/:client_id", requireAuth, async (c) => {
         resourceName: appRow.name,
         ip: meta.ip,
         userAgent: meta.userAgent,
+        geo: meta.geo,
         metadata: { client_id: clientId },
       }),
     );
@@ -1199,6 +1200,7 @@ app.post("/authorize", requireAuth, async (c) => {
         resourceName: oauthApp.name,
         ip: meta.ip,
         userAgent: meta.userAgent,
+        geo: meta.geo,
         metadata: { scopes: boundScopes, client_id: oauthApp.client_id },
       },
     ];
@@ -1211,6 +1213,7 @@ app.post("/authorize", requireAuth, async (c) => {
       resourceName: oauthApp.name,
       ip: meta.ip,
       userAgent: meta.userAgent,
+      geo: meta.geo,
       metadata: { scopes: boundScopes, user_id: user.id },
     };
     if (oauthApp.team_id)

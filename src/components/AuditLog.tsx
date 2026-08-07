@@ -34,6 +34,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api, type AuditEvent } from "../lib/api";
 import { maskIp, parseClient } from "../lib/auditFormat";
+import { formatIpGeo } from "../lib/geo";
 import { AuditWebhooks } from "./AuditWebhooks";
 
 const useStyles = makeStyles({
@@ -318,7 +319,14 @@ export function AuditLog({ base }: { base: string }) {
                     )}
                   </td>
                   <td className={styles.td}>
-                    <Tooltip content={ev.ip ?? "—"} relationship="label">
+                    <Tooltip
+                      content={
+                        formatIpGeo(ev.ip_geo)
+                          ? `${ev.ip ?? "—"} · ${formatIpGeo(ev.ip_geo)}`
+                          : (ev.ip ?? "—")
+                      }
+                      relationship="label"
+                    >
                       <Text className={styles.mono}>{maskIp(ev.ip)}</Text>
                     </Tooltip>
                   </td>
@@ -417,6 +425,7 @@ function InspectBody({ event }: { event: AuditEvent }) {
         : "—",
     ],
     [t("audit.colIp"), event.ip ?? "—"],
+    [t("audit.colLocation"), formatIpGeo(event.ip_geo) || "—"],
     [t("audit.colClient"), event.user_agent ?? "—"],
   ];
   let metadata = event.metadata;

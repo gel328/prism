@@ -108,6 +108,7 @@ app.post("/", async (c) => {
       resourceName: domain,
       ip: meta.ip,
       userAgent: meta.userAgent,
+      geo: meta.geo,
       metadata: { domain },
     });
   }
@@ -209,6 +210,7 @@ app.post("/:id/verify", async (c) => {
         resourceName: row.domain,
         ip: meta.ip,
         userAgent: meta.userAgent,
+        geo: meta.geo,
         metadata: { domain: row.domain, verification_method: succeededMethod },
       });
     }
@@ -377,6 +379,7 @@ app.delete("/:id", async (c) => {
       resourceName: row.domain,
       ip: meta.ip,
       userAgent: meta.userAgent,
+      geo: meta.geo,
       metadata: { domain: row.domain },
     });
   }

@@ -21,6 +21,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api } from "../../lib/api";
+import { formatIpGeo } from "../../lib/geo";
 import { SkeletonTableRows } from "../../components/Skeletons";
 
 const useStyles = makeStyles({
@@ -34,6 +35,7 @@ type LoginError = {
   error_code: string;
   identifier: string | null;
   ip_address: string | null;
+  ip_geo: string | null;
   user_agent: string | null;
   created_at: number;
 };
@@ -211,6 +213,9 @@ export function AdminLoginErrors() {
                   {t("admin.loginErrors.ipHeader")}
                 </TableHeaderCell>
                 <TableHeaderCell>
+                  {t("admin.loginErrors.locationHeader")}
+                </TableHeaderCell>
+                <TableHeaderCell>
                   {t("admin.loginErrors.userAgentHeader")}
                 </TableHeaderCell>
                 <TableHeaderCell>
@@ -222,7 +227,7 @@ export function AdminLoginErrors() {
               {errors.length === 0 ? (
                 <TableRow>
                   <TableCell
-                    colSpan={6}
+                    colSpan={7}
                     style={{
                       textAlign: "center",
                       color: tokens.colorNeutralForeground3,
@@ -261,6 +266,9 @@ export function AdminLoginErrors() {
                       }}
                     >
                       {err.ip_address ?? "—"}
+                    </TableCell>
+                    <TableCell style={{ fontSize: 12, whiteSpace: "nowrap" }}>
+                      {formatIpGeo(err.ip_geo) || "—"}
                     </TableCell>
                     <TableCell
                       style={{

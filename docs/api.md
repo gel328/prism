@@ -267,9 +267,31 @@ Request/response shapes match the session-auth equivalents.
 
 ## Sessions
 
-### `GET /api/auth/sessions` / `DELETE /api/auth/sessions/:id`
+### `GET /api/auth/sessions`
 
-List and revoke active sessions for the authenticated user.
+List the authenticated user's active (non-expired) sessions. Expired rows are
+excluded and swept by a cron task, so this only ever returns live sessions.
+
+Each session includes the IP it was created from plus `ip_geo`: a JSON string
+holding the full Cloudflare geolocation for that IP (continent, country,
+region, city, postalCode, latitude/longitude, timezone, colo, asn, org, …),
+or `null` when unavailable (e.g. local development).
+
+### `GET /api/auth/sessions/:id/ips`
+
+Every distinct IP the given session has authenticated from, most recent first.
+Each entry carries the IP, its `geo` (the same full Cloudflare geolocation JSON
+string), and `first_seen` / `last_seen` timestamps. 404 if the session does not
+belong to the caller.
+
+### `DELETE /api/auth/sessions/:id`
+
+Revoke a single session by id.
+
+### `DELETE /api/auth/sessions`
+
+Revoke every session **except** the current one ("sign out everywhere else").
+Returns `{ "revoked": <count> }`.
 
 ## User
 

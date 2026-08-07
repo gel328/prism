@@ -1511,7 +1511,7 @@ function auditAppLifecycle(
   c: {
     env: Env;
     executionCtx: ExecutionContext;
-    req: { header: (h: string) => string | undefined };
+    req: { header: (h: string) => string | undefined; raw: Request };
     get: (k: "user") => { id: string; username: string };
   },
   action: string,
@@ -1528,6 +1528,7 @@ function auditAppLifecycle(
     resourceName: app.name,
     ip: meta.ip,
     userAgent: meta.userAgent,
+    geo: meta.geo,
     metadata: { name: app.name },
   };
   const events: AuditInput[] = [

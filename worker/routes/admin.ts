@@ -8,6 +8,7 @@ import {
   setConfigValues,
 } from "../lib/config";
 import { getIp } from "../lib/clientIp";
+import { formatGeoLabel } from "../lib/geo";
 import {
   SENSITIVE_CONFIG_KEYS,
   encryptSecret,
@@ -940,9 +941,9 @@ app.get("/users/:id", async (c) => {
       .bind(id)
       .all(),
     c.env.DB.prepare(
-      "SELECT id, user_agent, ip_address, created_at, expires_at FROM sessions WHERE user_id = ?",
+      "SELECT id, user_agent, ip_address, created_at, expires_at FROM sessions WHERE user_id = ? AND expires_at > ?",
     )
-      .bind(id)
+      .bind(id, Math.floor(Date.now() / 1000))
       .all(),
   ]);
 
@@ -2279,7 +2280,7 @@ app.get("/request-logs", async (c) => {
 
   const [rows, count] = await Promise.all([
     c.env.DB.prepare(
-      `SELECT id, method, path, status, duration_ms, ip_address, user_agent, user_id, created_at FROM request_logs ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`,
+      `SELECT id, method, path, status, duration_ms, ip_address, ip_geo, user_agent, user_id, created_at FROM request_logs ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`,
     )
       .bind(...params, limit, offset)
       .all<{
@@ -2289,6 +2290,7 @@ app.get("/request-logs", async (c) => {
         status: number;
         duration_ms: number;
         ip_address: string | null;
+        ip_geo: string | null;
         user_agent: string | null;
         user_id: string | null;
         created_at: number;
@@ -2337,7 +2339,7 @@ app.get("/request-logs/export", async (c) => {
   const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
 
   const rows = await c.env.DB.prepare(
-    `SELECT id, method, path, status, duration_ms, ip_address, user_agent, user_id, details, created_at FROM request_logs ${where} ORDER BY created_at DESC LIMIT 5000`,
+    `SELECT id, method, path, status, duration_ms, ip_address, ip_geo, user_agent, user_id, details, created_at FROM request_logs ${where} ORDER BY created_at DESC LIMIT 5000`,
   )
     .bind(...params)
     .all<{
@@ -2347,6 +2349,7 @@ app.get("/request-logs/export", async (c) => {
       status: number;
       duration_ms: number;
       ip_address: string | null;
+      ip_geo: string | null;
       user_agent: string | null;
       user_id: string | null;
       details: string | null;
@@ -2361,7 +2364,7 @@ app.get("/request-logs/export", async (c) => {
         : s;
     };
     const header =
-      "id,time,method,path,status,duration_ms,ip_address,user_id,user_agent,has_details\n";
+      "id,time,method,path,status,duration_ms,ip_address,ip_location,user_id,user_agent,has_details\n";
     const body = rows.results
       .map((r) =>
         [
@@ -2372,6 +2375,7 @@ app.get("/request-logs/export", async (c) => {
           r.status,
           r.duration_ms,
           r.ip_address ?? "",
+          formatGeoLabel(r.ip_geo),
           r.user_id ?? "",
           r.user_agent ?? "",
           r.details ? "true" : "false",

@@ -4,6 +4,8 @@ import { Hono } from "hono";
 import { isInitialized, setConfigValue, getJwtSecret } from "../lib/config";
 import { hashPassword } from "../lib/crypto";
 import { randomId } from "../lib/crypto";
+import { getIp } from "../lib/clientIp";
+import { geoJson, recordSessionIp } from "../lib/geo";
 import { signJWT } from "../lib/jwt";
 import { setSessionCookie } from "../lib/cookies";
 
@@ -106,6 +108,13 @@ app.post("/", async (c) => {
       now,
     )
     .run();
+
+  // Seed IP history + geolocation for the bootstrap admin's first session.
+  c.executionCtx.waitUntil(
+    recordSessionIp(c.env.DB, sessionId, getIp(c), geoJson(c), now).catch(
+      () => undefined,
+    ),
+  );
 
   setSessionCookie(c, token, sessionTtl);
 

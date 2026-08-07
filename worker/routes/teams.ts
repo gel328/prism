@@ -98,6 +98,7 @@ function auditTeam(
     resourceName: opts.resourceName ?? null,
     ip: meta.ip,
     userAgent: meta.userAgent,
+    geo: meta.geo,
     metadata: opts.metadata ?? {},
   });
 }

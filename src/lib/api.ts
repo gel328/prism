@@ -422,6 +422,20 @@ export const api = {
       undefined,
       getToken(),
     ),
+  listSessionIps: (id: string) =>
+    request<{ ips: SessionIpInfo[] }>(
+      "GET",
+      `/auth/sessions/${id}/ips`,
+      undefined,
+      getToken(),
+    ),
+  revokeAllOtherSessions: () =>
+    request<{ message: string; revoked: number }>(
+      "DELETE",
+      "/auth/sessions",
+      undefined,
+      getToken(),
+    ),
   powChallenge: () =>
     request<{ challenge: string; difficulty: number; expires_at: number }>(
       "GET",
@@ -2043,6 +2057,19 @@ export interface SessionInfo {
   created_at: number;
   expires_at: number;
   is_current: boolean;
+  // Full Cloudflare geolocation (JSON string, worker/lib/geo.ts GeoInfo) for
+  // the IP the session was created from. Null on non-Cloudflare paths (e.g.
+  // local dev) or until the first authenticated request has recorded it.
+  ip_geo: string | null;
+}
+
+// One distinct IP a session has authenticated from, with the full Cloudflare
+// geolocation snapshot (JSON string) and when it was first/last seen.
+export interface SessionIpInfo {
+  ip_address: string;
+  geo: string | null;
+  first_seen: number;
+  last_seen: number;
 }
 
 export interface OAuthToken {
@@ -2423,6 +2450,8 @@ export interface AuditEvent {
   resource_name: string | null;
   ip: string | null;
   user_agent: string | null;
+  // JSON snapshot of the request's Cloudflare geolocation (worker/lib/geo.ts).
+  ip_geo: string | null;
   metadata: string;
   created_at: number;
 }

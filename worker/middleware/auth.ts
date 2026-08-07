@@ -5,7 +5,21 @@ import { verifyJWT } from "../lib/jwt";
 import { getJwtSecret } from "../lib/config";
 import { readSessionCookie } from "../lib/cookies";
 import { hashLookupCandidate } from "../lib/secretCrypto";
+import { getIp } from "../lib/clientIp";
+import { geoJson, recordSessionIp } from "../lib/geo";
 import type { Variables } from "../types";
+
+// Fire-and-forget: append the request's IP + Cloudflare geolocation to the
+// session's history so the security page can show where a session has been
+// used from. Wrapped by the caller in waitUntil; never blocks the request.
+function trackSessionIp(c: Context<AppEnv>, sessionId: string): void {
+  const ip = getIp(c);
+  const geo = geoJson(c);
+  const now = Math.floor(Date.now() / 1000);
+  c.executionCtx.waitUntil(
+    recordSessionIp(c.env.DB, sessionId, ip, geo, now).catch(() => undefined),
+  );
+}
 
 type AppEnv = { Bindings: Env; Variables: Variables };
 
@@ -44,9 +58,9 @@ export async function requireAuth(c: Context<AppEnv>, next: Next) {
     const payload = await verifyJWT(token, secret);
 
     const session = await c.env.DB.prepare(
-      "SELECT s.id, u.is_active FROM sessions s JOIN users u ON s.user_id = u.id WHERE s.id = ? AND u.kind = 'user'",
+      "SELECT s.id, u.is_active FROM sessions s JOIN users u ON s.user_id = u.id WHERE s.id = ? AND u.kind = 'user' AND s.expires_at > ?",
     )
-      .bind(payload.sessionId)
+      .bind(payload.sessionId, Math.floor(Date.now() / 1000))
       .first<{ id: string; is_active: number }>();
 
     if (!session || !session.is_active) {
@@ -63,6 +77,7 @@ export async function requireAuth(c: Context<AppEnv>, next: Next) {
       email_verified: payload.email_verified as boolean,
     });
     c.set("sessionId", payload.sessionId);
+    trackSessionIp(c, payload.sessionId);
     await next();
   } catch {
     return c.json({ error: "Unauthorized" }, 401);
@@ -80,9 +95,9 @@ export const requireAdmin: MiddlewareHandler<AppEnv> = async (c, next) => {
     if (payload.role !== "admin") return c.json({ error: "Forbidden" }, 403);
 
     const session = await c.env.DB.prepare(
-      "SELECT s.id, u.is_active FROM sessions s JOIN users u ON s.user_id = u.id WHERE s.id = ? AND u.kind = 'user'",
+      "SELECT s.id, u.is_active FROM sessions s JOIN users u ON s.user_id = u.id WHERE s.id = ? AND u.kind = 'user' AND s.expires_at > ?",
     )
-      .bind(payload.sessionId)
+      .bind(payload.sessionId, Math.floor(Date.now() / 1000))
       .first<{ id: string; is_active: number }>();
 
     if (!session || !session.is_active) {
@@ -99,6 +114,7 @@ export const requireAdmin: MiddlewareHandler<AppEnv> = async (c, next) => {
       email_verified: payload.email_verified as boolean,
     });
     c.set("sessionId", payload.sessionId);
+    trackSessionIp(c, payload.sessionId);
     await next();
   } catch {
     return c.json({ error: "Unauthorized" }, 401);
@@ -207,9 +223,9 @@ export async function optionalAuth(c: Context<AppEnv>, next: Next) {
       const payload = await verifyJWT(token, secret);
 
       const session = await c.env.DB.prepare(
-        "SELECT s.id, u.is_active FROM sessions s JOIN users u ON s.user_id = u.id WHERE s.id = ? AND u.kind = 'user'",
+        "SELECT s.id, u.is_active FROM sessions s JOIN users u ON s.user_id = u.id WHERE s.id = ? AND u.kind = 'user' AND s.expires_at > ?",
       )
-        .bind(payload.sessionId)
+        .bind(payload.sessionId, Math.floor(Date.now() / 1000))
         .first<{ id: string; is_active: number }>();
 
       if (session && session.is_active) {
@@ -223,6 +239,7 @@ export async function optionalAuth(c: Context<AppEnv>, next: Next) {
           email_verified: payload.email_verified as boolean,
         });
         c.set("sessionId", payload.sessionId);
+        trackSessionIp(c, payload.sessionId);
       }
     } catch {
       // ignore invalid tokens for optional auth

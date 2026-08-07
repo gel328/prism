@@ -29,6 +29,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api } from "../../lib/api";
+import { formatIpGeo } from "../../lib/geo";
 import { SkeletonTableRows } from "../../components/Skeletons";
 
 const useStyles = makeStyles({
@@ -44,6 +45,7 @@ type RequestLog = {
   status: number;
   duration_ms: number;
   ip_address: string | null;
+  ip_geo: string | null;
   user_agent: string | null;
   user_id: string | null;
   created_at: number;
@@ -684,6 +686,9 @@ export function AdminLogs() {
                 </TableHeaderCell>
                 <TableHeaderCell>{t("admin.logs.userHeader")}</TableHeaderCell>
                 <TableHeaderCell>{t("admin.logs.ipHeader")}</TableHeaderCell>
+                <TableHeaderCell>
+                  {t("admin.logs.locationHeader")}
+                </TableHeaderCell>
                 <TableHeaderCell />
               </TableRow>
             </TableHeader>
@@ -691,7 +696,7 @@ export function AdminLogs() {
               {logs.length === 0 ? (
                 <TableRow>
                   <TableCell
-                    colSpan={8}
+                    colSpan={9}
                     style={{
                       textAlign: "center",
                       color: tokens.colorNeutralForeground3,
@@ -760,6 +765,9 @@ export function AdminLogs() {
                       }}
                     >
                       {log.ip_address ?? "—"}
+                    </TableCell>
+                    <TableCell style={{ fontSize: 12, whiteSpace: "nowrap" }}>
+                      {formatIpGeo(log.ip_geo) || "—"}
                     </TableCell>
                     <TableCell>
                       <DetailsDialog id={log.id} />
