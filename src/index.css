@@ -55,6 +55,15 @@ body {
     linear-gradient(90deg, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
 }
 
+/* Fluent Badge (pill/capsule) must never wrap its label or shrink inside
+   flex rows: CJK text like 已启用 otherwise collapses onto two lines on
+   narrow viewports. nowrap keeps min-content = full text width, and
+   flex-shrink: 0 stops flex parents from squeezing the pill at all. */
+.fui-Badge {
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
 a {
   color: inherit;
   text-decoration: none;

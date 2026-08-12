@@ -29,7 +29,7 @@ const LIGHT = {
   colorNeutralForeground2Pressed: "#000000",
   colorNeutralForeground3: "#555555",
   colorNeutralForeground4: "#777777",
-  colorNeutralStroke1: "#000000",
+  colorNeutralStroke1: "#999999",
   colorNeutralStroke2: "#d0d0d0",
   colorNeutralStroke3: "#e0e0e0",
   colorNeutralStrokeAccessible: "#000000",
