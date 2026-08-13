@@ -19,6 +19,7 @@ import { api, type UserProfile } from "./lib/api";
 import { AuthCallback } from "./components/Guards";
 import { NotFound } from "./pages/NotFound";
 import { Unauthorized } from "./pages/Unauthorized";
+import { ErrorElement } from "./components/ErrorElement";
 
 export interface RouteContext {
   qc: QueryClient;
@@ -93,16 +94,19 @@ export function createRoutes(ctx: RouteContext): RouteObject[] {
     // ── Public ──────────────────────────────────────────────────────────────
     {
       path: "/init",
+      errorElement: <ErrorElement />,
       lazy: () => import("./pages/Init").then((m) => ({ Component: m.Init })),
     },
     {
       path: "/login",
       loader: publicAuthLoader,
+      errorElement: <ErrorElement />,
       lazy: () => import("./pages/Login").then((m) => ({ Component: m.Login })),
     },
     {
       path: "/register",
       loader: publicAuthLoader,
+      errorElement: <ErrorElement />,
       lazy: () =>
         import("./pages/Register").then((m) => ({ Component: m.Register })),
     },
@@ -111,6 +115,7 @@ export function createRoutes(ctx: RouteContext): RouteObject[] {
       // publicAuthLoader: an already-signed-in visitor should still be able
       // to read the page and be pointed at the ordinary join flow.
       path: "/join/:teamId",
+      errorElement: <ErrorElement />,
       lazy: () =>
         import("./pages/JoinRegister").then((m) => ({
           Component: m.JoinRegister,
@@ -119,6 +124,7 @@ export function createRoutes(ctx: RouteContext): RouteObject[] {
     { path: "/auth/callback", element: <AuthCallback /> },
     {
       path: "/auth/tg-callback",
+      errorElement: <ErrorElement />,
       lazy: () =>
         import("./pages/TgAuthCallback").then((m) => ({
           Component: m.TgAuthCallback,
@@ -126,6 +132,7 @@ export function createRoutes(ctx: RouteContext): RouteObject[] {
     },
     {
       path: "/social-confirm",
+      errorElement: <ErrorElement />,
       lazy: () =>
         import("./pages/SocialConfirm").then((m) => ({
           Component: m.SocialConfirm,
@@ -133,6 +140,7 @@ export function createRoutes(ctx: RouteContext): RouteObject[] {
     },
     {
       path: "/social-select",
+      errorElement: <ErrorElement />,
       lazy: () =>
         import("./pages/SocialSelect").then((m) => ({
           Component: m.SocialSelect,
@@ -140,6 +148,7 @@ export function createRoutes(ctx: RouteContext): RouteObject[] {
     },
     {
       path: "/social-2fa",
+      errorElement: <ErrorElement />,
       lazy: () =>
         import("./pages/Social2fa").then((m) => ({
           Component: m.Social2fa,
@@ -149,6 +158,7 @@ export function createRoutes(ctx: RouteContext): RouteObject[] {
     // ── Email verification ──────────────────────────────────────────────────
     {
       path: "/verify-email",
+      errorElement: <ErrorElement />,
       lazy: () =>
         import("./pages/VerifyEmail").then((m) => ({
           Component: m.VerifyEmail,
@@ -156,6 +166,7 @@ export function createRoutes(ctx: RouteContext): RouteObject[] {
     },
     {
       path: "/verify-choose",
+      errorElement: <ErrorElement />,
       lazy: () =>
         import("./pages/VerifyChoose").then((m) => ({
           Component: m.VerifyChoose,
@@ -165,6 +176,7 @@ export function createRoutes(ctx: RouteContext): RouteObject[] {
     // ── Team invite ─────────────────────────────────────────────────────────
     {
       path: "/teams/join/:token",
+      errorElement: <ErrorElement />,
       lazy: () =>
         import("./pages/teams/TeamJoin").then((m) => ({
           Component: m.TeamJoin,
@@ -178,6 +190,7 @@ export function createRoutes(ctx: RouteContext): RouteObject[] {
         requireAuthLoader(request);
         return null;
       },
+      errorElement: <ErrorElement />,
       lazy: () =>
         import("./pages/oauth/Authorize").then((m) => ({
           Component: m.Authorize,
@@ -189,6 +202,7 @@ export function createRoutes(ctx: RouteContext): RouteObject[] {
         requireAuthLoader(request);
         return null;
       },
+      errorElement: <ErrorElement />,
       lazy: () =>
         import("./pages/oauth/Verify2FA").then((m) => ({
           Component: m.Verify2FA,
@@ -198,6 +212,7 @@ export function createRoutes(ctx: RouteContext): RouteObject[] {
     // ── Public user/team profiles ───────────────────────────────────────────
     {
       path: "/u/:username",
+      errorElement: <ErrorElement />,
       lazy: () =>
         import("./pages/PublicProfile").then((m) => ({
           Component: m.PublicProfile,
@@ -205,6 +220,7 @@ export function createRoutes(ctx: RouteContext): RouteObject[] {
     },
     {
       path: "/t/:id",
+      errorElement: <ErrorElement />,
       lazy: () =>
         import("./pages/PublicTeam").then((m) => ({
           Component: m.PublicTeam,
@@ -215,6 +231,7 @@ export function createRoutes(ctx: RouteContext): RouteObject[] {
     {
       // Element is eager (Layout is on every authenticated page).
       Component: Layout,
+      errorElement: <ErrorElement />,
       loader: async ({ request }) => {
         requireAuthLoader(request);
         // Prefetch global state used by Layout's nav.
