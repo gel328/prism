@@ -339,7 +339,8 @@ flat preferences map. See [Notifications](notifications.md).
 ### `GET /api/user/tokens` / `POST` / `DELETE /:id`
 
 Personal access tokens. The full plaintext is shown only in the create
-response. See [Personal Access Tokens](personal-access-tokens.md).
+response. `GET` accepts `?page=`, `?limit=`, `?q=` name search and returns
+`total`. See [Personal Access Tokens](personal-access-tokens.md).
 
 ### `DELETE /api/user/me`
 
@@ -352,7 +353,7 @@ All endpoints require authentication. See [OAuth / OIDC Guide](oauth.md) and
 
 | Method                              | Path                                         | Notes                                                                                                                |
 | ----------------------------------- | -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `GET`                               | `/api/apps`                                  | List apps owned by the current user                                                                                  |
+| `GET`                               | `/api/apps`                                  | List apps owned by the current user. `?page=`, `?limit=`, `?q=` name search, returns `total`                         |
 | `POST`                              | `/api/apps`                                  | Create app                                                                                                           |
 | `GET`                               | `/api/apps/:id`                              | Read app                                                                                                             |
 | `PATCH`                             | `/api/apps/:id`                              | Update fields including `oidc_fields`, `optional_scopes`, `use_jwt_tokens`, `allow_self_manage_exported_permissions` |
@@ -377,7 +378,7 @@ See [Teams](teams.md) for the full guide. Endpoint summary:
 | `GET`                     | `/api/teams/:id`                                     | Team details + `my_role` (effective), `inherited_from`, `ancestors[]` (parent → root), `sub_teams[]` (immediate children with member counts), direct members                                                                                        |
 | `PATCH`                   | `/api/teams/:id`                                     | Update name, description, avatar, public-profile flags (incl. `profile_show_sub_teams`), `parent_team_id` (owner-only, cycle/depth-checked), `require_2fa`, `require_verified_email`, `enable_groups` (owner-only), `role_permissions` (owner-only) |
 | `DELETE`                  | `/api/teams/:id`                                     | Disband (owner — direct or inherited). Cascades to every sub-team; each level's apps fall back to that level's own owner                                                                                                                            |
-| `GET`                     | `/api/teams/:id/sub-teams`                           | List immediate sub-teams. Members of an ancestor team (direct or inherited) may list                                                                                                                                                                |
+| `GET`                     | `/api/teams/:id/sub-teams`                           | List immediate sub-teams. `?page=`, `?limit=`, `?q=`, returns `total`. Members of an ancestor team (direct or inherited) may list                                                                                                                   |
 | `POST`                    | `/api/teams/:id/sub-teams`                           | Create a sub-team under `:id` — convenience alias for `POST /api/teams` with `parent_team_id`                                                                                                                                                       |
 | `GET`                     | `/api/teams/:id/members`                             | Paginated member list. `?page=`, `?limit=` (max 100), `?q=` (display name / username), `?group=` (slug, matches inherited labels too)                                                                                                               |
 | `POST`                    | `/api/teams/:id/members`                             | Add member by username/id (admins+)                                                                                                                                                                                                                 |
@@ -390,17 +391,17 @@ See [Teams](teams.md) for the full guide. Endpoint summary:
 | `DELETE`                  | `/api/teams/:id/groups/:groupId`                     | Delete a group — cascades to every assignment                                                                                                                                                                                                       |
 | `PUT`                     | `/api/teams/:id/members/:userId/groups`              | Replace a member's group set (`{ group_ids: [...] }`). Only the groups that change are permission-checked                                                                                                                                           |
 | `POST`                    | `/api/teams/:id/transfer-ownership`                  | Transfer ownership to another member                                                                                                                                                                                                                |
-| `GET`                     | `/api/teams/:id/invites`                             | List active invite tokens                                                                                                                                                                                                                           |
+| `GET`                     | `/api/teams/:id/invites`                             | List active invite tokens. `?page=`, `?limit=`, `?q=` email search, returns `total`                                                                                                                                                                 |
 | `POST`                    | `/api/teams/:id/invites`                             | Mint an invite token (optional email lock + max uses + expiry)                                                                                                                                                                                      |
 | `DELETE`                  | `/api/teams/:id/invites/:token`                      | Revoke an invite                                                                                                                                                                                                                                    |
 | `GET`                     | `/api/teams/join/:token` (auth optional)             | Inspect an invite — returns the team, requirements, unmet flags                                                                                                                                                                                     |
 | `POST`                    | `/api/teams/join/:token`                             | Accept an invite                                                                                                                                                                                                                                    |
-| `GET` / `POST` / `DELETE` | `/api/teams/:id/domains[/:domainId]`                 | Team-owned domains. `GET` also returns ancestor-owned domains as read-only entries tagged `inherited_from` (subject to `inherit_team_domains`)                                                                                                      |
+| `GET` / `POST` / `DELETE` | `/api/teams/:id/domains[/:domainId]`                 | Team-owned domains. `?page=`, `?limit=`, `?q=`, returns `total`. `GET` also returns ancestor-owned domains as read-only entries tagged `inherited_from` (subject to `inherit_team_domains`)                                                         |
 | `POST`                    | `/api/teams/:id/domains/:domainId/verify`            | Trigger re-verification                                                                                                                                                                                                                             |
 | `POST`                    | `/api/teams/:id/domains/:domainId/to-personal`       | Move a verified domain to the user's personal namespace                                                                                                                                                                                             |
 | `POST`                    | `/api/teams/:id/domains/:domainId/share-to-team`     | Share a personal domain with the team                                                                                                                                                                                                               |
 | `POST`                    | `/api/teams/:id/domains/:domainId/share-to-personal` | Reverse the above                                                                                                                                                                                                                                   |
-| `GET` / `POST`            | `/api/teams/:id/apps`                                | Team-owned OAuth apps                                                                                                                                                                                                                               |
+| `GET` / `POST`            | `/api/teams/:id/apps`                                | Team-owned OAuth apps. `?page=`, `?limit=`, `?q=`, returns `total`                                                                                                                                                                                  |
 | `POST`                    | `/api/teams/:id/apps/transfer`                       | Transfer a personal app into the team                                                                                                                                                                                                               |
 | `DELETE`                  | `/api/teams/:id/apps/:appId/transfer`                | Move a team-owned app back to the original owner                                                                                                                                                                                                    |
 
@@ -431,7 +432,7 @@ only once granted) and `allow_normal_user_join`.
 
 | Method   | Path                      | Notes                                                                                                               |
 | -------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| `GET`    | `/api/domains`            | List the current user's domains                                                                                     |
+| `GET`    | `/api/domains`            | List the current user's domains. `?page=`, `?limit=`, `?q=`, returns `total`                                        |
 | `POST`   | `/api/domains`            | Add domain. Returns `verification_method` options + the per-method instructions (DNS TXT, HTML meta, `.well-known`) |
 | `POST`   | `/api/domains/:id/verify` | Trigger a re-verification check using the chosen method                                                             |
 | `DELETE` | `/api/domains/:id`        | Remove                                                                                                              |
@@ -507,7 +508,8 @@ PAT. The required scopes are listed in [OAuth → Scopes](oauth.md#scopes) and
 ### `GET /api/oauth/consents` / `DELETE /api/oauth/consents/:client_id`
 
 Manage which apps the current user has authorized. `DELETE` revokes the consent
-and all outstanding tokens for that app.
+and all outstanding tokens for that app. `GET` accepts `?page=`, `?limit=`,
+`?q=` app-name search and returns `total`.
 
 ## Public profiles
 
@@ -576,16 +578,16 @@ All admin endpoints require auth with `role = admin`.
 
 ### Apps / OAuth Sources / Invites / Webhooks / Teams
 
-| Path                                                         | Notes                                               |
-| ------------------------------------------------------------ | --------------------------------------------------- |
-| `GET / PATCH /api/admin/apps[/:id]`                          | Verify or deactivate                                |
-| `GET / POST / PATCH / DELETE /api/admin/oauth-sources[/:id]` | Source CRUD                                         |
-| `GET /api/admin/oauth-sources/discover`                      | Auto-fetch OIDC discovery for a candidate issuer    |
-| `POST /api/admin/oauth-sources/migrate`                      | One-time: import the legacy site_config social keys |
-| `GET / POST / DELETE /api/admin/invites[/:id]`               | Site-invite tokens                                  |
-| `GET /api/admin/teams` / `DELETE /:id`                       | List / disband teams                                |
-| `POST /api/admin/test-email`                                 | Send a test outbound email                          |
-| `POST /api/admin/test-email-receiving`                       | Generate a test verify-by-email code                |
+| Path                                                         | Notes                                                                                           |
+| ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------- |
+| `GET / PATCH /api/admin/apps[/:id]`                          | Verify or deactivate                                                                            |
+| `GET / POST / PATCH / DELETE /api/admin/oauth-sources[/:id]` | Source CRUD. `GET` accepts `?page=`, `?limit=`, `?q=` name/slug search, returns `total`         |
+| `GET /api/admin/oauth-sources/discover`                      | Auto-fetch OIDC discovery for a candidate issuer                                                |
+| `POST /api/admin/oauth-sources/migrate`                      | One-time: import the legacy site_config social keys                                             |
+| `GET / POST / DELETE /api/admin/invites[/:id]`               | Site-invite tokens. `GET` accepts `?page=`, `?limit=`, `?q=` email/note search, returns `total` |
+| `GET /api/admin/teams` / `DELETE /:id`                       | List / disband teams                                                                            |
+| `POST /api/admin/test-email`                                 | Send a test outbound email                                                                      |
+| `POST /api/admin/test-email-receiving`                       | Generate a test verify-by-email code                                                            |
 
 ### Audit / request logs / login errors
 

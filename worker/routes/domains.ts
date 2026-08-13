@@ -4,6 +4,7 @@ import { guardCapability } from "../lib/userCapabilities";
 import { Hono } from "hono";
 import { randomBase64url, randomId } from "../lib/crypto";
 import { getConfigValue } from "../lib/config";
+import { readPage, likePattern } from "../lib/pagination";
 import { requireAuth } from "../middleware/auth";
 import { recordAudit, auditRequestMeta } from "../lib/audit";
 import {
@@ -28,12 +29,34 @@ app.use("*", requireAuth);
 // List user's domains
 app.get("/", async (c) => {
   const user = c.get("user");
-  const rows = await c.env.DB.prepare(
-    "SELECT * FROM domains WHERE user_id = ? ORDER BY created_at DESC",
-  )
-    .bind(user.id)
-    .all<DomainRow>();
-  return c.json({ domains: rows.results });
+  const { page, limit, offset } = readPage(
+    c.req.query("page"),
+    c.req.query("limit"),
+    20,
+  );
+  const query = c.req.query("q")?.trim() ?? "";
+
+  const where = query
+    ? "user_id = ? AND LOWER(domain) LIKE LOWER(?) ESCAPE '\\'"
+    : "user_id = ?";
+  const args: unknown[] = query ? [user.id, likePattern(query)] : [user.id];
+
+  const [rows, countRow] = await Promise.all([
+    c.env.DB.prepare(
+      `SELECT * FROM domains WHERE ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`,
+    )
+      .bind(...args, limit, offset)
+      .all<DomainRow>(),
+    c.env.DB.prepare(`SELECT COUNT(*) AS n FROM domains WHERE ${where}`)
+      .bind(...args)
+      .first<{ n: number }>(),
+  ]);
+  return c.json({
+    domains: rows.results,
+    total: countRow?.n ?? 0,
+    page,
+    limit,
+  });
 });
 
 // Add domain

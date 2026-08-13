@@ -149,11 +149,14 @@ the same `null`/`0`/`1` convention as every other `profile_show_*` flag:
 
 - `GET /api/teams` (session) and `GET /api/oauth/me/teams` both expand each
   direct membership to its full subtree. Entries carry an `inherited_from`
-  ancestor id (or `null` for direct memberships).
+  ancestor id (or `null` for direct memberships). The session listing is
+  paginated (`?page=`, `?limit=`, `?q=` name search) and returns `total`.
 - `GET /api/teams/:id` returns:
   - `team.ancestors` — `[{id, name, avatar_url}]` from immediate parent to
     root, useful for breadcrumbs.
-  - `team.sub_teams` — immediate children with member counts.
+  - `team.sub_teams` — the **first page** of immediate children (20) with
+    member counts, plus `team.sub_team_count` for all of them. Page through
+    `GET /api/teams/:id/sub-teams` for the rest.
   - `team.my_role` — the _effective_ role; `team.inherited_from` carries the
     ancestor id when the role came from inheritance.
   - `members` — the **first page** of direct members (50), plus
@@ -162,6 +165,11 @@ the same `null`/`0`/`1` convention as every other `profile_show_*` flag:
     initial render needs a single request. Inherited members are not listed —
     they are visible by inspecting ancestor teams, and surfacing them here
     would multiply listings.
+- The other team-scoped lists are paginated too: `GET /api/teams/:id/apps`,
+  `GET /api/teams/:id/domains`, `GET /api/teams/:id/invites` and
+  `GET /api/teams/:id/sub-teams` all accept `?page=`, `?limit=` and `?q=`
+  (name/domain/email search) and return a `total` alongside the page. The
+  teams and apps lists on the dashboard are paginated the same way.
 
 ## Member groups
 

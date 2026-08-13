@@ -109,7 +109,7 @@ export function Profile() {
 
   const { data: myTeamsData } = useQuery({
     queryKey: ["my-teams"],
-    queryFn: api.listTeams,
+    queryFn: () => api.listTeams(),
     enabled: !!me?.user.profile_is_public,
   });
   const myTeams = myTeamsData?.teams ?? [];

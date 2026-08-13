@@ -97,7 +97,7 @@ export function AdminSettings() {
 
   const { data: oauthSourcesData } = useQuery({
     queryKey: ["admin-oauth-sources"],
-    queryFn: api.adminListOAuthSources,
+    queryFn: () => api.adminListOAuthSources(),
   });
   const telegramSources = (oauthSourcesData?.sources ?? []).filter(
     (s) => s.provider === "telegram" && s.enabled,

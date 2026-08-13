@@ -22,6 +22,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api } from "../../lib/api";
 import { formatIpGeo } from "../../lib/geo";
+import { Pagination } from "../../components/Pagination";
 import { SkeletonTableRows } from "../../components/Skeletons";
 
 const useStyles = makeStyles({
@@ -76,7 +77,7 @@ export function AdminLoginErrors() {
   const [appliedIdentifier, setAppliedIdentifier] = useState("");
   const [appliedIp, setAppliedIp] = useState("");
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isFetching } = useQuery({
     queryKey: [
       "admin-login-errors",
       page,
@@ -311,32 +312,12 @@ export function AdminLoginErrors() {
       )}
 
       {totalPages > 1 && (
-        <div
-          style={{
-            display: "flex",
-            gap: 8,
-            alignItems: "center",
-            justifyContent: "flex-end",
-          }}
-        >
-          <Button
-            size="small"
-            disabled={page <= 1}
-            onClick={() => setPage((p) => p - 1)}
-          >
-            {t("common.previous")}
-          </Button>
-          <Text size={200}>
-            {t("common.pageOf", { page, total: totalPages })}
-          </Text>
-          <Button
-            size="small"
-            disabled={page >= totalPages}
-            onClick={() => setPage((p) => p + 1)}
-          >
-            {t("common.next")}
-          </Button>
-        </div>
+        <Pagination
+          page={page}
+          pageCount={totalPages}
+          onChange={setPage}
+          disabled={isLoading || isFetching}
+        />
       )}
     </div>
   );

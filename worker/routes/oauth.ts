@@ -26,6 +26,7 @@ import {
   normalizeDomainInput,
 } from "../lib/domainVerify";
 import { proxyImageUrl } from "../lib/proxyImage";
+import { readPage, likePattern } from "../lib/pagination";
 import {
   parseRedirectUris,
   redirectUriMatchesRegistered,
@@ -425,18 +426,29 @@ async function resolveRequestedScopes(
 app.get("/consents", requireAuth, async (c) => {
   const user = c.get("user");
   const now = Math.floor(Date.now() / 1000);
+  const { page, limit, offset } = readPage(
+    c.req.query("page"),
+    c.req.query("limit"),
+    20,
+  );
+  const query = c.req.query("q")?.trim() ?? "";
 
-  const [consentRows, tokenRows] = await Promise.all([
+  const where = query
+    ? "oc.user_id = ? AND LOWER(oa.name) LIKE LOWER(?) ESCAPE '\\'"
+    : "oc.user_id = ?";
+  const args: unknown[] = query ? [user.id, likePattern(query)] : [user.id];
+
+  const [consentRows, countRow, tokenRows] = await Promise.all([
     c.env.DB.prepare(
       `SELECT oc.client_id, oc.scopes, oc.granted_at,
               oa.name, oa.description, oa.icon_url, oa.website_url,
               oa.owner_id, oa.team_id, oa.redirect_uris
        FROM oauth_consents oc
        JOIN oauth_apps oa ON oa.client_id = oc.client_id
-       WHERE oc.user_id = ?
-       ORDER BY oc.granted_at DESC`,
+       WHERE ${where}
+       ORDER BY oc.granted_at DESC LIMIT ? OFFSET ?`,
     )
-      .bind(user.id)
+      .bind(...args, limit, offset)
       .all<{
         client_id: string;
         scopes: string;
@@ -449,6 +461,13 @@ app.get("/consents", requireAuth, async (c) => {
         team_id: string | null;
         redirect_uris: string;
       }>(),
+    c.env.DB.prepare(
+      `SELECT COUNT(*) AS n FROM oauth_consents oc
+       JOIN oauth_apps oa ON oa.client_id = oc.client_id
+       WHERE ${where}`,
+    )
+      .bind(...args)
+      .first<{ n: number }>(),
     c.env.DB.prepare(
       `SELECT id, client_id, scopes, created_at, expires_at, refresh_expires_at
        FROM oauth_tokens
@@ -521,6 +540,9 @@ app.get("/consents", requireAuth, async (c) => {
         })),
       })),
     ),
+    total: countRow?.n ?? 0,
+    page,
+    limit,
   });
 });
 

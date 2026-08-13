@@ -19,14 +19,20 @@ import {
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
-import { AddRegular, GlobeRegular } from "@fluentui/react-icons";
-import { useState } from "react";
+import {
+  AddRegular,
+  GlobeRegular,
+  SearchRegular,
+  DismissRegular,
+} from "@fluentui/react-icons";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api, ApiError, type RedirectUri } from "../../lib/api";
 import { EmptyState } from "../../components/EmptyState";
 import { PageHeader } from "../../components/PageHeader";
+import { Pagination } from "../../components/Pagination";
 import { RedirectUriEditor } from "../../components/RedirectUriEditor";
 import { SkeletonAppCards } from "../../components/Skeletons";
 
@@ -63,9 +69,22 @@ export function AppList() {
   const qc = useQueryClient();
   const { t } = useTranslation();
 
-  const { data, isLoading } = useQuery({
-    queryKey: ["apps"],
-    queryFn: api.listApps,
+  const [query, setQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+  const [page, setPage] = useState(1);
+
+  useEffect(() => {
+    const id = setTimeout(() => {
+      setDebouncedQuery(query.trim());
+      setPage(1);
+    }, 250);
+    return () => clearTimeout(id);
+  }, [query]);
+
+  const { data, isFetching } = useQuery({
+    queryKey: ["apps", page, debouncedQuery],
+    queryFn: () =>
+      api.listApps({ page, limit: 20, q: debouncedQuery || undefined }),
   });
 
   const [creating, setCreating] = useState(false);
@@ -191,9 +210,9 @@ export function AppList() {
     <div>
       <PageHeader title={t("apps.myApplications")} actions={createDialog} />
 
-      {isLoading && <SkeletonAppCards count={6} />}
+      {isFetching && !data && <SkeletonAppCards count={6} />}
 
-      {!isLoading && data?.apps.length === 0 && (
+      {!isFetching && data?.apps.length === 0 && !debouncedQuery && (
         <EmptyState
           icon={<GlobeRegular />}
           title={t("apps.noAppsYet")}
@@ -201,69 +220,113 @@ export function AppList() {
         />
       )}
 
-      <div className={styles.grid}>
-        {data?.apps.map((app) => (
+      {!isFetching && data?.apps.length === 0 && debouncedQuery && (
+        <EmptyState icon={<GlobeRegular />} title={t("teams.noResultsMatch")} />
+      )}
+
+      {data && data.apps.length > 0 && (
+        <>
           <div
-            key={app.id}
-            className={styles.appCard}
-            onClick={() => navigate(`/apps/${app.id}`)}
+            style={{
+              display: "flex",
+              gap: 8,
+              marginBottom: 12,
+              flexWrap: "wrap",
+            }}
           >
-            <div
-              style={{
-                display: "flex",
-                alignItems: "flex-start",
-                gap: 12,
-                marginBottom: 8,
-              }}
-            >
-              {app.icon_url ? (
-                <Image
-                  src={app.icon_url}
-                  alt={app.name}
-                  shape="rounded"
-                  fit="cover"
-                  width={32}
-                  height={32}
-                />
-              ) : (
-                <GlobeRegular fontSize={32} />
-              )}
-              <div
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 4,
-                  minWidth: 0,
-                  flex: 1,
-                }}
-              >
-                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <Text weight="semibold">{app.name}</Text>
-                  {app.is_verified && (
-                    <Badge color="success" appearance="filled" size="small">
-                      {t("apps.verified")}
-                    </Badge>
-                  )}
-                  {!app.is_active && (
-                    <Badge color="subtle" appearance="filled" size="small">
-                      {t("apps.disabled")}
-                    </Badge>
-                  )}
-                </div>
-                {(app.description || app.website_url || app.client_id) && (
-                  <Text
-                    size={200}
-                    style={{ color: tokens.colorNeutralForeground3 }}
-                    truncate
-                  >
-                    {app.description || app.website_url || app.client_id}
-                  </Text>
-                )}
-              </div>
-            </div>
+            <Input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder={t("apps.searchAppsPlaceholder")}
+              contentBefore={<SearchRegular />}
+              contentAfter={
+                query ? (
+                  <Button
+                    appearance="transparent"
+                    size="small"
+                    icon={<DismissRegular />}
+                    aria-label={t("common.clear")}
+                    onClick={() => setQuery("")}
+                  />
+                ) : undefined
+              }
+              style={{ minWidth: 220, flex: "1 1 220px" }}
+            />
           </div>
-        ))}
-      </div>
+          <div className={styles.grid}>
+            {data.apps.map((app) => (
+              <div
+                key={app.id}
+                className={styles.appCard}
+                onClick={() => navigate(`/apps/${app.id}`)}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "flex-start",
+                    gap: 12,
+                    marginBottom: 8,
+                  }}
+                >
+                  {app.icon_url ? (
+                    <Image
+                      src={app.icon_url}
+                      alt={app.name}
+                      shape="rounded"
+                      fit="cover"
+                      width={32}
+                      height={32}
+                    />
+                  ) : (
+                    <GlobeRegular fontSize={32} />
+                  )}
+                  <div
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 4,
+                      minWidth: 0,
+                      flex: 1,
+                    }}
+                  >
+                    <div
+                      style={{ display: "flex", alignItems: "center", gap: 6 }}
+                    >
+                      <Text weight="semibold">{app.name}</Text>
+                      {app.is_verified && (
+                        <Badge color="success" appearance="filled" size="small">
+                          {t("apps.verified")}
+                        </Badge>
+                      )}
+                      {!app.is_active && (
+                        <Badge color="subtle" appearance="filled" size="small">
+                          {t("apps.disabled")}
+                        </Badge>
+                      )}
+                    </div>
+                    {(app.description || app.website_url || app.client_id) && (
+                      <Text
+                        size={200}
+                        style={{ color: tokens.colorNeutralForeground3 }}
+                        truncate
+                      >
+                        {app.description || app.website_url || app.client_id}
+                      </Text>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+          <Pagination
+            page={page}
+            pageCount={Math.max(1, Math.ceil((data.total || 0) / 20))}
+            total={data.total}
+            onChange={setPage}
+            disabled={isFetching}
+          />
+        </>
+      )}
     </div>
   );
 }

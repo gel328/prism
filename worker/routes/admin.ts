@@ -23,6 +23,7 @@ import { verifyAnyTotp } from "../lib/totp";
 import { PRISM_INTERNAL_CLIENT_ID, grantSudo, isSudoActive } from "../lib/sudo";
 import { requireAdmin } from "../middleware/auth";
 import { validateImageUrl } from "../lib/imageValidation";
+import { readPage, likePattern } from "../lib/pagination";
 import {
   collectReferencedImageUrls,
   proxyImageUrl,
@@ -2576,13 +2577,38 @@ async function logAudit(
 
 // List all invites
 app.get("/invites", async (c) => {
-  const { results } = await c.env.DB.prepare(
-    `SELECT i.*, u.username AS created_by_username
-     FROM site_invites i
-     LEFT JOIN users u ON u.id = i.created_by
-     ORDER BY i.created_at DESC`,
-  ).all<SiteInviteRow & { created_by_username: string | null }>();
-  return c.json({ invites: results });
+  const { page, limit, offset } = readPage(
+    c.req.query("page"),
+    c.req.query("limit"),
+    20,
+  );
+  const query = c.req.query("q")?.trim() ?? "";
+
+  const where = query
+    ? "LOWER(COALESCE(i.email, '') || COALESCE(' ' || i.note, '')) LIKE LOWER(?) ESCAPE '\\'"
+    : "1 = 1";
+  const args: unknown[] = query ? [likePattern(query)] : [];
+
+  const [invites, countRow] = await Promise.all([
+    c.env.DB.prepare(
+      `SELECT i.*, u.username AS created_by_username
+       FROM site_invites i
+       LEFT JOIN users u ON u.id = i.created_by
+       WHERE ${where}
+       ORDER BY i.created_at DESC LIMIT ? OFFSET ?`,
+    )
+      .bind(...args, limit, offset)
+      .all<SiteInviteRow & { created_by_username: string | null }>(),
+    c.env.DB.prepare(`SELECT COUNT(*) AS n FROM site_invites i WHERE ${where}`)
+      .bind(...args)
+      .first<{ n: number }>(),
+  ]);
+  return c.json({
+    invites: invites.results,
+    total: countRow?.n ?? 0,
+    page,
+    limit,
+  });
 });
 
 // Create invite (optionally send email)
@@ -2711,11 +2737,30 @@ const LEGACY_PROVIDER_KEYS = [
 ] as const;
 
 app.get("/oauth-sources", async (c) => {
-  const [{ results }, config] = await Promise.all([
+  const { page, limit, offset } = readPage(
+    c.req.query("page"),
+    c.req.query("limit"),
+    20,
+  );
+  const query = c.req.query("q")?.trim() ?? "";
+
+  const where = query
+    ? "LOWER(name || ' ' || slug) LIKE LOWER(?) ESCAPE '\\'"
+    : "1 = 1";
+  const args: unknown[] = query ? [likePattern(query)] : [];
+
+  const [{ results }, config, countRow] = await Promise.all([
     c.env.DB.prepare(
-      "SELECT id, slug, provider, name, enabled, created_at, auth_url, token_url, userinfo_url, scopes, issuer_url, icon_url, show_icon, icon_only, trusted FROM oauth_sources ORDER BY created_at ASC",
-    ).all<Omit<OAuthSourceRow, "client_id" | "client_secret">>(),
+      `SELECT id, slug, provider, name, enabled, created_at, auth_url, token_url, userinfo_url, scopes, issuer_url, icon_url, show_icon, icon_only, trusted
+       FROM oauth_sources WHERE ${where}
+       ORDER BY created_at ASC LIMIT ? OFFSET ?`,
+    )
+      .bind(...args, limit, offset)
+      .all<Omit<OAuthSourceRow, "client_id" | "client_secret">>(),
     getConfig(c.env.DB),
+    c.env.DB.prepare(`SELECT COUNT(*) AS n FROM oauth_sources WHERE ${where}`)
+      .bind(...args)
+      .first<{ n: number }>(),
   ]);
 
   const existingSlugs = new Set(results.map((r) => r.slug));
@@ -2724,7 +2769,13 @@ app.get("/oauth-sources", async (c) => {
     (p) => !!cfg[`${p.slug}_client_id`] && !existingSlugs.has(p.slug),
   ).map((p) => p.slug);
 
-  return c.json({ sources: results, legacy_providers });
+  return c.json({
+    sources: results,
+    legacy_providers,
+    total: countRow?.n ?? 0,
+    page,
+    limit,
+  });
 });
 
 // ─── OIDC Discovery ───────────────────────────────────────────────────────────

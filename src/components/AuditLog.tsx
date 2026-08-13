@@ -36,6 +36,7 @@ import { api, type AuditEvent } from "../lib/api";
 import { maskIp, parseClient } from "../lib/auditFormat";
 import { formatIpGeo } from "../lib/geo";
 import { AuditWebhooks } from "./AuditWebhooks";
+import { Pagination } from "./Pagination";
 
 const useStyles = makeStyles({
   root: { display: "flex", flexDirection: "column", gap: "16px" },
@@ -355,32 +356,12 @@ export function AuditLog({ base }: { base: string }) {
       </div>
 
       {totalPages > 1 && (
-        <div
-          style={{
-            display: "flex",
-            gap: 8,
-            alignItems: "center",
-            justifyContent: "flex-end",
-          }}
-        >
-          <Button
-            size="small"
-            disabled={page <= 1}
-            onClick={() => setPage((p) => p - 1)}
-          >
-            {t("common.previous")}
-          </Button>
-          <Text size={200}>
-            {t("common.pageOf", { page, total: totalPages })}
-          </Text>
-          <Button
-            size="small"
-            disabled={page >= totalPages}
-            onClick={() => setPage((p) => p + 1)}
-          >
-            {t("common.next")}
-          </Button>
-        </div>
+        <Pagination
+          page={page}
+          pageCount={totalPages}
+          onChange={setPage}
+          disabled={isLoading}
+        />
       )}
 
       <Dialog

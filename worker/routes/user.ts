@@ -37,6 +37,7 @@ import {
 } from "../lib/notifications";
 import type { NotificationRules, RestrictedCapability } from "../types";
 import { getConfig, getConfigValue } from "../lib/config";
+import { readPage, likePattern } from "../lib/pagination";
 import { getGithubReadmeFromCache } from "../lib/githubReadme";
 import { encryptSecret, hashSecret } from "../lib/secretCrypto";
 import { sendEmail, verifyEmailTemplate } from "../lib/email";
@@ -1121,27 +1122,49 @@ const VALID_PAT_SCOPES = new Set([
 // GET /api/user/tokens — list own PATs
 app.get("/tokens", async (c) => {
   const user = c.get("user");
-  const { results } = await c.env.DB.prepare(
-    `SELECT id, name, scopes, expires_at, last_used_at, created_at
-     FROM personal_access_tokens
-     WHERE user_id = ?
-     ORDER BY created_at DESC`,
-  )
-    .bind(user.id)
-    .all<{
-      id: string;
-      name: string;
-      scopes: string;
-      expires_at: number | null;
-      last_used_at: number | null;
-      created_at: number;
-    }>();
+  const { page, limit, offset } = readPage(
+    c.req.query("page"),
+    c.req.query("limit"),
+    20,
+  );
+  const query = c.req.query("q")?.trim() ?? "";
+
+  const where = query
+    ? "user_id = ? AND LOWER(name) LIKE LOWER(?) ESCAPE '\\'"
+    : "user_id = ?";
+  const args: unknown[] = query ? [user.id, likePattern(query)] : [user.id];
+
+  const [rows, countRow] = await Promise.all([
+    c.env.DB.prepare(
+      `SELECT id, name, scopes, expires_at, last_used_at, created_at
+       FROM personal_access_tokens
+       WHERE ${where}
+       ORDER BY created_at DESC LIMIT ? OFFSET ?`,
+    )
+      .bind(...args, limit, offset)
+      .all<{
+        id: string;
+        name: string;
+        scopes: string;
+        expires_at: number | null;
+        last_used_at: number | null;
+        created_at: number;
+      }>(),
+    c.env.DB.prepare(
+      `SELECT COUNT(*) AS n FROM personal_access_tokens WHERE ${where}`,
+    )
+      .bind(...args)
+      .first<{ n: number }>(),
+  ]);
 
   return c.json({
-    tokens: results.map((r) => ({
+    tokens: rows.results.map((r) => ({
       ...r,
       scopes: JSON.parse(r.scopes) as string[],
     })),
+    total: countRow?.n ?? 0,
+    page,
+    limit,
   });
 });
 
