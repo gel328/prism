@@ -29,7 +29,11 @@ import {
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
-import { CopyRegular } from "@fluentui/react-icons";
+import {
+  CopyRegular,
+  DismissRegular,
+  SearchRegular,
+} from "@fluentui/react-icons";
 import {
   AppsRegular,
   OrganizationRegular,
@@ -44,7 +48,8 @@ import {
   TagRegular,
 } from "@fluentui/react-icons";
 import { AuditLog } from "../../components/AuditLog";
-import { Fragment, useState } from "react";
+import { Pagination } from "../../components/Pagination";
+import { Fragment, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
@@ -177,21 +182,87 @@ export function TeamDetail() {
   const [tab, setTab] = useState<TabType>("members");
   const { message, showMsg } = useToastMessage();
 
+  const [subTeamsPage, setSubTeamsPage] = useState(1);
+  const [subTeamsQuery, setSubTeamsQuery] = useState("");
+  const [subTeamsDebouncedQuery, setSubTeamsDebouncedQuery] = useState("");
+
+  useEffect(() => {
+    const id = setTimeout(() => {
+      setSubTeamsDebouncedQuery(subTeamsQuery.trim());
+      setSubTeamsPage(1);
+    }, 250);
+    return () => clearTimeout(id);
+  }, [subTeamsQuery]);
+
+  const [invitesPage, setInvitesPage] = useState(1);
+  const [invitesQuery, setInvitesQuery] = useState("");
+  const [invitesDebouncedQuery, setInvitesDebouncedQuery] = useState("");
+
+  useEffect(() => {
+    const id = setTimeout(() => {
+      setInvitesDebouncedQuery(invitesQuery.trim());
+      setInvitesPage(1);
+    }, 250);
+    return () => clearTimeout(id);
+  }, [invitesQuery]);
+
+  const [appsPage, setAppsPage] = useState(1);
+  const [appsQuery, setAppsQuery] = useState("");
+  const [appsDebouncedQuery, setAppsDebouncedQuery] = useState("");
+
+  useEffect(() => {
+    const id = setTimeout(() => {
+      setAppsDebouncedQuery(appsQuery.trim());
+      setAppsPage(1);
+    }, 250);
+    return () => clearTimeout(id);
+  }, [appsQuery]);
+
+  const [domainsPage, setDomainsPage] = useState(1);
+  const [domainsQuery, setDomainsQuery] = useState("");
+  const [domainsDebouncedQuery, setDomainsDebouncedQuery] = useState("");
+
+  useEffect(() => {
+    const id = setTimeout(() => {
+      setDomainsDebouncedQuery(domainsQuery.trim());
+      setDomainsPage(1);
+    }, 250);
+    return () => clearTimeout(id);
+  }, [domainsQuery]);
+
   const { data, isLoading } = useQuery({
     queryKey: ["team", id],
     queryFn: () => api.getTeam(id!),
     enabled: !!id,
   });
 
-  const { data: appsData, isLoading: appsLoading } = useQuery({
-    queryKey: ["team-apps", id],
-    queryFn: () => api.listTeamApps(id!),
+  const {
+    data: appsData,
+    isLoading: appsLoading,
+    isFetching: appsFetching,
+  } = useQuery({
+    queryKey: ["team-apps", id, appsPage, appsDebouncedQuery],
+    queryFn: () =>
+      api.listTeamApps(id!, {
+        page: appsPage,
+        limit: 20,
+        q: appsDebouncedQuery || undefined,
+      }),
     enabled: !!id && tab === "apps",
   });
 
-  const { data: invitesData, isLoading: invitesLoading } = useQuery({
-    queryKey: ["team-invites", id],
-    queryFn: () => api.listTeamInvites(id!),
+  const {
+    data: invitesData,
+    isLoading: invitesLoading,
+    isFetching: invitesFetching,
+  } = useQuery({
+    queryKey: ["team-invites", id, invitesPage, invitesDebouncedQuery],
+    queryFn: () =>
+      api.listTeamInvites(id!, {
+        page: invitesPage,
+        limit: 20,
+        q: invitesDebouncedQuery || undefined,
+      }),
     enabled:
       !!id &&
       tab === "invites" &&
@@ -202,19 +273,28 @@ export function TeamDetail() {
 
   const { data: myAppsData } = useQuery({
     queryKey: ["apps"],
-    queryFn: api.listApps,
+    queryFn: () => api.listApps(),
     enabled: tab === "apps",
   });
 
-  const { data: domainsData, isLoading: domainsLoading } = useQuery({
-    queryKey: ["team-domains", id],
-    queryFn: () => api.listTeamDomains(id!),
+  const {
+    data: domainsData,
+    isLoading: domainsLoading,
+    isFetching: domainsFetching,
+  } = useQuery({
+    queryKey: ["team-domains", id, domainsPage, domainsDebouncedQuery],
+    queryFn: () =>
+      api.listTeamDomains(id!, {
+        page: domainsPage,
+        limit: 20,
+        q: domainsDebouncedQuery || undefined,
+      }),
     enabled: !!id && tab === "domains",
   });
 
   const { data: personalDomainsData } = useQuery({
     queryKey: ["domains"],
-    queryFn: api.listDomains,
+    queryFn: () => api.listDomains(),
     enabled:
       tab === "domains" &&
       (data?.team?.my_role === "owner" ||
@@ -222,9 +302,18 @@ export function TeamDetail() {
         data?.team?.my_role === "admin"),
   });
 
-  const { data: subTeamsData, isLoading: subTeamsLoading } = useQuery({
-    queryKey: ["sub-teams", id],
-    queryFn: () => api.listSubTeams(id!),
+  const {
+    data: subTeamsData,
+    isLoading: subTeamsLoading,
+    isFetching: subTeamsFetching,
+  } = useQuery({
+    queryKey: ["sub-teams", id, subTeamsPage, subTeamsDebouncedQuery],
+    queryFn: () =>
+      api.listSubTeams(id!, {
+        page: subTeamsPage,
+        limit: 20,
+        q: subTeamsDebouncedQuery || undefined,
+      }),
     enabled: !!id && tab === "sub-teams",
   });
 
@@ -551,7 +640,9 @@ export function TeamDetail() {
         style={{ marginBottom: 24 }}
       >
         <Tab value="members" icon={<PeopleRegular />}>
-          {t("teams.membersTab", { count: data?.member_count ?? members.length })}
+          {t("teams.membersTab", {
+            count: data?.member_count ?? members.length,
+          })}
         </Tab>
         {/* Visible to managers even while the feature is off, so an owner
             can find the switch and see what's already defined. */}
@@ -569,7 +660,7 @@ export function TeamDetail() {
         {(site?.enable_sub_teams ?? true) && (
           <Tab value="sub-teams" icon={<OrganizationRegular />}>
             {t("teams.subTeamsTab", {
-              count: team.sub_teams?.length ?? 0,
+              count: data?.team?.sub_team_count ?? 0,
             })}
           </Tab>
         )}
@@ -664,7 +755,34 @@ export function TeamDetail() {
             </div>
           )}
 
+          <Input
+            value={appsQuery}
+            onChange={(e) => setAppsQuery(e.target.value)}
+            placeholder={t("teams.searchTeamAppsPlaceholder")}
+            contentBefore={<SearchRegular />}
+            contentAfter={
+              appsQuery ? (
+                <Button
+                  appearance="transparent"
+                  size="small"
+                  icon={<DismissRegular />}
+                  aria-label={t("common.clear")}
+                  onClick={() => setAppsQuery("")}
+                />
+              ) : undefined
+            }
+            style={{ minWidth: 220, flex: "1 1 220px" }}
+          />
+
           <AppsGrid apps={appsData?.apps ?? []} loading={appsLoading} />
+
+          <Pagination
+            page={appsPage}
+            pageCount={Math.max(1, Math.ceil((appsData?.total || 0) / 20))}
+            total={appsData?.total}
+            onChange={setAppsPage}
+            disabled={appsFetching}
+          />
         </div>
       )}
 
@@ -675,6 +793,25 @@ export function TeamDetail() {
             {t("teams.domainsDesc")}
           </Text>
 
+          <Input
+            value={domainsQuery}
+            onChange={(e) => setDomainsQuery(e.target.value)}
+            placeholder={t("teams.searchTeamDomainsPlaceholder")}
+            contentBefore={<SearchRegular />}
+            contentAfter={
+              domainsQuery ? (
+                <Button
+                  appearance="transparent"
+                  size="small"
+                  icon={<DismissRegular />}
+                  aria-label={t("common.clear")}
+                  onClick={() => setDomainsQuery("")}
+                />
+              ) : undefined
+            }
+            style={{ minWidth: 220, flex: "1 1 220px" }}
+          />
+
           <DomainsTable
             teamId={id!}
             domains={domainsData?.domains ?? []}
@@ -683,6 +820,14 @@ export function TeamDetail() {
             verifyingDomain={null}
             transferableDomains={transferableDomains}
             showMsg={showMsg}
+          />
+
+          <Pagination
+            page={domainsPage}
+            pageCount={Math.max(1, Math.ceil((domainsData?.total || 0) / 20))}
+            total={domainsData?.total}
+            onChange={setDomainsPage}
+            disabled={domainsFetching}
           />
         </div>
       )}
@@ -698,6 +843,24 @@ export function TeamDetail() {
               <CreateSubTeamDialog parentTeamId={id!} showMsg={showMsg} />
             )}
           </div>
+          <Input
+            value={subTeamsQuery}
+            onChange={(e) => setSubTeamsQuery(e.target.value)}
+            placeholder={t("teams.searchSubTeamsPlaceholder")}
+            contentBefore={<SearchRegular />}
+            contentAfter={
+              subTeamsQuery ? (
+                <Button
+                  appearance="transparent"
+                  size="small"
+                  icon={<DismissRegular />}
+                  aria-label={t("common.clear")}
+                  onClick={() => setSubTeamsQuery("")}
+                />
+              ) : undefined
+            }
+            style={{ minWidth: 220, flex: "1 1 220px" }}
+          />
           {subTeamsLoading && <SkeletonFormCard rows={3} />}
           {!subTeamsLoading && (subTeamsData?.sub_teams ?? []).length === 0 && (
             <EmptyState
@@ -766,6 +929,14 @@ export function TeamDetail() {
               ))}
             </div>
           )}
+
+          <Pagination
+            page={subTeamsPage}
+            pageCount={Math.max(1, Math.ceil((subTeamsData?.total || 0) / 20))}
+            total={subTeamsData?.total}
+            onChange={setSubTeamsPage}
+            disabled={subTeamsFetching}
+          />
         </div>
       )}
 
@@ -788,6 +959,25 @@ export function TeamDetail() {
               showMsg={showMsg}
             />
           </div>
+
+          <Input
+            value={invitesQuery}
+            onChange={(e) => setInvitesQuery(e.target.value)}
+            placeholder={t("teams.searchInvitesPlaceholder")}
+            contentBefore={<SearchRegular />}
+            contentAfter={
+              invitesQuery ? (
+                <Button
+                  appearance="transparent"
+                  size="small"
+                  icon={<DismissRegular />}
+                  aria-label={t("common.clear")}
+                  onClick={() => setInvitesQuery("")}
+                />
+              ) : undefined
+            }
+            style={{ minWidth: 220, flex: "1 1 220px", marginBottom: 12 }}
+          />
 
           {invitesLoading && <SkeletonTableRows rows={3} cols={4} />}
 
@@ -964,6 +1154,14 @@ export function TeamDetail() {
               </Table>
             </div>
           )}
+
+          <Pagination
+            page={invitesPage}
+            pageCount={Math.max(1, Math.ceil((invitesData?.total || 0) / 20))}
+            total={invitesData?.total}
+            onChange={setInvitesPage}
+            disabled={invitesFetching}
+          />
         </div>
       )}
 

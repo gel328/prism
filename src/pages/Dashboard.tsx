@@ -79,11 +79,11 @@ export function Dashboard() {
   });
   const { data: appsData, isLoading: appsLoading } = useQuery({
     queryKey: ["apps"],
-    queryFn: api.listApps,
+    queryFn: () => api.listApps(),
   });
   const { data: domainsData, isLoading: domainsLoading } = useQuery({
     queryKey: ["domains"],
-    queryFn: api.listDomains,
+    queryFn: () => api.listDomains(),
   });
   const { data: connectionsData, isLoading: connectionsLoading } = useQuery({
     queryKey: ["connections"],

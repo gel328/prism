@@ -11,6 +11,7 @@ import {
 } from "../lib/secretCrypto";
 import { requireAuth, tryPatAuth } from "../middleware/auth";
 import { getConfigValue } from "../lib/config";
+import { readPage, likePattern } from "../lib/pagination";
 import { computeIsVerified, computeVerified } from "../lib/domainVerify";
 import { validateImageUrl } from "../lib/imageValidation";
 import { validateOutboundUrl } from "../lib/safeFetch";
@@ -249,12 +250,27 @@ async function canAccess(
 // List user's personal apps (team apps are listed via /api/teams/:id/apps)
 app.get("/", async (c) => {
   const user = c.get("user");
-  const [rows, domainRows] = await Promise.all([
+  const { page, limit, offset } = readPage(
+    c.req.query("page"),
+    c.req.query("limit"),
+    20,
+  );
+  const query = c.req.query("q")?.trim() ?? "";
+
+  const where = query
+    ? "owner_id = ? AND team_id IS NULL AND LOWER(name) LIKE LOWER(?) ESCAPE '\\'"
+    : "owner_id = ? AND team_id IS NULL";
+  const args: unknown[] = query ? [user.id, likePattern(query)] : [user.id];
+
+  const [rows, countRow, domainRows] = await Promise.all([
     c.env.DB.prepare(
-      "SELECT * FROM oauth_apps WHERE owner_id = ? AND team_id IS NULL ORDER BY created_at DESC",
+      `SELECT * FROM oauth_apps WHERE ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`,
     )
-      .bind(user.id)
+      .bind(...args, limit, offset)
       .all<OAuthAppRow>(),
+    c.env.DB.prepare(`SELECT COUNT(*) AS n FROM oauth_apps WHERE ${where}`)
+      .bind(...args)
+      .first<{ n: number }>(),
     c.env.DB.prepare(
       "SELECT domain FROM domains WHERE user_id = ? AND verified = 1",
     )
@@ -273,6 +289,9 @@ app.get("/", async (c) => {
         ),
       ),
     ),
+    total: countRow?.n ?? 0,
+    page,
+    limit,
   });
 });
 
@@ -1511,7 +1530,7 @@ function auditAppLifecycle(
   c: {
     env: Env;
     executionCtx: ExecutionContext;
-    req: { header: (h: string) => string | undefined };
+    req: { header: (h: string) => string | undefined; raw: Request };
     get: (k: "user") => { id: string; username: string };
   },
   action: string,
@@ -1528,6 +1547,7 @@ function auditAppLifecycle(
     resourceName: app.name,
     ip: meta.ip,
     userAgent: meta.userAgent,
+    geo: meta.geo,
     metadata: { name: app.name },
   };
   const events: AuditInput[] = [

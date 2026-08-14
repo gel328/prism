@@ -422,6 +422,20 @@ export const api = {
       undefined,
       getToken(),
     ),
+  listSessionIps: (id: string) =>
+    request<{ ips: SessionIpInfo[] }>(
+      "GET",
+      `/auth/sessions/${id}/ips`,
+      undefined,
+      getToken(),
+    ),
+  revokeAllOtherSessions: () =>
+    request<{ message: string; revoked: number }>(
+      "DELETE",
+      "/auth/sessions",
+      undefined,
+      getToken(),
+    ),
   powChallenge: () =>
     request<{ challenge: string; difficulty: number; expires_at: number }>(
       "GET",
@@ -547,8 +561,19 @@ export const api = {
     ),
 
   // ─── Apps ────────────────────────────────────────────────────────────────
-  listApps: () =>
-    request<{ apps: OAuthApp[] }>("GET", "/apps", undefined, getToken()),
+  listApps: (params: { page?: number; limit?: number; q?: string } = {}) => {
+    const search = new URLSearchParams();
+    if (params.page) search.set("page", String(params.page));
+    if (params.limit) search.set("limit", String(params.limit));
+    if (params.q) search.set("q", params.q);
+    const qs = search.toString();
+    return request<{
+      apps: OAuthApp[];
+      total: number;
+      page: number;
+      limit: number;
+    }>("GET", `/apps${qs ? `?${qs}` : ""}`, undefined, getToken());
+  },
   getApp: (id: string) =>
     request<{ app: OAuthApp }>("GET", `/apps/${id}`, undefined, getToken()),
   createApp: (body: CreateAppBody) =>
@@ -664,8 +689,19 @@ export const api = {
     ),
 
   // ─── Domains ─────────────────────────────────────────────────────────────
-  listDomains: () =>
-    request<{ domains: Domain[] }>("GET", "/domains", undefined, getToken()),
+  listDomains: (params: { page?: number; limit?: number; q?: string } = {}) => {
+    const search = new URLSearchParams();
+    if (params.page) search.set("page", String(params.page));
+    if (params.limit) search.set("limit", String(params.limit));
+    if (params.q) search.set("q", params.q);
+    const qs = search.toString();
+    return request<{
+      domains: Domain[];
+      total: number;
+      page: number;
+      limit: number;
+    }>("GET", `/domains${qs ? `?${qs}` : ""}`, undefined, getToken());
+  },
   addDomain: (domain: string, app_id?: string) =>
     request<DomainAddResponse>(
       "POST",
@@ -759,13 +795,21 @@ export const api = {
     ),
 
   // ─── OAuth consents ──────────────────────────────────────────────────────
-  listConsents: () =>
-    request<{ consents: OAuthConsent[] }>(
-      "GET",
-      "/oauth/consents",
-      undefined,
-      getToken(),
-    ),
+  listConsents: (
+    params: { page?: number; limit?: number; q?: string } = {},
+  ) => {
+    const search = new URLSearchParams();
+    if (params.page) search.set("page", String(params.page));
+    if (params.limit) search.set("limit", String(params.limit));
+    if (params.q) search.set("q", params.q);
+    const qs = search.toString();
+    return request<{
+      consents: OAuthConsent[];
+      total: number;
+      page: number;
+      limit: number;
+    }>("GET", `/oauth/consents${qs ? `?${qs}` : ""}`, undefined, getToken());
+  },
   revokeConsent: (clientId: string) =>
     request<{ message: string }>(
       "DELETE",
@@ -1286,21 +1330,46 @@ export const api = {
     ),
 
   // Teams
-  listTeams: () =>
-    request<{ teams: Team[] }>("GET", "/teams", undefined, getToken()),
+  listTeams: (params: { page?: number; limit?: number; q?: string } = {}) => {
+    const search = new URLSearchParams();
+    if (params.page) search.set("page", String(params.page));
+    if (params.limit) search.set("limit", String(params.limit));
+    if (params.q) search.set("q", params.q);
+    const qs = search.toString();
+    return request<{
+      teams: Team[];
+      total: number;
+      page: number;
+      limit: number;
+    }>("GET", `/teams${qs ? `?${qs}` : ""}`, undefined, getToken());
+  },
   createTeam: (body: {
     name: string;
     description?: string;
     avatar_url?: string;
     parent_team_id?: string | null;
   }) => request<{ team: Team }>("POST", "/teams", body, getToken()),
-  listSubTeams: (parentTeamId: string) =>
-    request<{ sub_teams: SubTeamListItem[] }>(
+  listSubTeams: (
+    parentTeamId: string,
+    params: { page?: number; limit?: number; q?: string } = {},
+  ) => {
+    const search = new URLSearchParams();
+    if (params.page) search.set("page", String(params.page));
+    if (params.limit) search.set("limit", String(params.limit));
+    if (params.q) search.set("q", params.q);
+    const qs = search.toString();
+    return request<{
+      sub_teams: SubTeamListItem[];
+      total: number;
+      page: number;
+      limit: number;
+    }>(
       "GET",
-      `/teams/${encodeURIComponent(parentTeamId)}/sub-teams`,
+      `/teams/${encodeURIComponent(parentTeamId)}/sub-teams${qs ? `?${qs}` : ""}`,
       undefined,
       getToken(),
-    ),
+    );
+  },
   createSubTeam: (
     parentTeamId: string,
     body: { name: string; description?: string; avatar_url?: string },
@@ -1491,13 +1560,27 @@ export const api = {
       { user_id: userId },
       getToken(),
     ),
-  listTeamApps: (teamId: string) =>
-    request<{ apps: OAuthApp[] }>(
+  listTeamApps: (
+    teamId: string,
+    params: { page?: number; limit?: number; q?: string } = {},
+  ) => {
+    const search = new URLSearchParams();
+    if (params.page) search.set("page", String(params.page));
+    if (params.limit) search.set("limit", String(params.limit));
+    if (params.q) search.set("q", params.q);
+    const qs = search.toString();
+    return request<{
+      apps: OAuthApp[];
+      total: number;
+      page: number;
+      limit: number;
+    }>(
       "GET",
-      `/teams/${teamId}/apps`,
+      `/teams/${teamId}/apps${qs ? `?${qs}` : ""}`,
       undefined,
       getToken(),
-    ),
+    );
+  },
   createTeamApp: (teamId: string, body: CreateAppBody) =>
     request<{ app: OAuthApp }>(
       "POST",
@@ -1521,13 +1604,27 @@ export const api = {
     ),
 
   // Team domains
-  listTeamDomains: (teamId: string) =>
-    request<{ domains: Domain[] }>(
+  listTeamDomains: (
+    teamId: string,
+    params: { page?: number; limit?: number; q?: string } = {},
+  ) => {
+    const search = new URLSearchParams();
+    if (params.page) search.set("page", String(params.page));
+    if (params.limit) search.set("limit", String(params.limit));
+    if (params.q) search.set("q", params.q);
+    const qs = search.toString();
+    return request<{
+      domains: Domain[];
+      total: number;
+      page: number;
+      limit: number;
+    }>(
       "GET",
-      `/teams/${teamId}/domains`,
+      `/teams/${teamId}/domains${qs ? `?${qs}` : ""}`,
       undefined,
       getToken(),
-    ),
+    );
+  },
   addTeamDomain: (teamId: string, domain: string) =>
     request<DomainAddResponse>(
       "POST",
@@ -1594,13 +1691,27 @@ export const api = {
     ),
 
   // Team invites
-  listTeamInvites: (teamId: string) =>
-    request<{ invites: TeamInvite[] }>(
+  listTeamInvites: (
+    teamId: string,
+    params: { page?: number; limit?: number; q?: string } = {},
+  ) => {
+    const search = new URLSearchParams();
+    if (params.page) search.set("page", String(params.page));
+    if (params.limit) search.set("limit", String(params.limit));
+    if (params.q) search.set("q", params.q);
+    const qs = search.toString();
+    return request<{
+      invites: TeamInvite[];
+      total: number;
+      page: number;
+      limit: number;
+    }>(
       "GET",
-      `/teams/${teamId}/invites`,
+      `/teams/${teamId}/invites${qs ? `?${qs}` : ""}`,
       undefined,
       getToken(),
-    ),
+    );
+  },
   createTeamInvite: (
     teamId: string,
     body: {
@@ -1653,13 +1764,21 @@ export const api = {
     ),
 
   // Site invites
-  adminListInvites: () =>
-    request<{ invites: SiteInvite[] }>(
-      "GET",
-      "/admin/invites",
-      undefined,
-      getToken(),
-    ),
+  adminListInvites: (
+    params: { page?: number; limit?: number; q?: string } = {},
+  ) => {
+    const search = new URLSearchParams();
+    if (params.page) search.set("page", String(params.page));
+    if (params.limit) search.set("limit", String(params.limit));
+    if (params.q) search.set("q", params.q);
+    const qs = search.toString();
+    return request<{
+      invites: SiteInvite[];
+      total: number;
+      page: number;
+      limit: number;
+    }>("GET", `/admin/invites${qs ? `?${qs}` : ""}`, undefined, getToken());
+  },
   adminCreateInvite: (body: {
     email?: string;
     note?: string;
@@ -1682,13 +1801,27 @@ export const api = {
     ),
 
   // OAuth sources
-  adminListOAuthSources: () =>
-    request<{ sources: OAuthSource[]; legacy_providers: string[] }>(
+  adminListOAuthSources: (
+    params: { page?: number; limit?: number; q?: string } = {},
+  ) => {
+    const search = new URLSearchParams();
+    if (params.page) search.set("page", String(params.page));
+    if (params.limit) search.set("limit", String(params.limit));
+    if (params.q) search.set("q", params.q);
+    const qs = search.toString();
+    return request<{
+      sources: OAuthSource[];
+      legacy_providers: string[];
+      total: number;
+      page: number;
+      limit: number;
+    }>(
       "GET",
-      "/admin/oauth-sources",
+      `/admin/oauth-sources${qs ? `?${qs}` : ""}`,
       undefined,
       getToken(),
-    ),
+    );
+  },
   adminMigrateOAuthSources: () =>
     request<{ migrated: string[]; skipped: string[] }>(
       "POST",
@@ -1758,8 +1891,13 @@ export const api = {
     ),
 
   // ─── Personal Access Tokens ───────────────────────────────────────────────
-  listTokens: () =>
-    request<{
+  listTokens: (params: { page?: number; limit?: number; q?: string } = {}) => {
+    const search = new URLSearchParams();
+    if (params.page) search.set("page", String(params.page));
+    if (params.limit) search.set("limit", String(params.limit));
+    if (params.q) search.set("q", params.q);
+    const qs = search.toString();
+    return request<{
       tokens: {
         id: string;
         name: string;
@@ -1768,7 +1906,11 @@ export const api = {
         last_used_at: number | null;
         created_at: number;
       }[];
-    }>("GET", "/user/tokens", undefined, getToken()),
+      total: number;
+      page: number;
+      limit: number;
+    }>("GET", `/user/tokens${qs ? `?${qs}` : ""}`, undefined, getToken());
+  },
   createToken: (body: {
     name: string;
     scopes: string[];
@@ -2043,6 +2185,19 @@ export interface SessionInfo {
   created_at: number;
   expires_at: number;
   is_current: boolean;
+  // Full Cloudflare geolocation (JSON string, worker/lib/geo.ts GeoInfo) for
+  // the IP the session was created from. Null on non-Cloudflare paths (e.g.
+  // local dev) or until the first authenticated request has recorded it.
+  ip_geo: string | null;
+}
+
+// One distinct IP a session has authenticated from, with the full Cloudflare
+// geolocation snapshot (JSON string) and when it was first/last seen.
+export interface SessionIpInfo {
+  ip_address: string;
+  geo: string | null;
+  first_seen: number;
+  last_seen: number;
 }
 
 export interface OAuthToken {
@@ -2136,6 +2291,9 @@ export interface Team {
   ancestors?: TeamAncestor[];
   /** Set on the team detail response — immediate sub-teams + member count. */
   sub_teams?: SubTeamSummary[];
+  /** Set on the team detail response — total direct sub-team count across all
+   *  pages (the embedded `sub_teams` list is first-page only). */
+  sub_team_count?: number;
   profile_is_public: boolean;
   /** Per-section overrides — null means "follow the site default". */
   profile_show_description: boolean | null;
@@ -2423,6 +2581,8 @@ export interface AuditEvent {
   resource_name: string | null;
   ip: string | null;
   user_agent: string | null;
+  // JSON snapshot of the request's Cloudflare geolocation (worker/lib/geo.ts).
+  ip_geo: string | null;
   metadata: string;
   created_at: number;
 }

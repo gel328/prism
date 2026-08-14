@@ -30,15 +30,18 @@ import {
   AddRegular,
   CopyRegular,
   DeleteRegular,
+  DismissRegular,
   KeyRegular,
+  SearchRegular,
 } from "@fluentui/react-icons";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api, ApiError } from "../lib/api";
 import { formatDate } from "../lib/datetime";
 import { EmptyState } from "../components/EmptyState";
 import { PageHeader } from "../components/PageHeader";
+import { Pagination } from "../components/Pagination";
 import { SkeletonTableRows } from "../components/Skeletons";
 
 const useStyles = makeStyles({
@@ -107,9 +110,22 @@ export function Tokens() {
   const { t } = useTranslation();
   const qc = useQueryClient();
 
-  const { data, isLoading } = useQuery({
-    queryKey: ["pat"],
-    queryFn: api.listTokens,
+  const [query, setQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+  const [page, setPage] = useState(1);
+
+  useEffect(() => {
+    const id = setTimeout(() => {
+      setDebouncedQuery(query.trim());
+      setPage(1);
+    }, 250);
+    return () => clearTimeout(id);
+  }, [query]);
+
+  const { data, isFetching } = useQuery({
+    queryKey: ["pat", page, debouncedQuery],
+    queryFn: () =>
+      api.listTokens({ page, limit: 20, q: debouncedQuery || undefined }),
   });
 
   const [open, setOpen] = useState(false);
@@ -285,72 +301,112 @@ export function Tokens() {
       />
 
       <div className={styles.card}>
-        {isLoading ? (
+        {isFetching && !data ? (
           <SkeletonTableRows rows={5} cols={5} />
-        ) : !data?.tokens.length ? (
+        ) : !isFetching && data?.tokens.length === 0 && !debouncedQuery ? (
           <EmptyState
             icon={<KeyRegular />}
             title={t("tokens.noTokens")}
             description={t("tokens.subtitle")}
           />
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHeaderCell>{t("tokens.name")}</TableHeaderCell>
-                <TableHeaderCell>{t("tokens.scopesCol")}</TableHeaderCell>
-                <TableHeaderCell>{t("tokens.lastUsed")}</TableHeaderCell>
-                <TableHeaderCell>{t("tokens.expires")}</TableHeaderCell>
-                <TableHeaderCell />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {data.tokens.map((tok) => (
-                <TableRow key={tok.id}>
-                  <TableCell>
-                    <Text weight="semibold">{tok.name}</Text>
-                  </TableCell>
-                  <TableCell>
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-                      {tok.scopes.map((s) => (
-                        <Badge key={s} appearance="outline" size="small">
-                          {s}
-                        </Badge>
-                      ))}
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <Text
-                      size={200}
-                      style={{ color: tokens.colorNeutralForeground3 }}
-                    >
-                      {formatDate(tok.last_used_at)}
-                    </Text>
-                  </TableCell>
-                  <TableCell>
-                    <Text
-                      size={200}
-                      style={{ color: tokens.colorNeutralForeground3 }}
-                    >
-                      {formatDate(tok.expires_at)}
-                    </Text>
-                  </TableCell>
-                  <TableCell>
+        ) : !isFetching && data?.tokens.length === 0 && debouncedQuery ? (
+          <EmptyState icon={<KeyRegular />} title={t("teams.noResultsMatch")} />
+        ) : data && data.tokens.length > 0 ? (
+          <>
+            <div
+              style={{
+                display: "flex",
+                gap: 8,
+                marginBottom: 12,
+                flexWrap: "wrap",
+              }}
+            >
+              <Input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder={t("tokens.searchTokensPlaceholder")}
+                contentBefore={<SearchRegular />}
+                contentAfter={
+                  query ? (
                     <Button
-                      appearance="subtle"
-                      icon={<DeleteRegular />}
+                      appearance="transparent"
                       size="small"
-                      style={{ color: tokens.colorPaletteRedForeground1 }}
-                      onClick={() => handleRevoke(tok.id)}
-                    >
-                      {t("tokens.revoke")}
-                    </Button>
-                  </TableCell>
+                      icon={<DismissRegular />}
+                      aria-label={t("common.clear")}
+                      onClick={() => setQuery("")}
+                    />
+                  ) : undefined
+                }
+                style={{ minWidth: 220, flex: "1 1 220px" }}
+              />
+            </div>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHeaderCell>{t("tokens.name")}</TableHeaderCell>
+                  <TableHeaderCell>{t("tokens.scopesCol")}</TableHeaderCell>
+                  <TableHeaderCell>{t("tokens.lastUsed")}</TableHeaderCell>
+                  <TableHeaderCell>{t("tokens.expires")}</TableHeaderCell>
+                  <TableHeaderCell />
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        )}
+              </TableHeader>
+              <TableBody>
+                {data.tokens.map((tok) => (
+                  <TableRow key={tok.id}>
+                    <TableCell>
+                      <Text weight="semibold">{tok.name}</Text>
+                    </TableCell>
+                    <TableCell>
+                      <div
+                        style={{ display: "flex", flexWrap: "wrap", gap: 4 }}
+                      >
+                        {tok.scopes.map((s) => (
+                          <Badge key={s} appearance="outline" size="small">
+                            {s}
+                          </Badge>
+                        ))}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Text
+                        size={200}
+                        style={{ color: tokens.colorNeutralForeground3 }}
+                      >
+                        {formatDate(tok.last_used_at)}
+                      </Text>
+                    </TableCell>
+                    <TableCell>
+                      <Text
+                        size={200}
+                        style={{ color: tokens.colorNeutralForeground3 }}
+                      >
+                        {formatDate(tok.expires_at)}
+                      </Text>
+                    </TableCell>
+                    <TableCell>
+                      <Button
+                        appearance="subtle"
+                        icon={<DeleteRegular />}
+                        size="small"
+                        style={{ color: tokens.colorPaletteRedForeground1 }}
+                        onClick={() => handleRevoke(tok.id)}
+                      >
+                        {t("tokens.revoke")}
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+            <Pagination
+              page={page}
+              pageCount={Math.max(1, Math.ceil((data.total || 0) / 20))}
+              total={data.total}
+              onChange={setPage}
+              disabled={isFetching}
+            />
+          </>
+        ) : null}
       </div>
     </div>
   );

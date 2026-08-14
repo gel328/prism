@@ -1114,7 +1114,7 @@ export function AppDetail() {
 
   const { data: teamsData } = useQuery({
     queryKey: ["teams"],
-    queryFn: api.listTeams,
+    queryFn: () => api.listTeams(),
   });
 
   const { data: accessRulesData, refetch: refetchAccessRules } = useQuery({

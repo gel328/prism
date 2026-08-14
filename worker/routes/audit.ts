@@ -287,6 +287,7 @@ async function recordWebhookLifecycle(
       resourceName: wh.name,
       ip: meta.ip,
       userAgent: meta.userAgent,
+      geo: meta.geo,
       metadata: { name: wh.name, kind: wh.kind },
     },
     { awaitDelivery: true },

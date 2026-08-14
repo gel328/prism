@@ -20,14 +20,20 @@ import {
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
-import { AddRegular, PeopleRegular } from "@fluentui/react-icons";
-import { useState } from "react";
+import {
+  AddRegular,
+  PeopleRegular,
+  SearchRegular,
+  DismissRegular,
+} from "@fluentui/react-icons";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api, ApiError } from "../../lib/api";
 import { EmptyState } from "../../components/EmptyState";
 import { PageHeader } from "../../components/PageHeader";
+import { Pagination } from "../../components/Pagination";
 import { SkeletonAppCards } from "../../components/Skeletons";
 
 const useStyles = makeStyles({
@@ -73,9 +79,26 @@ export function TeamList() {
   const qc = useQueryClient();
   const { t } = useTranslation();
 
-  const { data, isLoading } = useQuery({
-    queryKey: ["teams"],
-    queryFn: api.listTeams,
+  const [query, setQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+  const [page, setPage] = useState(1);
+
+  useEffect(() => {
+    const id = setTimeout(() => {
+      setDebouncedQuery(query.trim());
+      setPage(1);
+    }, 250);
+    return () => clearTimeout(id);
+  }, [query]);
+
+  const { data, isFetching } = useQuery({
+    queryKey: ["teams", page, debouncedQuery],
+    queryFn: () =>
+      api.listTeams({
+        page,
+        limit: 20,
+        q: debouncedQuery || undefined,
+      }),
   });
 
   const [open, setOpen] = useState(false);
@@ -183,9 +206,9 @@ export function TeamList() {
     <div>
       <PageHeader title={t("teams.title")} actions={createDialog} />
 
-      {isLoading && <SkeletonAppCards count={4} />}
+      {isFetching && !data && <SkeletonAppCards count={4} />}
 
-      {!isLoading && data?.teams.length === 0 && (
+      {!isFetching && data?.teams.length === 0 && !debouncedQuery && (
         <EmptyState
           icon={<PeopleRegular />}
           title={t("teams.noTeamsYet")}
@@ -193,47 +216,96 @@ export function TeamList() {
         />
       )}
 
-      <div className={styles.grid}>
-        {data?.teams.map((team) => (
+      {!isFetching && data?.teams.length === 0 && debouncedQuery && (
+        <EmptyState
+          icon={<PeopleRegular />}
+          title={t("teams.noResultsMatch")}
+        />
+      )}
+
+      {data && data.teams.length > 0 && (
+        <>
           <div
-            key={team.id}
-            className={styles.card}
-            onClick={() => navigate(`/teams/${team.id}`)}
+            style={{
+              display: "flex",
+              gap: 8,
+              marginBottom: 12,
+              flexWrap: "wrap",
+            }}
           >
-            <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
-              {team.avatar_url ? (
-                <Avatar
-                  image={{ src: team.avatar_url }}
-                  name={team.name}
-                  size={32}
-                />
-              ) : (
-                <Avatar name={team.name} size={32} />
-              )}
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <Text weight="semibold">{team.name}</Text>
-                  <Badge
-                    color={ROLE_COLORS[team.role] ?? "subtle"}
-                    appearance="filled"
+            <Input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder={t("teams.searchTeamsPlaceholder")}
+              contentBefore={<SearchRegular />}
+              contentAfter={
+                query ? (
+                  <Button
+                    appearance="transparent"
                     size="small"
-                  >
-                    {team.role}
-                  </Badge>
-                </div>
-                {team.description && (
-                  <Text
-                    size={200}
-                    style={{ color: tokens.colorNeutralForeground3 }}
-                  >
-                    {team.description}
-                  </Text>
-                )}
-              </div>
-            </div>
+                    icon={<DismissRegular />}
+                    aria-label={t("common.clear")}
+                    onClick={() => setQuery("")}
+                  />
+                ) : undefined
+              }
+              style={{ minWidth: 220, flex: "1 1 220px" }}
+            />
           </div>
-        ))}
-      </div>
+          <div className={styles.grid}>
+            {data.teams.map((team) => (
+              <div
+                key={team.id}
+                className={styles.card}
+                onClick={() => navigate(`/teams/${team.id}`)}
+              >
+                <div
+                  style={{ display: "flex", alignItems: "flex-start", gap: 12 }}
+                >
+                  {team.avatar_url ? (
+                    <Avatar
+                      image={{ src: team.avatar_url }}
+                      name={team.name}
+                      size={32}
+                    />
+                  ) : (
+                    <Avatar name={team.name} size={32} />
+                  )}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div
+                      style={{ display: "flex", alignItems: "center", gap: 6 }}
+                    >
+                      <Text weight="semibold">{team.name}</Text>
+                      <Badge
+                        color={ROLE_COLORS[team.role] ?? "subtle"}
+                        appearance="filled"
+                        size="small"
+                      >
+                        {team.role}
+                      </Badge>
+                    </div>
+                    {team.description && (
+                      <Text
+                        size={200}
+                        style={{ color: tokens.colorNeutralForeground3 }}
+                      >
+                        {team.description}
+                      </Text>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+          <Pagination
+            page={page}
+            pageCount={Math.max(1, Math.ceil((data.total || 0) / 20))}
+            total={data.total}
+            onChange={setPage}
+            disabled={isFetching}
+          />
+        </>
+      )}
     </div>
   );
 }

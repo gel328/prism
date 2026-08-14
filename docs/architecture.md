@@ -102,6 +102,7 @@ worker/
 │
 ├── cron/
 │   ├── reverify.ts         # Domain re-verification sweep
+│   ├── sessions.ts         # Expired-session sweep
 │   └── imap-poll.ts        # Pull verification emails from an IMAP mailbox
 │
 ├── handlers/

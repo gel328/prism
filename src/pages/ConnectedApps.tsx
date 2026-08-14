@@ -15,6 +15,7 @@ import {
   DialogSurface,
   DialogTitle,
   DialogTrigger,
+  Input,
   MessageBar,
   Spinner,
   Text,
@@ -23,19 +24,21 @@ import {
   tokens,
 } from "@fluentui/react-components";
 import {
+  ArrowSyncRegular,
+  ClockRegular,
   DismissRegular,
   GlobeRegular,
   KeyRegular,
+  SearchRegular,
   ShieldRegular,
-  ClockRegular,
-  ArrowSyncRegular,
 } from "@fluentui/react-icons";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api, ApiError, type OAuthConsent, type OAuthToken } from "../lib/api";
 import { EmptyState } from "../components/EmptyState";
 import { PageHeader } from "../components/PageHeader";
+import { Pagination } from "../components/Pagination";
 import { SkeletonConsentCards } from "../components/Skeletons";
 
 const useStyles = makeStyles({
@@ -383,9 +386,22 @@ export function ConnectedApps() {
   const [revokingToken, setRevokingToken] = useState<string | null>(null);
   const [error, setError] = useState("");
 
-  const { data, isLoading } = useQuery({
-    queryKey: ["consents"],
-    queryFn: api.listConsents,
+  const [query, setQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+  const [page, setPage] = useState(1);
+
+  useEffect(() => {
+    const id = setTimeout(() => {
+      setDebouncedQuery(query.trim());
+      setPage(1);
+    }, 250);
+    return () => clearTimeout(id);
+  }, [query]);
+
+  const { data, isFetching } = useQuery({
+    queryKey: ["consents", page, debouncedQuery],
+    queryFn: () =>
+      api.listConsents({ page, limit: 20, q: debouncedQuery || undefined }),
   });
 
   const handleRevokeConsent = async (consent: OAuthConsent) => {
@@ -428,24 +444,62 @@ export function ConnectedApps() {
 
       {error && <MessageBar intent="error">{error}</MessageBar>}
 
-      {isLoading ? (
+      {isFetching && !data ? (
         <SkeletonConsentCards count={3} />
-      ) : consents.length === 0 ? (
+      ) : !isFetching && data?.consents.length === 0 && !debouncedQuery ? (
         <EmptyState icon={<GlobeRegular />} title={t("connectedApps.noApps")} />
-      ) : (
-        <div className={styles.list}>
-          {consents.map((consent) => (
-            <ConsentCard
-              key={consent.client_id}
-              consent={consent}
-              onRevokeConsent={handleRevokeConsent}
-              onRevokeToken={handleRevokeToken}
-              revokingConsent={revokingConsent}
-              revokingToken={revokingToken}
+      ) : !isFetching && data?.consents.length === 0 && debouncedQuery ? (
+        <EmptyState icon={<GlobeRegular />} title={t("teams.noResultsMatch")} />
+      ) : data && data.consents.length > 0 ? (
+        <>
+          <div
+            style={{
+              display: "flex",
+              gap: 8,
+              marginBottom: 12,
+              flexWrap: "wrap",
+            }}
+          >
+            <Input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder={t("connectedApps.searchConsentsPlaceholder")}
+              contentBefore={<SearchRegular />}
+              contentAfter={
+                query ? (
+                  <Button
+                    appearance="transparent"
+                    size="small"
+                    icon={<DismissRegular />}
+                    aria-label={t("common.clear")}
+                    onClick={() => setQuery("")}
+                  />
+                ) : undefined
+              }
+              style={{ minWidth: 220, flex: "1 1 220px" }}
             />
-          ))}
-        </div>
-      )}
+          </div>
+          <div className={styles.list}>
+            {consents.map((consent) => (
+              <ConsentCard
+                key={consent.client_id}
+                consent={consent}
+                onRevokeConsent={handleRevokeConsent}
+                onRevokeToken={handleRevokeToken}
+                revokingConsent={revokingConsent}
+                revokingToken={revokingToken}
+              />
+            ))}
+          </div>
+          <Pagination
+            page={page}
+            pageCount={Math.max(1, Math.ceil((data.total || 0) / 20))}
+            total={data.total}
+            onChange={setPage}
+            disabled={isFetching}
+          />
+        </>
+      ) : null}
     </div>
   );
 }

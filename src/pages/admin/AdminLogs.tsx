@@ -29,6 +29,8 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api } from "../../lib/api";
+import { formatIpGeo } from "../../lib/geo";
+import { Pagination } from "../../components/Pagination";
 import { SkeletonTableRows } from "../../components/Skeletons";
 
 const useStyles = makeStyles({
@@ -44,6 +46,7 @@ type RequestLog = {
   status: number;
   duration_ms: number;
   ip_address: string | null;
+  ip_geo: string | null;
   user_agent: string | null;
   user_id: string | null;
   created_at: number;
@@ -473,7 +476,7 @@ export function AdminLogs() {
   const [appliedUserId, setAppliedUserId] = useState("");
   const [exporting, setExporting] = useState(false);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isFetching } = useQuery({
     queryKey: [
       "admin-request-logs",
       page,
@@ -684,6 +687,9 @@ export function AdminLogs() {
                 </TableHeaderCell>
                 <TableHeaderCell>{t("admin.logs.userHeader")}</TableHeaderCell>
                 <TableHeaderCell>{t("admin.logs.ipHeader")}</TableHeaderCell>
+                <TableHeaderCell>
+                  {t("admin.logs.locationHeader")}
+                </TableHeaderCell>
                 <TableHeaderCell />
               </TableRow>
             </TableHeader>
@@ -691,7 +697,7 @@ export function AdminLogs() {
               {logs.length === 0 ? (
                 <TableRow>
                   <TableCell
-                    colSpan={8}
+                    colSpan={9}
                     style={{
                       textAlign: "center",
                       color: tokens.colorNeutralForeground3,
@@ -761,6 +767,9 @@ export function AdminLogs() {
                     >
                       {log.ip_address ?? "—"}
                     </TableCell>
+                    <TableCell style={{ fontSize: 12, whiteSpace: "nowrap" }}>
+                      {formatIpGeo(log.ip_geo) || "—"}
+                    </TableCell>
                     <TableCell>
                       <DetailsDialog id={log.id} />
                     </TableCell>
@@ -773,32 +782,12 @@ export function AdminLogs() {
       )}
 
       {totalPages > 1 && (
-        <div
-          style={{
-            display: "flex",
-            gap: 8,
-            alignItems: "center",
-            justifyContent: "flex-end",
-          }}
-        >
-          <Button
-            size="small"
-            disabled={page <= 1}
-            onClick={() => setPage((p) => p - 1)}
-          >
-            {t("common.previous")}
-          </Button>
-          <Text size={200}>
-            {t("common.pageOf", { page, total: totalPages })}
-          </Text>
-          <Button
-            size="small"
-            disabled={page >= totalPages}
-            onClick={() => setPage((p) => p + 1)}
-          >
-            {t("common.next")}
-          </Button>
-        </div>
+        <Pagination
+          page={page}
+          pageCount={totalPages}
+          onChange={setPage}
+          disabled={isLoading || isFetching}
+        />
       )}
     </div>
   );

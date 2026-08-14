@@ -33,6 +33,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api, type TeamMember } from "../../lib/api";
+import { Pagination } from "../../components/Pagination";
 import { SkeletonTableRows } from "../../components/Skeletons";
 
 const useStyles = makeStyles({
@@ -434,28 +435,12 @@ export function MembersTable({
           </Table>
           {pageCount > 1 && (
             <div className={styles.pager}>
-              <Button
-                size="small"
-                appearance="subtle"
-                disabled={page <= 1 || isFetching}
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-              >
-                {t("common.previous")}
-              </Button>
-              <Text
-                size={200}
-                style={{ color: tokens.colorNeutralForeground3 }}
-              >
-                {t("teams.memberPageOf", { page, pages: pageCount })}
-              </Text>
-              <Button
-                size="small"
-                appearance="subtle"
-                disabled={page >= pageCount || isFetching}
-                onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
-              >
-                {t("common.next")}
-              </Button>
+              <Pagination
+                page={page}
+                pageCount={pageCount}
+                onChange={setPage}
+                disabled={isFetching}
+              />
             </div>
           )}
         </div>

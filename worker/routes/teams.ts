@@ -27,6 +27,7 @@ import {
 import type { DomainRow } from "../types";
 import { getConfig } from "../lib/config";
 import { sendEmail } from "../lib/email";
+import { readPage, likePattern } from "../lib/pagination";
 import {
   deliverUserEmailNotifications,
   notificationActorMetaFromHeaders,
@@ -98,6 +99,7 @@ function auditTeam(
     resourceName: opts.resourceName ?? null,
     ip: meta.ip,
     userAgent: meta.userAgent,
+    geo: meta.geo,
     metadata: opts.metadata ?? {},
   });
 }
@@ -652,6 +654,13 @@ app.use("*", requireAuth);
 // listing entry came from inheritance only; null for direct memberships.
 app.get("/", async (c) => {
   const user = c.get("user");
+  const { page, limit, offset } = readPage(
+    c.req.query("page"),
+    c.req.query("limit"),
+    20,
+  );
+  const query = c.req.query("q")?.trim() ?? "";
+
   const rows = await c.env.DB.prepare(
     `SELECT t.*, tm.role, tm.show_on_profile
      FROM teams t
@@ -706,9 +715,18 @@ app.get("/", async (c) => {
     }
   }
 
+  // Search + paginate over the fully-expanded (direct ∪ inherited) set.
+  // The expansion must stay whole — an inherited entry can outrank a direct
+  // one, so slicing before merging would produce wrong roles.
+  const ql = query.toLowerCase();
+  const entries = Array.from(collected.values()).filter(
+    (e) => !ql || e.team.name.toLowerCase().includes(ql),
+  );
+  const pageEntries = entries.slice(offset, offset + limit);
+
   return c.json({
     teams: await Promise.all(
-      Array.from(collected.values()).map(async (entry) => ({
+      pageEntries.map(async (entry) => ({
         ...serializeTeamRow(entry.team),
         role: entry.role,
         avatar_url: await proxyImageUrl(
@@ -722,6 +740,9 @@ app.get("/", async (c) => {
         inherited_from: entry.inherited_from,
       })),
     ),
+    total: entries.length,
+    page,
+    limit,
   });
 });
 
@@ -868,19 +889,36 @@ app.get("/:id/sub-teams", async (c) => {
   const eff = await getEffectiveMember(c.env.DB, id, user.id);
   if (!eff) return c.json({ error: "Not found" }, 404);
 
-  const { results } = await c.env.DB.prepare(
-    `SELECT t.*, (
-       SELECT COUNT(*) FROM team_members WHERE team_id = t.id
-     ) AS member_count
-     FROM teams t WHERE t.parent_team_id = ?
-     ORDER BY t.created_at DESC`,
-  )
-    .bind(id)
-    .all<TeamRow & { member_count: number }>();
+  const { page, limit, offset } = readPage(
+    c.req.query("page"),
+    c.req.query("limit"),
+    20,
+  );
+  const query = c.req.query("q")?.trim() ?? "";
+
+  const where = query
+    ? "t.parent_team_id = ? AND LOWER(t.name) LIKE LOWER(?) ESCAPE '\\'"
+    : "t.parent_team_id = ?";
+  const args: unknown[] = query ? [id, likePattern(query)] : [id];
+
+  const [subs, countRow] = await Promise.all([
+    c.env.DB.prepare(
+      `SELECT t.*, (
+         SELECT COUNT(*) FROM team_members WHERE team_id = t.id
+       ) AS member_count
+       FROM teams t WHERE ${where}
+       ORDER BY t.created_at DESC LIMIT ? OFFSET ?`,
+    )
+      .bind(...args, limit, offset)
+      .all<TeamRow & { member_count: number }>(),
+    c.env.DB.prepare(`SELECT COUNT(*) AS n FROM teams t WHERE ${where}`)
+      .bind(...args)
+      .first<{ n: number }>(),
+  ]);
 
   return c.json({
     sub_teams: await Promise.all(
-      results.map(async (t) => ({
+      subs.results.map(async (t) => ({
         ...t,
         avatar_url: await proxyImageUrl(c.env.APP_URL, c.env.DB, t.avatar_url),
         unproxied_avatar_url: t.avatar_url,
@@ -891,6 +929,9 @@ app.get("/:id/sub-teams", async (c) => {
         inherited_from: eff.inherited_from ?? id,
       })),
     ),
+    total: countRow?.n ?? 0,
+    page,
+    limit,
   });
 });
 
@@ -987,8 +1028,10 @@ app.get("/:id", async (c) => {
 
   // First page only. This used to return every member, which made the team
   // page's cost grow without bound with the roster — the table pages through
-  // GET /:id/members from here on.
-  const [team, memberPage, ancestors, subTeams] = await Promise.all([
+  // GET /:id/members from here on. Sub-teams are likewise capped to a page
+  // (the tab pages through GET /:id/sub-teams); `sub_team_count` carries the
+  // real total for the tab badge.
+  const [team, memberPage, ancestors, subTeamPage] = await Promise.all([
     c.env.DB.prepare("SELECT * FROM teams WHERE id = ?")
       .bind(id)
       .first<TeamRow>(),
@@ -1002,9 +1045,9 @@ app.get("/:id", async (c) => {
          SELECT COUNT(*) FROM team_members WHERE team_id = t.id
        ) AS member_count
        FROM teams t WHERE t.parent_team_id = ?
-       ORDER BY t.created_at DESC`,
+       ORDER BY t.created_at DESC LIMIT ?`,
     )
-      .bind(id)
+      .bind(id, TEAM_PAGE_SIZE)
       .all<{
         id: string;
         name: string;
@@ -1024,6 +1067,12 @@ app.get("/:id", async (c) => {
     })),
   );
 
+  const subTeamCountRow = await c.env.DB.prepare(
+    "SELECT COUNT(*) AS n FROM teams WHERE parent_team_id = ?",
+  )
+    .bind(id)
+    .first<{ n: number }>();
+
   return c.json({
     team: {
       ...serializeTeamRow(team),
@@ -1033,7 +1082,7 @@ app.get("/:id", async (c) => {
       inherited_from: eff.inherited_from,
       ancestors: ancestorChain,
       sub_teams: await Promise.all(
-        subTeams.results.map(async (s) => ({
+        subTeamPage.results.map(async (s) => ({
           id: s.id,
           name: s.name,
           avatar_url: await proxyImageUrl(
@@ -1044,6 +1093,7 @@ app.get("/:id", async (c) => {
           member_count: s.member_count,
         })),
       ),
+      sub_team_count: subTeamCountRow?.n ?? 0,
     },
     members: memberPage.members,
     // Total across the whole team, not the page — the members tab shows it,
@@ -1330,6 +1380,10 @@ app.delete("/:id", async (c) => {
  *  page so the initial render still needs one request; the table pages and
  *  filters through GET /:id/members from then on. */
 const MEMBER_PAGE_SIZE = 50;
+
+/** Sub-teams embedded in the team detail response. The tab pages through
+ *  GET /:id/sub-teams from then on. */
+const TEAM_PAGE_SIZE = 20;
 
 interface MemberListOptions {
   page: number;
@@ -2192,16 +2246,42 @@ app.get("/:id/invites", async (c) => {
   if (!hasRole(eff.role, "admin")) return c.json({ error: "Forbidden" }, 403);
 
   const now = Math.floor(Date.now() / 1000);
-  const { results } = await c.env.DB.prepare(
-    `SELECT i.*, u.username AS created_by_username
-     FROM team_invites i JOIN users u ON u.id = i.created_by
-     WHERE i.team_id = ? AND i.expires_at > ?
-     ORDER BY i.created_at DESC`,
-  )
-    .bind(id, now)
-    .all<InviteRow & { created_by_username: string }>();
+  const { page, limit, offset } = readPage(
+    c.req.query("page"),
+    c.req.query("limit"),
+    20,
+  );
+  const query = c.req.query("q")?.trim() ?? "";
 
-  return c.json({ invites: results });
+  const where = query
+    ? "i.team_id = ? AND i.expires_at > ? AND LOWER(COALESCE(i.email, '')) LIKE LOWER(?) ESCAPE '\\'"
+    : "i.team_id = ? AND i.expires_at > ?";
+  const args: unknown[] = query ? [id, now, likePattern(query)] : [id, now];
+
+  const [invites, countRow] = await Promise.all([
+    c.env.DB.prepare(
+      `SELECT i.*, u.username AS created_by_username
+       FROM team_invites i JOIN users u ON u.id = i.created_by
+       WHERE ${where}
+       ORDER BY i.created_at DESC LIMIT ? OFFSET ?`,
+    )
+      .bind(...args, limit, offset)
+      .all<InviteRow & { created_by_username: string }>(),
+    c.env.DB.prepare(
+      `SELECT COUNT(*) AS n
+       FROM team_invites i JOIN users u ON u.id = i.created_by
+       WHERE ${where}`,
+    )
+      .bind(...args)
+      .first<{ n: number }>(),
+  ]);
+
+  return c.json({
+    invites: invites.results,
+    total: countRow?.n ?? 0,
+    page,
+    limit,
+  });
 });
 
 // Create invite (shareable link or email)
@@ -2399,11 +2479,28 @@ app.get(":id/domains", async (c) => {
   const eff = await getEffectiveMember(c.env.DB, id, user.id);
   if (!eff) return c.json({ error: "Not a team member" }, 403);
 
-  const own = await c.env.DB.prepare(
-    "SELECT * FROM domains WHERE team_id = ? ORDER BY created_at DESC",
-  )
-    .bind(id)
-    .all<DomainRow>();
+  const { page, limit, offset } = readPage(
+    c.req.query("page"),
+    c.req.query("limit"),
+    20,
+  );
+  const query = c.req.query("q")?.trim() ?? "";
+
+  const ownWhere = query
+    ? "team_id = ? AND LOWER(domain) LIKE LOWER(?) ESCAPE '\\'"
+    : "team_id = ?";
+  const ownArgs: unknown[] = query ? [id, likePattern(query)] : [id];
+
+  const [own, countRow] = await Promise.all([
+    c.env.DB.prepare(
+      `SELECT * FROM domains WHERE ${ownWhere} ORDER BY created_at DESC LIMIT ? OFFSET ?`,
+    )
+      .bind(...ownArgs, limit, offset)
+      .all<DomainRow>(),
+    c.env.DB.prepare(`SELECT COUNT(*) AS n FROM domains WHERE ${ownWhere}`)
+      .bind(...ownArgs)
+      .first<{ n: number }>(),
+  ]);
 
   const inheritDomains = await getConfigValue(c.env.DB, "inherit_team_domains");
   let inherited: Array<DomainRow & { inherited_from: string }> = [];
@@ -2420,7 +2517,11 @@ app.get(":id/domains", async (c) => {
       )
         .bind(...ancestorIds)
         .all<DomainRow>();
-      inherited = results.map((r) => ({ ...r, inherited_from: r.team_id! }));
+      inherited = results
+        .filter(
+          (r) => !query || r.domain.toLowerCase().includes(query.toLowerCase()),
+        )
+        .map((r) => ({ ...r, inherited_from: r.team_id! }));
     }
   }
 
@@ -2429,6 +2530,9 @@ app.get(":id/domains", async (c) => {
       ...own.results.map((d) => ({ ...d, inherited_from: null })),
       ...inherited,
     ],
+    total: (countRow?.n ?? 0) + inherited.length,
+    page,
+    limit,
   });
 });
 
@@ -2792,11 +2896,29 @@ app.get("/:id/apps", async (c) => {
   const eff = await getEffectiveMember(c.env.DB, id, user.id);
   if (!eff) return c.json({ error: "Not found" }, 404);
 
-  const rows = await c.env.DB.prepare(
-    "SELECT * FROM oauth_apps WHERE team_id = ? ORDER BY created_at DESC",
-  )
-    .bind(id)
-    .all<OAuthAppRow>();
+  const { page, limit, offset } = readPage(
+    c.req.query("page"),
+    c.req.query("limit"),
+    20,
+  );
+  const query = c.req.query("q")?.trim() ?? "";
+
+  const where = query
+    ? "team_id = ? AND LOWER(name) LIKE LOWER(?) ESCAPE '\\'"
+    : "team_id = ?";
+  const args: unknown[] = query ? [id, likePattern(query)] : [id];
+
+  const [rows, countRow] = await Promise.all([
+    c.env.DB.prepare(
+      `SELECT * FROM oauth_apps WHERE ${where}
+       ORDER BY created_at DESC LIMIT ? OFFSET ?`,
+    )
+      .bind(...args, limit, offset)
+      .all<OAuthAppRow>(),
+    c.env.DB.prepare(`SELECT COUNT(*) AS n FROM oauth_apps WHERE ${where}`)
+      .bind(...args)
+      .first<{ n: number }>(),
+  ]);
 
   const apps = await Promise.all(
     rows.results.map(async (row) => {
@@ -2810,7 +2932,7 @@ app.get("/:id/apps", async (c) => {
     }),
   );
 
-  return c.json({ apps });
+  return c.json({ apps, total: countRow?.n ?? 0, page, limit });
 });
 
 // Create app for team

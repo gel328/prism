@@ -25,6 +25,7 @@ import {
   TableRow,
   Text,
   Textarea,
+  Tooltip,
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
@@ -36,6 +37,7 @@ import {
   DeleteRegular,
   DesktopRegular,
   KeyRegular,
+  SignOutRegular,
 } from "@fluentui/react-icons";
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -43,7 +45,18 @@ import { startRegistration } from "@simplewebauthn/browser";
 import { useTranslation } from "react-i18next";
 import QRCode from "qrcode";
 import { api, ApiError } from "../lib/api";
-import type { GpgKeyInfo, PasskeyInfo, SessionInfo } from "../lib/api";
+import type {
+  GpgKeyInfo,
+  PasskeyInfo,
+  SessionInfo,
+  SessionIpInfo,
+} from "../lib/api";
+import {
+  formatIpGeo,
+  formatNetwork,
+  geoDetailRows,
+  parseIpGeo,
+} from "../lib/geo";
 import { useAuthStore } from "../store/auth";
 import { EmptyState } from "../components/EmptyState";
 import { PageHeader } from "../components/PageHeader";
@@ -76,6 +89,24 @@ function describeDevice(userAgent: string | null): string | null {
   if (browser && os) return `${browser} on ${os}`;
   return browser || os || userAgent;
 }
+
+// Absolute date+time down to the minute (issue #6). The stored timestamps are
+// already second-resolution; the old view only rendered the date, which is
+// why two sessions minutes apart looked identical.
+function formatDateTime(epochSeconds: number): string {
+  return new Date(epochSeconds * 1000).toLocaleString(undefined, {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+// Longest IPv6 addresses overflow the cell and collide with the next column
+// (issue #1). We render them in a fixed-width box that ellipsises the overflow
+// and show the full value on hover / focus via a Tooltip.
+const IP_CELL_MAX_WIDTH = 150;
 
 const useStyles = makeStyles({
   page: { display: "flex", flexDirection: "column", gap: "20px" },
@@ -120,6 +151,38 @@ const useStyles = makeStyles({
     cursor: "pointer",
     ":hover": { background: tokens.colorNeutralBackground3 },
   },
+  ipCell: {
+    display: "inline-block",
+    maxWidth: `${IP_CELL_MAX_WIDTH}px`,
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+    verticalAlign: "middle",
+    fontFamily: "monospace",
+    fontSize: tokens.fontSizeBase200,
+  },
+  sessionsFooter: {
+    display: "flex",
+    justifyContent: "flex-end",
+    marginTop: "4px",
+  },
+  ipHistoryList: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "8px",
+    maxHeight: "260px",
+    overflowY: "auto",
+  },
+  ipHistoryItem: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "2px",
+    padding: "8px 10px",
+    borderRadius: "6px",
+    background: tokens.colorNeutralBackground2,
+    border: `1px solid ${tokens.colorNeutralStroke2}`,
+  },
+  monoText: { fontFamily: "monospace", fontSize: tokens.fontSizeBase200 },
 });
 
 export function Security() {
@@ -435,6 +498,16 @@ export function Security() {
   const [selectedSession, setSelectedSession] = useState<SessionInfo | null>(
     null,
   );
+  const [revokeAllOpen, setRevokeAllOpen] = useState(false);
+  const [revokingAll, setRevokingAll] = useState(false);
+
+  // IP history for the session whose detail dialog is open. Fetched lazily so
+  // the sessions list itself stays a single cheap query.
+  const { data: sessionIpsData, isLoading: sessionIpsLoading } = useQuery({
+    queryKey: ["session-ips", selectedSession?.id],
+    queryFn: () => api.listSessionIps(selectedSession!.id),
+    enabled: !!selectedSession,
+  });
 
   const handleRevokeSession = async (id: string) => {
     try {
@@ -449,6 +522,29 @@ export function Security() {
           ? err.message
           : t("security.failedRevokeSession"),
       );
+    }
+  };
+
+  const handleRevokeAllSessions = async () => {
+    setRevokingAll(true);
+    try {
+      const res = await api.revokeAllOtherSessions();
+      setRevokeAllOpen(false);
+      setSelectedSession(null);
+      await refetchSessions();
+      showMsg(
+        "success",
+        t("security.sessionsRevokedCount", { n: res.revoked }),
+      );
+    } catch (err) {
+      showMsg(
+        "error",
+        err instanceof ApiError
+          ? err.message
+          : t("security.failedRevokeSession"),
+      );
+    } finally {
+      setRevokingAll(false);
     }
   };
 
@@ -1171,6 +1267,9 @@ export function Security() {
                       {t("security.ipHeader")}
                     </TableHeaderCell>
                     <TableHeaderCell className={styles.hiddenOnMobile}>
+                      {t("security.locationHeader")}
+                    </TableHeaderCell>
+                    <TableHeaderCell className={styles.hiddenOnMobile}>
                       {t("security.createdHeader")}
                     </TableHeaderCell>
                     <TableHeaderCell className={styles.hiddenOnMobile}>
@@ -1180,61 +1279,103 @@ export function Security() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {sessionsData!.sessions.map((s) => (
-                    <TableRow
-                      key={s.id}
-                      className={styles.row}
-                      onClick={() => setSelectedSession(s)}
-                    >
-                      <TableCell
-                        style={{
-                          maxWidth: 200,
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                        }}
+                  {sessionsData!.sessions.map((s) => {
+                    const device =
+                      describeDevice(s.user_agent) ?? t("security.unknown");
+                    const location = formatIpGeo(s.ip_geo);
+                    return (
+                      <TableRow
+                        key={s.id}
+                        className={styles.row}
+                        onClick={() => setSelectedSession(s)}
                       >
-                        <div
+                        <TableCell
                           style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 8,
+                            maxWidth: 200,
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
                           }}
                         >
-                          {describeDevice(s.user_agent) ??
-                            t("security.unknown")}
-                          {s.is_current && (
-                            <Badge
-                              color="informative"
-                              appearance="filled"
-                              size="small"
+                          <div
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 8,
+                            }}
+                          >
+                            {/* Hover reveals the full User-Agent — the
+                                "Firefox on Linux" label alone is too vague to
+                                tell two of your own devices apart (issue #2). */}
+                            <Tooltip
+                              content={s.user_agent ?? t("security.unknown")}
+                              relationship="label"
                             >
-                              {t("security.currentSession")}
-                            </Badge>
+                              <span>{device}</span>
+                            </Tooltip>
+                            {s.is_current && (
+                              <Badge
+                                color="informative"
+                                appearance="filled"
+                                size="small"
+                              >
+                                {t("security.currentSession")}
+                              </Badge>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell className={styles.hiddenOnMobile}>
+                          {s.ip_address ? (
+                            <Tooltip
+                              content={s.ip_address}
+                              relationship="label"
+                            >
+                              <span className={styles.ipCell}>
+                                {s.ip_address}
+                              </span>
+                            </Tooltip>
+                          ) : (
+                            "—"
                           )}
-                        </div>
-                      </TableCell>
-                      <TableCell className={styles.hiddenOnMobile}>
-                        {s.ip_address ?? "—"}
-                      </TableCell>
-                      <TableCell className={styles.hiddenOnMobile}>
-                        {new Date(s.created_at * 1000).toLocaleDateString()}
-                      </TableCell>
-                      <TableCell className={styles.hiddenOnMobile}>
-                        {new Date(s.expires_at * 1000).toLocaleDateString()}
-                      </TableCell>
-                      <TableCell className={styles.hiddenOnMobile}>
-                        <div onClick={(e) => e.stopPropagation()}>
-                          <Button
-                            icon={<DeleteRegular />}
-                            appearance="subtle"
-                            onClick={() => handleRevokeSession(s.id)}
-                          />
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                        </TableCell>
+                        <TableCell className={styles.hiddenOnMobile}>
+                          {location || "—"}
+                        </TableCell>
+                        <TableCell className={styles.hiddenOnMobile}>
+                          {formatDateTime(s.created_at)}
+                        </TableCell>
+                        <TableCell className={styles.hiddenOnMobile}>
+                          {formatDateTime(s.expires_at)}
+                        </TableCell>
+                        <TableCell className={styles.hiddenOnMobile}>
+                          <div onClick={(e) => e.stopPropagation()}>
+                            <Button
+                              icon={<DeleteRegular />}
+                              appearance="subtle"
+                              onClick={() => handleRevokeSession(s.id)}
+                            />
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
+            </div>
+          )}
+
+          {/* Revoke-all: the panic button for "sign me out everywhere else".
+              Kept out of the empty state (nothing to revoke) and disabled while
+              only the current session exists. */}
+          {(sessionsData?.sessions.length ?? 0) > 1 && (
+            <div className={styles.sessionsFooter}>
+              <Button
+                appearance="primary"
+                icon={<SignOutRegular />}
+                style={{ background: tokens.colorPaletteRedBackground3 }}
+                onClick={() => setRevokeAllOpen(true)}
+              >
+                {t("security.revokeAllSessions")}
+              </Button>
             </div>
           )}
 
@@ -1256,23 +1397,122 @@ export function Security() {
                       {describeDevice(selectedSession?.user_agent ?? null) ??
                         t("security.unknown")}
                     </LabeledLine>
+                    {/* Full User-Agent, so an unfamiliar session can be
+                        identified precisely (issue #2). */}
+                    <LabeledLine label={t("security.userAgentLabel")}>
+                      <span className={styles.monoText}>
+                        {selectedSession?.user_agent ?? t("security.unknown")}
+                      </span>
+                    </LabeledLine>
                     <LabeledLine label={t("security.ipLabel")}>
-                      {selectedSession?.ip_address ?? "—"}
+                      <span className={styles.monoText}>
+                        {selectedSession?.ip_address ?? "—"}
+                      </span>
+                    </LabeledLine>
+                    <LabeledLine label={t("security.locationLabel")}>
+                      {formatIpGeo(selectedSession?.ip_geo) || "—"}
                     </LabeledLine>
                     <LabeledLine label={t("security.createdLabel")}>
                       {selectedSession
-                        ? new Date(
-                            selectedSession.created_at * 1000,
-                          ).toLocaleDateString()
+                        ? formatDateTime(selectedSession.created_at)
                         : ""}
                     </LabeledLine>
                     <LabeledLine label={t("security.expiresLabel")}>
                       {selectedSession
-                        ? new Date(
-                            selectedSession.expires_at * 1000,
-                          ).toLocaleDateString()
+                        ? formatDateTime(selectedSession.expires_at)
                         : ""}
                     </LabeledLine>
+
+                    {/* Everything Cloudflare told us about the session's IP —
+                        continent, timezone, colo, ASN, coordinates, … — so an
+                        unfamiliar session can be scrutinised fully. Hidden when
+                        no geolocation was captured (local dev / non-CF). */}
+                    {(() => {
+                      const rows = geoDetailRows(
+                        parseIpGeo(selectedSession?.ip_geo),
+                        (k) => t(k),
+                      );
+                      if (rows.length === 0) return null;
+                      return (
+                        <>
+                          <Text
+                            weight="semibold"
+                            size={300}
+                            style={{ marginTop: 6 }}
+                          >
+                            {t("security.ipDetailsTitle")}
+                          </Text>
+                          {rows.map((r) => (
+                            <LabeledLine key={r.label} label={r.label}>
+                              {r.value}
+                            </LabeledLine>
+                          ))}
+                        </>
+                      );
+                    })()}
+
+                    {/* Every IP this session has been used from, most recent
+                        first — each with its location, network and last-seen
+                        time (issue #5). */}
+                    <Text weight="semibold" size={300} style={{ marginTop: 6 }}>
+                      {t("security.ipHistoryTitle")}
+                    </Text>
+                    {sessionIpsLoading ? (
+                      <Spinner size="tiny" />
+                    ) : (sessionIpsData?.ips.length ?? 0) === 0 ? (
+                      <Text
+                        size={200}
+                        style={{ color: tokens.colorNeutralForeground3 }}
+                      >
+                        {t("security.ipHistoryEmpty")}
+                      </Text>
+                    ) : (
+                      <div className={styles.ipHistoryList}>
+                        {sessionIpsData!.ips.map((ip: SessionIpInfo) => {
+                          const g = parseIpGeo(ip.geo);
+                          const loc = formatIpGeo(ip.geo);
+                          const net = formatNetwork(g?.asn, g?.org);
+                          return (
+                            <div
+                              key={ip.ip_address}
+                              className={styles.ipHistoryItem}
+                            >
+                              <span className={styles.monoText}>
+                                {ip.ip_address}
+                              </span>
+                              <Text
+                                size={200}
+                                style={{
+                                  color: tokens.colorNeutralForeground2,
+                                }}
+                              >
+                                {loc || t("security.unknownLocation")}
+                              </Text>
+                              {net && (
+                                <Text
+                                  size={200}
+                                  style={{
+                                    color: tokens.colorNeutralForeground3,
+                                  }}
+                                >
+                                  {net}
+                                </Text>
+                              )}
+                              <Text
+                                size={200}
+                                style={{
+                                  color: tokens.colorNeutralForeground3,
+                                }}
+                              >
+                                {t("security.lastSeenLabel", {
+                                  time: formatDateTime(ip.last_seen),
+                                })}
+                              </Text>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 </DialogContent>
                 <DialogActions>
@@ -1288,6 +1528,41 @@ export function Security() {
                     }}
                   >
                     {t("security.revokeSession")}
+                  </Button>
+                </DialogActions>
+              </DialogBody>
+            </DialogSurface>
+          </Dialog>
+
+          {/* Revoke-all confirmation */}
+          <Dialog
+            open={revokeAllOpen}
+            onOpenChange={(_, s) => {
+              if (!s.open) setRevokeAllOpen(false);
+            }}
+          >
+            <DialogSurface>
+              <DialogBody>
+                <DialogTitle>{t("security.revokeAllSessions")}</DialogTitle>
+                <DialogContent>{t("security.revokeAllConfirm")}</DialogContent>
+                <DialogActions>
+                  <Button
+                    disabled={revokingAll}
+                    onClick={() => setRevokeAllOpen(false)}
+                  >
+                    {t("common.cancel")}
+                  </Button>
+                  <Button
+                    appearance="primary"
+                    disabled={revokingAll}
+                    style={{ background: tokens.colorPaletteRedBackground3 }}
+                    onClick={handleRevokeAllSessions}
+                  >
+                    {revokingAll ? (
+                      <Spinner size="tiny" />
+                    ) : (
+                      t("security.revokeAllSessions")
+                    )}
                   </Button>
                 </DialogActions>
               </DialogBody>

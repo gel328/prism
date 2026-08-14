@@ -242,9 +242,23 @@ description: Prism REST API — 认证、OAuth、应用、团队、域名、GPG�
 
 ## 会话
 
-### `GET /api/auth/sessions` / `DELETE /api/auth/sessions/:id`
+### `GET /api/auth/sessions`
 
-列出和撤销当前用户的活跃会话。
+列出当前用户的活跃（未过期）会话。已过期的行会被排除，并由定时任务清理，因此只会返回仍然有效的会话。
+
+每个会话包含其创建来源 IP，以及 `ip_geo`：一个 JSON 字符串，保存该 IP 的完整 Cloudflare 属地信息（continent、country、region、city、postalCode、经纬度、timezone、colo、asn、org 等）；不可用时为 `null`（例如本地开发环境）。
+
+### `GET /api/auth/sessions/:id/ips`
+
+该会话认证过的所有不同 IP，按最近出现排序。每条包含 IP、`geo`（同样是完整 Cloudflare 属地 JSON 字符串）以及 `first_seen` / `last_seen` 时间戳。若会话不属于调用者则返回 404。
+
+### `DELETE /api/auth/sessions/:id`
+
+按 id 撤销单个会话。
+
+### `DELETE /api/auth/sessions`
+
+撤销除当前会话外的所有会话（“登出其他所有设备”）。返回 `{ "revoked": <数量> }`。
 
 ## 用户
 
@@ -282,7 +296,7 @@ description: Prism REST API — 认证、OAuth、应用、团队、域名、GPG�
 
 ### `GET /api/user/tokens` / `POST` / `DELETE /:id`
 
-个人访问令牌。明文仅在创建响应中一次性返回。详见 [个人访问令牌](personal-access-tokens.md)。
+个人访问令牌。明文仅在创建响应中一次性返回。`GET` 支持 `?page=`、`?limit=`、`?q=` 名称搜索并返回 `total`。详见 [个人访问令牌](personal-access-tokens.md)。
 
 ### `DELETE /api/user/me`
 
@@ -294,7 +308,7 @@ description: Prism REST API — 认证、OAuth、应用、团队、域名、GPG�
 
 | Method                              | Path                                         | 说明                                                                                                    |
 | ----------------------------------- | -------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| `GET`                               | `/api/apps`                                  | 列出当前用户的应用                                                                                      |
+| `GET`                               | `/api/apps`                                  | 列出当前用户的应用。`?page=`、`?limit=`、`?q=` 名称搜索，返回 `total`                                   |
 | `POST`                              | `/api/apps`                                  | 创建应用                                                                                                |
 | `GET`                               | `/api/apps/:id`                              | 读取                                                                                                    |
 | `PATCH`                             | `/api/apps/:id`                              | 更新；包含 `oidc_fields`、`optional_scopes`、`use_jwt_tokens`、`allow_self_manage_exported_permissions` |
@@ -318,7 +332,7 @@ description: Prism REST API — 认证、OAuth、应用、团队、域名、GPG�
 | `GET`                     | `/api/teams/:id`                                     | 团队详情 + `my_role`（有效）、`inherited_from`、`ancestors[]`（直接父 → 根）、`sub_teams[]`（直接子团队 + 成员数）、直接成员                                                                                               |
 | `PATCH`                   | `/api/teams/:id`                                     | 更新名称、描述、头像、公开资料开关（含 `profile_show_sub_teams`）、`parent_team_id`（owner-only，校验环 & 深度）、`require_2fa`、`require_verified_email`、`enable_groups`（owner-only）、`role_permissions`（owner-only） |
 | `DELETE`                  | `/api/teams/:id`                                     | 解散（owner，直接或继承）。级联到所有子团队；每一层的应用回退给该层自己的 owner                                                                                                                                            |
-| `GET`                     | `/api/teams/:id/sub-teams`                           | 列出直接子团队。上级团队的成员（直接或继承）可查看                                                                                                                                                                         |
+| `GET`                     | `/api/teams/:id/sub-teams`                           | 列出直接子团队。`?page=`、`?limit=`、`?q=`，返回 `total`。上级团队的成员（直接或继承）可查看                                                                                                                               |
 | `POST`                    | `/api/teams/:id/sub-teams`                           | 在 `:id` 下创建子团队 — 等价于 `POST /api/teams` 带 `parent_team_id`                                                                                                                                                       |
 | `GET`                     | `/api/teams/:id/members`                             | 分页成员列表。`?page=`、`?limit=`（上限 100）、`?q=`（显示名/用户名）、`?group=`（slug，继承来的标签同样命中）                                                                                                             |
 | `POST`                    | `/api/teams/:id/members`                             | 按用户名/ID 添加成员（admin 及以上）                                                                                                                                                                                       |
@@ -331,17 +345,17 @@ description: Prism REST API — 认证、OAuth、应用、团队、域名、GPG�
 | `DELETE`                  | `/api/teams/:id/groups/:groupId`                     | 删除身份组 —— 级联解除所有分配                                                                                                                                                                                             |
 | `PUT`                     | `/api/teams/:id/members/:userId/groups`              | 覆盖某成员的身份组集合（`{ group_ids: [...] }`）。仅对发生变化的身份组做权限校验                                                                                                                                           |
 | `POST`                    | `/api/teams/:id/transfer-ownership`                  | 把所有权转给另一名成员                                                                                                                                                                                                     |
-| `GET`                     | `/api/teams/:id/invites`                             | 列出有效邀请 token                                                                                                                                                                                                         |
+| `GET`                     | `/api/teams/:id/invites`                             | 列出有效邀请 token。`?page=`、`?limit=`、`?q=` 邮箱搜索，返回 `total`                                                                                                                                                      |
 | `POST`                    | `/api/teams/:id/invites`                             | 生成邀请 token（可选邮箱锁定 + 最大次数 + 过期）                                                                                                                                                                           |
 | `DELETE`                  | `/api/teams/:id/invites/:token`                      | 撤销邀请                                                                                                                                                                                                                   |
 | `GET`                     | `/api/teams/join/:token`（认证可选）                 | 查看邀请 — 返回团队、门槛、未满足项                                                                                                                                                                                        |
 | `POST`                    | `/api/teams/join/:token`                             | 接受邀请                                                                                                                                                                                                                   |
-| `GET` / `POST` / `DELETE` | `/api/teams/:id/domains[/:domainId]`                 | 团队域名。`GET` 同时返回上级团队拥有的域名作为只读条目，带 `inherited_from` 标记（受 `inherit_team_domains` 控制）                                                                                                         |
+| `GET` / `POST` / `DELETE` | `/api/teams/:id/domains[/:domainId]`                 | 团队域名。`?page=`、`?limit=`、`?q=`，返回 `total`。`GET` 同时返回上级团队拥有的域名作为只读条目，带 `inherited_from` 标记（受 `inherit_team_domains` 控制）                                                               |
 | `POST`                    | `/api/teams/:id/domains/:domainId/verify`            | 触发重新核验                                                                                                                                                                                                               |
 | `POST`                    | `/api/teams/:id/domains/:domainId/to-personal`       | 把已验证域名转回所有者个人空间                                                                                                                                                                                             |
 | `POST`                    | `/api/teams/:id/domains/:domainId/share-to-team`     | 把个人域名共享给团队                                                                                                                                                                                                       |
 | `POST`                    | `/api/teams/:id/domains/:domainId/share-to-personal` | 反向操作                                                                                                                                                                                                                   |
-| `GET` / `POST`            | `/api/teams/:id/apps`                                | 团队 OAuth 应用                                                                                                                                                                                                            |
+| `GET` / `POST`            | `/api/teams/:id/apps`                                | 团队 OAuth 应用。`?page=`、`?limit=`、`?q=`，返回 `total`                                                                                                                                                                  |
 | `POST`                    | `/api/teams/:id/apps/transfer`                       | 把个人应用转入团队                                                                                                                                                                                                         |
 | `DELETE`                  | `/api/teams/:id/apps/:appId/transfer`                | 把团队应用转回原所有者                                                                                                                                                                                                     |
 
@@ -369,7 +383,7 @@ description: Prism REST API — 认证、OAuth、应用、团队、域名、GPG�
 
 | Method   | Path                      | 说明                                                                                               |
 | -------- | ------------------------- | -------------------------------------------------------------------------------------------------- |
-| `GET`    | `/api/domains`            | 列出当前用户的域名                                                                                 |
+| `GET`    | `/api/domains`            | 列出当前用户的域名。`?page=`、`?limit=`、`?q=`，返回 `total`                                       |
 | `POST`   | `/api/domains`            | 添加域名，返回 `verification_method` 选项与每种方法的具体说明（DNS TXT、HTML meta、`.well-known`） |
 | `POST`   | `/api/domains/:id/verify` | 用所选方法触发重新核验                                                                             |
 | `DELETE` | `/api/domains/:id`        | 删除                                                                                               |
@@ -442,7 +456,7 @@ OAuth scope 版本：
 
 ### `GET /api/oauth/consents` / `DELETE /api/oauth/consents/:client_id`
 
-管理当前用户已授权的应用。`DELETE` 同时撤销该应用的所有未过期 token。
+管理当前用户已授权的应用。`DELETE` 同时撤销该应用的所有未过期 token。`GET` 支持 `?page=`、`?limit=`、`?q=` 应用名称搜索并返回 `total`。
 
 ## 公开资料
 
@@ -493,16 +507,16 @@ OAuth scope 版本：
 
 ### 应用 / OAuth Sources / 邀请 / Webhook / 团队
 
-| 路径                                                         | 说明                                              |
-| ------------------------------------------------------------ | ------------------------------------------------- |
-| `GET / PATCH /api/admin/apps[/:id]`                          | 验证或停用                                        |
-| `GET / POST / PATCH / DELETE /api/admin/oauth-sources[/:id]` | 源 CRUD                                           |
-| `GET /api/admin/oauth-sources/discover`                      | 自动获取 OIDC 发现                                |
-| `POST /api/admin/oauth-sources/migrate`                      | 一次性：把旧的 site_config 社交字段导入为 sources |
-| `GET / POST / DELETE /api/admin/invites[/:id]`               | 站点邀请 token                                    |
-| `GET /api/admin/teams` / `DELETE /:id`                       | 列出 / 解散团队                                   |
-| `POST /api/admin/test-email`                                 | 发送测试发件邮件                                  |
-| `POST /api/admin/test-email-receiving`                       | 生成验证邮箱接收测试码                            |
+| 路径                                                         | 说明                                                                              |
+| ------------------------------------------------------------ | --------------------------------------------------------------------------------- |
+| `GET / PATCH /api/admin/apps[/:id]`                          | 验证或停用                                                                        |
+| `GET / POST / PATCH / DELETE /api/admin/oauth-sources[/:id]` | 源 CRUD。`GET` 支持 `?page=`、`?limit=`、`?q=` 名称/slug 搜索，返回 `total`       |
+| `GET /api/admin/oauth-sources/discover`                      | 自动获取 OIDC 发现                                                                |
+| `POST /api/admin/oauth-sources/migrate`                      | 一次性：把旧的 site_config 社交字段导入为 sources                                 |
+| `GET / POST / DELETE /api/admin/invites[/:id]`               | 站点邀请 token。`GET` 支持 `?page=`、`?limit=`、`?q=` 邮箱/备注搜索，返回 `total` |
+| `GET /api/admin/teams` / `DELETE /:id`                       | 列出 / 解散团队                                                                   |
+| `POST /api/admin/test-email`                                 | 发送测试发件邮件                                                                  |
+| `POST /api/admin/test-email-receiving`                       | 生成验证邮箱接收测试码                                                            |
 
 ### 审计 / 请求日志 / 登录错误
 

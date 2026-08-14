@@ -33,15 +33,17 @@ import {
   AddRegular,
   ArrowSyncRegular,
   DeleteRegular,
+  DismissRegular,
   EditRegular,
   PlugConnectedRegular,
   SearchRegular,
 } from "@fluentui/react-icons";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api, ApiError, type OAuthSource } from "../../lib/api";
 import { EmptyState } from "../../components/EmptyState";
+import { Pagination } from "../../components/Pagination";
 import { PasswordInput } from "../../components/PasswordInput";
 import { SkeletonTableRows } from "../../components/Skeletons";
 
@@ -163,6 +165,18 @@ export function AdminConnections() {
   const { t } = useTranslation();
   const qc = useQueryClient();
 
+  const [page, setPage] = useState(1);
+  const [query, setQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+
+  useEffect(() => {
+    const id = setTimeout(() => {
+      setDebouncedQuery(query.trim());
+      setPage(1);
+    }, 250);
+    return () => clearTimeout(id);
+  }, [query]);
+
   const [form, setForm] = useState(EMPTY_FORM);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState("");
@@ -183,8 +197,13 @@ export function AdminConnections() {
   const [migrateResult, setMigrateResult] = useState<string | null>(null);
 
   const { data, isLoading } = useQuery({
-    queryKey: ["admin", "oauth-sources"],
-    queryFn: api.adminListOAuthSources,
+    queryKey: ["admin-oauth-sources", page, debouncedQuery],
+    queryFn: () =>
+      api.adminListOAuthSources({
+        page,
+        limit: 20,
+        q: debouncedQuery || undefined,
+      }),
   });
 
   const isOidc = form.provider === "oidc";
@@ -347,6 +366,8 @@ export function AdminConnections() {
       setMigrating(false);
     }
   };
+
+  const totalPages = data ? Math.ceil(data.total / 20) : 1;
 
   return (
     <div className={styles.section}>
@@ -632,62 +653,97 @@ export function AdminConnections() {
       </form>
 
       {/* Source list */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <Input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder={t("admin.searchInvitesPlaceholder")}
+          contentBefore={<SearchRegular />}
+          contentAfter={
+            query ? (
+              <Button
+                appearance="transparent"
+                size="small"
+                icon={<DismissRegular />}
+                aria-label={t("common.clear")}
+                onClick={() => setQuery("")}
+              />
+            ) : undefined
+          }
+          style={{ flex: 1 }}
+        />
+      </div>
+
       {isLoading ? (
         <SkeletonTableRows rows={5} cols={5} />
       ) : !data?.sources.length ? (
         <EmptyState
           icon={<PlugConnectedRegular />}
-          title={t("admin.oauthNoSources")}
+          title={
+            debouncedQuery
+              ? t("teams.noResultsMatch")
+              : t("admin.oauthNoSources")
+          }
         />
       ) : (
-        <div className={styles.tableScroll}>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHeaderCell>{t("admin.oauthSlug")}</TableHeaderCell>
-                <TableHeaderCell>{t("admin.oauthProvider")}</TableHeaderCell>
-                <TableHeaderCell>{t("admin.oauthName")}</TableHeaderCell>
-                <TableHeaderCell>{t("common.enabled")}</TableHeaderCell>
-                <TableHeaderCell />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {data.sources.map((src) => (
-                <TableRow key={src.id}>
-                  <TableCell>
-                    <Text font="monospace">{src.slug}</Text>
-                  </TableCell>
-                  <TableCell>
-                    <Badge color="informative">
-                      {PROVIDER_LABEL[src.provider] ?? src.provider}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>{src.name}</TableCell>
-                  <TableCell>
-                    <Switch
-                      checked={src.enabled === 1}
-                      onChange={() => handleToggle(src)}
-                    />
-                  </TableCell>
-                  <TableCell>
-                    <Button
-                      icon={<EditRegular />}
-                      appearance="subtle"
-                      size="small"
-                      onClick={() => openEdit(src)}
-                    />
-                    <Button
-                      icon={<DeleteRegular />}
-                      appearance="subtle"
-                      size="small"
-                      onClick={() => setDeleteTarget(src)}
-                    />
-                  </TableCell>
+        <>
+          <div className={styles.tableScroll}>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHeaderCell>{t("admin.oauthSlug")}</TableHeaderCell>
+                  <TableHeaderCell>{t("admin.oauthProvider")}</TableHeaderCell>
+                  <TableHeaderCell>{t("admin.oauthName")}</TableHeaderCell>
+                  <TableHeaderCell>{t("common.enabled")}</TableHeaderCell>
+                  <TableHeaderCell />
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+              </TableHeader>
+              <TableBody>
+                {data.sources.map((src) => (
+                  <TableRow key={src.id}>
+                    <TableCell>
+                      <Text font="monospace">{src.slug}</Text>
+                    </TableCell>
+                    <TableCell>
+                      <Badge color="informative">
+                        {PROVIDER_LABEL[src.provider] ?? src.provider}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>{src.name}</TableCell>
+                    <TableCell>
+                      <Switch
+                        checked={src.enabled === 1}
+                        onChange={() => handleToggle(src)}
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <Button
+                        icon={<EditRegular />}
+                        appearance="subtle"
+                        size="small"
+                        onClick={() => openEdit(src)}
+                      />
+                      <Button
+                        icon={<DeleteRegular />}
+                        appearance="subtle"
+                        size="small"
+                        onClick={() => setDeleteTarget(src)}
+                      />
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+          {totalPages > 1 && (
+            <Pagination
+              page={page}
+              pageCount={totalPages}
+              onChange={setPage}
+              total={data?.total}
+            />
+          )}
+        </>
       )}
 
       {/* Edit dialog */}

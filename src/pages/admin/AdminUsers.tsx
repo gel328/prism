@@ -37,6 +37,7 @@ import { useTranslation } from "react-i18next";
 import { api, ApiError } from "../../lib/api";
 import { useToastMessage } from "../../lib/useToastMessage";
 import { CopyIdButton } from "../../components/CopyIdButton";
+import { Pagination } from "../../components/Pagination";
 import { useAuthStore } from "../../store/auth";
 import type { UserProfile } from "../../lib/api";
 import { SkeletonTableRows } from "../../components/Skeletons";
@@ -79,7 +80,7 @@ export function AdminUsers() {
   const [editVerified, setEditVerified] = useState<boolean | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isFetching } = useQuery({
     queryKey: ["admin-users", page, search],
     queryFn: () => api.adminListUsers(page, 20, search),
   });
@@ -256,25 +257,12 @@ export function AdminUsers() {
       )}
 
       {totalPages > 1 && (
-        <div className={styles.pagination}>
-          <Button
-            size="small"
-            disabled={page <= 1}
-            onClick={() => setPage((p) => p - 1)}
-          >
-            {t("common.previous")}
-          </Button>
-          <Text size={200}>
-            {t("common.pageOf", { page, total: totalPages })}
-          </Text>
-          <Button
-            size="small"
-            disabled={page >= totalPages}
-            onClick={() => setPage((p) => p + 1)}
-          >
-            {t("common.next")}
-          </Button>
-        </div>
+        <Pagination
+          page={page}
+          pageCount={totalPages}
+          onChange={setPage}
+          disabled={isLoading || isFetching}
+        />
       )}
 
       {/* Edit user dialog */}

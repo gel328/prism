@@ -31,6 +31,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api, ApiError } from "../../lib/api";
+import { Pagination } from "../../components/Pagination";
 import { SkeletonTableRows } from "../../components/Skeletons";
 
 const PAGE_SIZE = 50;
@@ -53,7 +54,7 @@ export function AdminImageProxy() {
   const [error, setError] = useState<string | null>(null);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isFetching } = useQuery({
     queryKey: [
       "admin-image-proxy",
       page,
@@ -311,32 +312,12 @@ export function AdminImageProxy() {
       )}
 
       {totalPages > 1 && (
-        <div
-          style={{
-            display: "flex",
-            gap: 8,
-            alignItems: "center",
-            justifyContent: "flex-end",
-          }}
-        >
-          <Button
-            size="small"
-            disabled={page <= 1}
-            onClick={() => setPage((p) => p - 1)}
-          >
-            {t("common.previous")}
-          </Button>
-          <Text size={200}>
-            {t("common.pageOf", { page, total: totalPages })}
-          </Text>
-          <Button
-            size="small"
-            disabled={page >= totalPages}
-            onClick={() => setPage((p) => p + 1)}
-          >
-            {t("common.next")}
-          </Button>
-        </div>
+        <Pagination
+          page={page}
+          pageCount={totalPages}
+          onChange={setPage}
+          disabled={isLoading || isFetching}
+        />
       )}
 
       <Dialog

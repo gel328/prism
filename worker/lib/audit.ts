@@ -15,6 +15,7 @@ import { randomId } from "./crypto";
 import { decryptSecret } from "./secretCrypto";
 import { loggedFetch } from "./logger";
 import { validateOutboundUrl } from "./safeFetch";
+import { geoJson } from "./geo";
 
 export type AuditScope = "user" | "team" | "platform";
 
@@ -29,6 +30,9 @@ export interface AuditInput {
   resourceName?: string | null;
   ip?: string | null;
   userAgent?: string | null;
+  /** JSON snapshot of the request's Cloudflare geolocation (worker/lib/geo.ts
+   *  geoJson). Populated automatically by auditRequestMeta. */
+  geo?: string | null;
   metadata?: unknown;
 }
 
@@ -44,6 +48,7 @@ export interface AuditEventRow {
   resource_name: string | null;
   ip: string | null;
   user_agent: string | null;
+  ip_geo: string | null;
   metadata: string;
   created_at: number;
 }
@@ -75,8 +80,8 @@ export async function recordAudit(
       await env.DB.prepare(
         `INSERT INTO audit_events
            (id, scope, scope_id, action, actor_id, actor_name, resource_type,
-            resource_id, resource_name, ip, user_agent, metadata, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            resource_id, resource_name, ip, user_agent, ip_geo, metadata, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
         .bind(
           id,
@@ -90,6 +95,7 @@ export async function recordAudit(
           input.resourceName ?? null,
           input.ip ?? null,
           input.userAgent ?? null,
+          input.geo ?? null,
           JSON.stringify(input.metadata ?? {}),
           now,
         )
@@ -192,12 +198,15 @@ export async function recordAccountDeletion(
 // ─── Metadata extraction from the request ────────────────────────────────────
 
 export function auditRequestMeta(c: {
-  req: { header: (h: string) => string | undefined };
-}): { ip: string | null; userAgent: string | null } {
+  req: { header: (h: string) => string | undefined; raw: Request };
+}): { ip: string | null; userAgent: string | null; geo: string | null } {
   const ip =
     c.req.header("CF-Connecting-IP") ?? c.req.header("X-Forwarded-For") ?? null;
   const userAgent = c.req.header("User-Agent") ?? null;
-  return { ip, userAgent };
+  // Same Cloudflare edge geolocation the sessions view uses, captured at the
+  // moment of the audited action. Spread-style callers (`...auditRequestMeta`)
+  // pick this up for free; the explicit `ip: meta.ip` callers pass meta.geo.
+  return { ip, userAgent, geo: geoJson(c) };
 }
 
 // ─── Webhook delivery ────────────────────────────────────────────────────────

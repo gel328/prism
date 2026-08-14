@@ -13,7 +13,6 @@ import {
   MenuPopover,
   MenuTrigger,
   Text,
-  Tooltip,
   makeStyles,
   mergeClasses,
   tokens,
@@ -222,12 +221,6 @@ export function Layout() {
   const themeMode = useThemeStore((s) => s.mode);
   const setThemeMode = useThemeStore((s) => s.setMode);
 
-  const themeIcons: Record<ThemeMode, React.ReactElement> = {
-    system: <DesktopRegular />,
-    light: <WeatherSunnyRegular />,
-    dark: <WeatherMoonRegular />,
-  };
-
   // Close sidebar on route change (mobile)
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- syncing UI state to route changes; rerender cost is negligible vs. tracking with refs
@@ -407,60 +400,17 @@ export function Layout() {
       </nav>
 
       <div className={styles.userArea}>
-        <div style={{ display: "flex", gap: 4, marginBottom: 8 }}>
-          <Button
-            appearance="subtle"
-            icon={<LocalLanguageRegular />}
-            size="small"
-            onClick={toggleLanguage}
-            style={{ flex: 1, justifyContent: "flex-start" }}
-          >
-            {langLabel}
-          </Button>
-          <Menu
-            checkedValues={{ theme: [themeMode] }}
-            onCheckedValueChange={(_, data) => {
-              const next = data.checkedItems[0] as ThemeMode | undefined;
-              if (next) setThemeMode(next);
-            }}
-          >
-            <MenuTrigger disableButtonEnhancement>
-              <Tooltip content={t("theme.label")} relationship="label">
-                <Button
-                  appearance="subtle"
-                  size="small"
-                  icon={themeIcons[themeMode]}
-                />
-              </Tooltip>
-            </MenuTrigger>
-            <MenuPopover>
-              <MenuList>
-                <MenuItemRadio
-                  name="theme"
-                  value="system"
-                  icon={<DesktopRegular />}
-                >
-                  {t("theme.system")}
-                </MenuItemRadio>
-                <MenuItemRadio
-                  name="theme"
-                  value="light"
-                  icon={<WeatherSunnyRegular />}
-                >
-                  {t("theme.light")}
-                </MenuItemRadio>
-                <MenuItemRadio
-                  name="theme"
-                  value="dark"
-                  icon={<WeatherMoonRegular />}
-                >
-                  {t("theme.dark")}
-                </MenuItemRadio>
-              </MenuList>
-            </MenuPopover>
-          </Menu>
-        </div>
-        <Menu>
+        {/* The Profile / Security entries this menu used to carry duplicated the
+            sidebar links above, so they were dropped. In their place the menu
+            now hosts the appearance controls (language + theme) that previously
+            sat in a separate button row, plus sign-out. */}
+        <Menu
+          checkedValues={{ theme: [themeMode] }}
+          onCheckedValueChange={(_, data) => {
+            const next = data.checkedItems[0] as ThemeMode | undefined;
+            if (next) setThemeMode(next);
+          }}
+        >
           <MenuTrigger disableButtonEnhancement>
             <MenuButton
               appearance="subtle"
@@ -501,18 +451,36 @@ export function Layout() {
           </MenuTrigger>
           <MenuPopover>
             <MenuList>
+              {/* Language toggle */}
               <MenuItem
-                icon={<PersonRegular />}
-                onClick={() => navigate("/profile")}
+                icon={<LocalLanguageRegular />}
+                onClick={toggleLanguage}
               >
-                {t("nav.profile")}
+                {langLabel}
               </MenuItem>
-              <MenuItem
-                icon={<KeyRegular />}
-                onClick={() => navigate("/security")}
+              <MenuDivider />
+              {/* Theme */}
+              <MenuItemRadio
+                name="theme"
+                value="system"
+                icon={<DesktopRegular />}
               >
-                {t("nav.security")}
-              </MenuItem>
+                {t("theme.system")}
+              </MenuItemRadio>
+              <MenuItemRadio
+                name="theme"
+                value="light"
+                icon={<WeatherSunnyRegular />}
+              >
+                {t("theme.light")}
+              </MenuItemRadio>
+              <MenuItemRadio
+                name="theme"
+                value="dark"
+                icon={<WeatherMoonRegular />}
+              >
+                {t("theme.dark")}
+              </MenuItemRadio>
               <MenuDivider />
               <MenuItem icon={<SignOutRegular />} onClick={handleLogout}>
                 {t("nav.signOut")}

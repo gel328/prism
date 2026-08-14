@@ -87,18 +87,19 @@ description: 协作管理 OAuth 应用与已验证域名 — 角色、邀请、�
 ### 管理子团队
 
 - **创建**：`POST /api/teams/:parentId/sub-teams`（调用者需在上级团队上是 admin+，*直接或继承*均可），或在 UI 中点击 **Teams → \<team\> → Sub-teams → New sub-team**。创建者成为新子团队的 owner。
-- **列出**：`GET /api/teams/:id/sub-teams` 返回直接子团队列表，包含成员数与调用者的有效角色。上级团队的成员也能查看。
+- **列出**：`GET /api/teams/:id/sub-teams` 返回直接子团队列表，包含成员数与调用者的有效角色。支持 `?page=`、`?limit=`、`?q=` 名称搜索并返回 `total`。上级团队的成员也能查看。
 - **移动 / 改父**：`PATCH /api/teams/:id { "parent_team_id": "..." }`，传 `null` 表示提升回顶层。**仅限被移动团队的 owner**，且调用者必须在新上级团队上是 admin+。服务端会同时遍历两个子树以拒绝会造成循环或超过 `MAX_TEAM_DEPTH` 的移动。
 - **删除**：`DELETE /api/teams/:id` 会级联到每一个后代。`dissolveTeam` 自下而上地为每一层把应用重新分配给该层自己的 owner —— 子团队的 owner 留住自己的应用，最终回退到执行删除的用户。数据库约束 `parent_team_id REFERENCES teams(id) ON DELETE CASCADE` 是应用层之外的一层保险。
 
 ### 列表中的继承成员资格
 
-- `GET /api/teams`（会话）与 `GET /api/oauth/me/teams` 都会把每个直接成员资格展开成它的整个子树。条目带 `inherited_from` 字段标识上级团队 id（直接成员资格为 `null`）。
+- `GET /api/teams`（会话）与 `GET /api/oauth/me/teams` 都会把每个直接成员资格展开成它的整个子树。条目带 `inherited_from` 字段标识上级团队 id（直接成员资格为 `null`）。会话列表带分页，支持 `?page=`、`?limit=`、`?q=` 名称搜索，返回 `total`。
 - `GET /api/teams/:id` 返回：
   - `team.ancestors` —— `[{id, name, avatar_url}]` 从直接上级到根，用于面包屑。
-  - `team.sub_teams` —— 直接子团队及其成员数。
+  - `team.sub_teams` —— 直接子团队的**第一页**（20 条）及其成员数，另有 `team.sub_team_count` 表示总数；翻页走 `GET /api/teams/:id/sub-teams`。
   - `team.my_role` —— **有效**角色；当来自继承时，`team.inherited_from` 给出上级 id。
   - `members` —— 直接成员的**第一页**（50 条），另有 `member_count` 表示全团队总数。翻页与筛选走 `GET /api/teams/:id/members`；详情响应自带第一页，因此首屏只需一个请求。继承成员不在此列出（可在上级团队查看，这里展开会让每个子团队列表都重复一遍）。
+- 其他团队级列表也支持了分页与搜索：`GET /api/teams/:id/apps`、`GET /api/teams/:id/domains`、`GET /api/teams/:id/invites` 均接受 `?page=`、`?limit=` 和 `?q=`，返回 `total`。
 
 ## 身份组
 

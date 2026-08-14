@@ -9,6 +9,8 @@ import {
   bufToBase64url,
 } from "../lib/crypto";
 import { getConfig, getJwtSecret } from "../lib/config";
+import { getIp } from "../lib/clientIp";
+import { geoJson, recordSessionIp } from "../lib/geo";
 import { decryptSecret, encryptSecret } from "../lib/secretCrypto";
 import { validateSiteInvite, consumeSiteInvite } from "../lib/siteInvite";
 import { requireAuth, optionalAuth } from "../middleware/auth";
@@ -1858,6 +1860,14 @@ async function issueJWT(
       now,
     )
     .run();
+  // Seed the session's IP history with the login IP + geolocation (same as the
+  // password-login path in issueSession) so the security page has a location
+  // immediately, not only after the next authenticated request.
+  c.executionCtx.waitUntil(
+    recordSessionIp(c.env.DB, sessionId, getIp(c), geoJson(c), now).catch(
+      () => undefined,
+    ),
+  );
   // Set the session cookie on this response. For redirect responses (social
   // OAuth callback flow) the cookie travels with the redirect and the
   // /auth/callback page reads it on the follow-up request.

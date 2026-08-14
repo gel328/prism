@@ -91,6 +91,7 @@ worker/
 │
 ├── cron/
 │   ├── reverify.ts         # 域名重新核验
+│   ├── sessions.ts         # 清理过期会话
 │   └── imap-poll.ts        # 从 IMAP 拉取验证邮件
 │
 ├── handlers/

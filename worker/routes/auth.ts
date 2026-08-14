@@ -4,6 +4,7 @@ import { Hono } from "hono";
 import type { Context } from "hono";
 import { getConfig, getConfigValue, getJwtSecret } from "../lib/config";
 import { getIp } from "../lib/clientIp";
+import { geoJson, recordSessionIp } from "../lib/geo";
 import { recordAudit, auditRequestMeta } from "../lib/audit";
 import { clearSessionCookie, setSessionCookie } from "../lib/cookies";
 import {
@@ -65,12 +66,13 @@ async function logLoginError(
   identifier: string | null,
   ip: string,
   userAgent: string | null,
+  geo: string | null,
   metadata: Record<string, unknown>,
 ): Promise<void> {
   const now = Math.floor(Date.now() / 1000);
   await db
     .prepare(
-      "INSERT INTO login_errors (id, error_code, identifier, ip_address, user_agent, metadata, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO login_errors (id, error_code, identifier, ip_address, user_agent, ip_geo, metadata, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(
       randomId(),
@@ -78,6 +80,7 @@ async function logLoginError(
       identifier,
       ip,
       userAgent,
+      geo,
       JSON.stringify(metadata),
       now,
     )
@@ -129,6 +132,14 @@ export async function issueSession(
       now,
     )
     .run();
+  // Seed the session's IP history with the login IP + geolocation so the
+  // security page has a location for a session the moment it is created,
+  // rather than only after the next authenticated request.
+  c.executionCtx.waitUntil(
+    recordSessionIp(c.env.DB, sessionId, getIp(c), geoJson(c), now).catch(
+      () => undefined,
+    ),
+  );
   // Mirror the JWT into a cookie so SSR can authenticate the next request
   // without any client JS. Bearer-header callers get the token in the JSON
   // body as before.
@@ -149,6 +160,7 @@ export async function issueSession(
       resourceName: `@${user.username}`,
       ip: meta.ip,
       userAgent: meta.userAgent,
+      geo: meta.geo,
       metadata: {},
     }),
   );
@@ -314,7 +326,15 @@ app.post("/login", async (c) => {
   );
   if (!rl.allowed) {
     c.executionCtx.waitUntil(
-      logLoginError(c.env.DB, "rate_limited", null, ip, ua, {}).catch(() => {}),
+      logLoginError(
+        c.env.DB,
+        "rate_limited",
+        null,
+        ip,
+        ua,
+        geoJson(c),
+        {},
+      ).catch(() => {}),
     );
     return c.json({ error: "Too many requests" }, 429);
   }
@@ -352,6 +372,7 @@ app.post("/login", async (c) => {
         body.identifier ?? null,
         ip,
         ua,
+        geoJson(c),
         {},
       ).catch(() => {}),
     );
@@ -410,6 +431,7 @@ app.post("/login", async (c) => {
         body.identifier ?? null,
         ip,
         ua,
+        geoJson(c),
         {},
       ).catch(() => {}),
     );
@@ -423,6 +445,7 @@ app.post("/login", async (c) => {
         body.identifier ?? null,
         ip,
         ua,
+        geoJson(c),
         { user_id: user.id },
       ).catch(() => {}),
     );
@@ -438,6 +461,7 @@ app.post("/login", async (c) => {
         body.identifier ?? null,
         ip,
         ua,
+        geoJson(c),
         { user_id: user.id },
       ).catch(() => {}),
     );
@@ -463,6 +487,7 @@ app.post("/login", async (c) => {
           body.identifier ?? null,
           ip,
           ua,
+          geoJson(c),
           { user_id: user.id },
         ).catch(() => {}),
       );
@@ -1355,16 +1380,71 @@ app.get("/pow-challenge", async (c) => {
 app.get("/sessions", requireAuth, async (c) => {
   const user = c.get("user");
   const currentSessionId = c.get("sessionId");
+  const now = Math.floor(Date.now() / 1000);
+  // Only live sessions. Expired rows are swept by the cron sweep, but filter
+  // here too so a session that lapsed since the last sweep never shows up as
+  // "active" — that was the whole complaint behind this view.
+  //
+  // The LEFT JOIN pulls the geolocation Cloudflare recorded for the IP the
+  // session was created from (session_ips row keyed on that same IP), so the
+  // list can show an "IP location" column without a second round trip.
   const sessions = await c.env.DB.prepare(
-    "SELECT id, user_agent, ip_address, created_at, expires_at FROM sessions WHERE user_id = ? ORDER BY created_at DESC",
+    `SELECT s.id, s.user_agent, s.ip_address, s.created_at, s.expires_at,
+            si.geo AS ip_geo
+       FROM sessions s
+       LEFT JOIN session_ips si
+         ON si.session_id = s.id AND si.ip_address = s.ip_address
+      WHERE s.user_id = ? AND s.expires_at > ?
+      ORDER BY s.created_at DESC`,
   )
-    .bind(user.id)
+    .bind(user.id, now)
     .all();
   return c.json({
     sessions: sessions.results.map((s) => ({
       ...s,
       is_current: s.id === currentSessionId,
     })),
+  });
+});
+
+// Every distinct IP a single session has authenticated from, most recent
+// first, with the geolocation captured at the edge. Powers the "IP history"
+// block in the session detail dialog.
+app.get("/sessions/:id/ips", requireAuth, async (c) => {
+  const user = c.get("user");
+  const id = c.req.param("id");
+  // Ownership check: never leak one user's session history to another.
+  const owns = await c.env.DB.prepare(
+    "SELECT 1 FROM sessions WHERE id = ? AND user_id = ?",
+  )
+    .bind(id, user.id)
+    .first();
+  if (!owns) return c.json({ error: "Not found" }, 404);
+  const ips = await c.env.DB.prepare(
+    `SELECT ip_address, geo, first_seen, last_seen
+       FROM session_ips
+      WHERE session_id = ?
+      ORDER BY last_seen DESC`,
+  )
+    .bind(id)
+    .all();
+  return c.json({ ips: ips.results });
+});
+
+// Revoke every session except the one making the request — the "sign out
+// everywhere else" panic button. Keeping the current session avoids logging
+// the user out of the very page they clicked it on.
+app.delete("/sessions", requireAuth, async (c) => {
+  const user = c.get("user");
+  const currentSessionId = c.get("sessionId");
+  const result = await c.env.DB.prepare(
+    "DELETE FROM sessions WHERE user_id = ? AND id != ?",
+  )
+    .bind(user.id, currentSessionId ?? "")
+    .run();
+  return c.json({
+    message: "Other sessions revoked",
+    revoked: result.meta.changes ?? 0,
   });
 });
 
@@ -1473,6 +1553,7 @@ app.post("/gpg-login", async (c) => {
         body.identifier,
         ip,
         ua,
+        geoJson(c),
         {},
       ).catch(() => {}),
     );
@@ -1488,9 +1569,17 @@ app.post("/gpg-login", async (c) => {
 
   if (gpgKeys.length === 0) {
     c.executionCtx.waitUntil(
-      logLoginError(c.env.DB, "gpg_no_keys", body.identifier, ip, ua, {
-        user_id: user.id,
-      }).catch(() => {}),
+      logLoginError(
+        c.env.DB,
+        "gpg_no_keys",
+        body.identifier,
+        ip,
+        ua,
+        geoJson(c),
+        {
+          user_id: user.id,
+        },
+      ).catch(() => {}),
     );
     return c.json({ error: "No GPG keys registered" }, 401);
   }
@@ -1510,6 +1599,7 @@ app.post("/gpg-login", async (c) => {
         body.identifier,
         ip,
         ua,
+        geoJson(c),
         { user_id: user.id },
       ).catch(() => {}),
     );
@@ -1524,6 +1614,7 @@ app.post("/gpg-login", async (c) => {
         body.identifier,
         ip,
         ua,
+        geoJson(c),
         { user_id: user.id },
       ).catch(() => {}),
     );
@@ -1549,6 +1640,7 @@ app.post("/gpg-login", async (c) => {
         body.identifier,
         ip,
         ua,
+        geoJson(c),
         { user_id: user.id },
       ).catch(() => {}),
     );
